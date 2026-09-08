@@ -1,0 +1,16 @@
+{
+  "name": "reqkeeper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Exactly-once settlement of Request Network obligations through KeeperHub.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test",
+    "gate-a": "node --experimental-strip-types scripts/gate-a.ts",
+    "harness": "node --experimental-strip-types scripts/harness.ts",
+    "verify:onchain": "node --experimental-strip-types scripts/verify-onchain.ts"
+  }
+}
