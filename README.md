@@ -123,6 +123,22 @@ Each one is documented and money-critical, not hypothetical. Each has a fault in
 | Reused key replays a **cached failure**, so retry can never succeed | issue #1840 | Distinguished from "unpaid". Requires a new approved plan — never a key rotation |
 | `?simulate=true` is ignored and the transaction really executes | issues #1959 / #1929 | A dry run is not treated as a safety boundary. A tx hash returned from a simulate call is `EVIDENCE_CONFLICT` and treated as a real send |
 
+### Retraction: #1959 did not reproduce
+
+Probed live on 2026-09-09 against `POST /api/execute/transfer` with `simulate: true` from a
+zero-balance wallet. The response was a correct dry run — `{"status":"simulated",
+"wouldRevert":true,"code":"insufficient_balance","balanceWei":"0"}` — with **no transaction
+hash and no execution**.
+
+So the hazard behind harness case `C19` is **modelled, not observed**. Either the issue is
+fixed at this version, or it only affects the protocol-action route, which was not probed.
+The defensive check stays in `src/settle.ts` because it costs nothing and a returned hash
+would be unambiguous evidence of a real send — but this codebase does not claim the bug is
+live, and `C19` is labelled accordingly.
+
+Stated here rather than quietly dropped: the claim was made earlier in this project's notes
+on the strength of the issue tracker alone, and the live API contradicts it.
+
 That third one is why the bounty PR and this product are the same body of understanding.
 
 ---
