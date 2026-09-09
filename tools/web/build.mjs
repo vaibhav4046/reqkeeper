@@ -6,7 +6,7 @@
  * Change the harness, rebuild, and the page follows. Type the numbers by hand instead and
  * they drift the first time a case is added — which is exactly what happened to the README.
  *
- *   node tools/web/build.mjs   ->  web/console.html
+ *   node tools/web/build.mjs   ->  web/index.html
  */
 
 import { execFileSync } from "node:child_process";
