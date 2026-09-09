@@ -16,6 +16,7 @@
 
 import { DatabaseSync } from "node:sqlite";
 import { canonicalReference } from "./identity.ts";
+import { keccak256Hex } from "./keccak.ts";
 import { ReplanError, assertTransition, canReplan, type State } from "./machine.ts";
 
 export type JobKind = "DISPATCH_STEP" | "OBSERVE_EXECUTION" | "RECONCILE_SOURCE";
@@ -128,7 +129,14 @@ CREATE TABLE IF NOT EXISTS audit (
   actor         TEXT NOT NULL,
   action        TEXT NOT NULL,
   detail_json   TEXT NOT NULL,
-  at            INTEGER NOT NULL
+  at            INTEGER NOT NULL,
+  -- Each row commits to the one before it. Editing or deleting a row breaks every hash after
+  -- it, so a rewritten trail is detectable rather than merely discouraged. This does not make
+  -- the trail tamper-PROOF — the same administrator can recompute the whole chain — but it
+  -- turns silent edits into loud ones, which is the difference between "trust me" and
+  -- "check it".
+  prev_hash     TEXT NOT NULL DEFAULT '',
+  row_hash      TEXT NOT NULL DEFAULT ''
 );
 `;
 
@@ -147,6 +155,13 @@ CREATE TABLE IF NOT EXISTS audit (
  * process start.
  */
 function migrate(db: DatabaseSync): void {
+  const auditColumns = db.prepare("PRAGMA table_info(audit)").all() as Array<{ name: string }>;
+  for (const col of ["prev_hash", "row_hash"]) {
+    if (!auditColumns.some((c) => c.name === col)) {
+      db.exec(`ALTER TABLE audit ADD COLUMN ${col} TEXT NOT NULL DEFAULT ''`);
+    }
+  }
+
   const columns = db.prepare("PRAGMA table_info(obligations)").all() as Array<{ name: string }>;
   if (!columns.some((c) => c.name === "payment_reference")) {
     // The debt's real identity. A request id is free text supplied by the caller, so two
@@ -186,6 +201,18 @@ function migrate(db: DatabaseSync): void {
   }
 }
 
+/** One row's commitment to every row before it. Order and contents are both covered. */
+function auditHash(
+  prev: string,
+  obligationId: string | null,
+  actor: string,
+  action: string,
+  detailJson: string,
+  at: number,
+): string {
+  return keccak256Hex([prev, obligationId ?? "", actor, action, detailJson, String(at)].join("\u0000"));
+}
+
 function staleFence(jobId: number, generation: number): Error {
   const e = new Error(`stale fencing generation for job ${jobId}: held ${generation}`);
   (e as Error & { code?: string }).code = "STALE_FENCE";
@@ -213,6 +240,14 @@ export class Store {
     }
   }
 
+  /**
+   * Raw SQL, for tests that need to simulate someone with write access to the file.
+   * Nothing in src/ calls this; it exists so the tamper-detection test can actually tamper.
+   */
+  rawExecForTests(sql: string): void {
+    this.#db.exec(sql);
+  }
+
   close(): void {
     this.#db.close();
   }
@@ -231,15 +266,80 @@ export class Store {
   }
 
   audit(obligationId: string | null, actor: string, action: string, detail: unknown, now = Date.now()): void {
+    const detailJson = JSON.stringify(detail ?? {});
+    const tip = this.#db.prepare("SELECT row_hash AS h FROM audit ORDER BY id DESC LIMIT 1").get() as
+      | { h: string }
+      | undefined;
+    const prev = tip?.h ?? "";
+    const rowHash = auditHash(prev, obligationId, actor, action, detailJson, now);
     this.#db
-      .prepare("INSERT INTO audit (obligation_id, actor, action, detail_json, at) VALUES (?,?,?,?,?)")
-      .run(obligationId, actor, action, JSON.stringify(detail ?? {}), now);
+      .prepare(
+        "INSERT INTO audit (obligation_id, actor, action, detail_json, at, prev_hash, row_hash) VALUES (?,?,?,?,?,?,?)",
+      )
+      .run(obligationId, actor, action, detailJson, now, prev, rowHash);
   }
 
-  auditTrail(obligationId: string): Array<{ action: string; actor: string }> {
-    return this.#db
-      .prepare("SELECT actor, action FROM audit WHERE obligation_id = ? ORDER BY id")
-      .all(obligationId) as Array<{ action: string; actor: string }>;
+  /**
+   * The trail as an auditor needs it: who, what, when, and the detail.
+   *
+   * It used to return only actor and action, so the first question anyone asks of an approval
+   * record — who approved this, and when — could not be answered from the surface that shows
+   * the trail, even though the approvals table had both.
+   */
+  auditTrail(obligationId: string): Array<{
+    action: string;
+    actor: string;
+    at: number;
+    detail: unknown;
+  }> {
+    const rows = this.#db
+      .prepare(
+        "SELECT actor, action, at, detail_json AS detailJson FROM audit WHERE obligation_id = ? ORDER BY id",
+      )
+      .all(obligationId) as Array<{ actor: string; action: string; at: number; detailJson: string }>;
+    return rows.map((r) => {
+      let detail: unknown = {};
+      try {
+        detail = JSON.parse(r.detailJson);
+      } catch {
+        detail = { unparseable: r.detailJson };
+      }
+      return { actor: r.actor, action: r.action, at: r.at, detail };
+    });
+  }
+
+  /**
+   * Walk the audit chain and report the first row whose hash does not follow from the one
+   * before it. `ok: true` means nothing has been edited or removed since it was written.
+   */
+  verifyAuditChain(): { ok: boolean; rows: number; brokenAtId?: number; reason?: string } {
+    const rows = this.#db
+      .prepare(
+        "SELECT id, obligation_id AS obligationId, actor, action, detail_json AS detailJson, at, prev_hash AS prevHash, row_hash AS rowHash FROM audit ORDER BY id",
+      )
+      .all() as Array<{
+      id: number;
+      obligationId: string | null;
+      actor: string;
+      action: string;
+      detailJson: string;
+      at: number;
+      prevHash: string;
+      rowHash: string;
+    }>;
+
+    let expectedPrev = "";
+    for (const r of rows) {
+      if (r.prevHash !== expectedPrev) {
+        return { ok: false, rows: rows.length, brokenAtId: r.id, reason: "a row is missing or was reordered" };
+      }
+      const recomputed = auditHash(r.prevHash, r.obligationId, r.actor, r.action, r.detailJson, r.at);
+      if (recomputed !== r.rowHash) {
+        return { ok: false, rows: rows.length, brokenAtId: r.id, reason: "a row's contents were edited" };
+      }
+      expectedPrev = r.rowHash;
+    }
+    return { ok: true, rows: rows.length };
   }
 
   // ---- obligations -------------------------------------------------------
@@ -492,12 +592,38 @@ export class Store {
     reason?: string;
     now?: number;
   }): void {
+    const at = a.now ?? Date.now();
     this.#db
       .prepare(
         `INSERT INTO approvals (plan_hash, obligation_id, approver, decision, restatement, reason, decided_at)
          VALUES (?,?,?,?,?,?,?)`,
       )
-      .run(a.planHash, a.obligationId, a.approver, a.decision, a.restatement, a.reason ?? null, a.now ?? Date.now());
+      .run(a.planHash, a.obligationId, a.approver, a.decision, a.restatement, a.reason ?? null, at);
+    // The decision belongs in the trail too. It used to be written only by the CLI, so an
+    // approval recorded any other way left no "who approved this" row at all.
+    this.audit(
+      a.obligationId,
+      a.approver,
+      a.decision === "APPROVED" ? "HUMAN_APPROVED" : "HUMAN_REJECTED",
+      { planHash: a.planHash, reason: a.reason ?? null },
+      at,
+    );
+  }
+
+  /**
+   * Distinct humans who have approved this exact plan.
+   *
+   * One approver is the default, and for a single operator that is the honest arrangement.
+   * Where a workspace wants two pairs of eyes, the count is what a quorum is checked against
+   * — and it counts DISTINCT approvers, so one person approving twice is still one person.
+   */
+  approversFor(planHash: string): string[] {
+    const rows = this.#db
+      .prepare(
+        "SELECT DISTINCT lower(approver) AS approver FROM approvals WHERE plan_hash = ? AND decision = 'APPROVED' ORDER BY approver",
+      )
+      .all(planHash) as Array<{ approver: string }>;
+    return rows.map((r) => r.approver);
   }
 
   getApproval(planHash: string): { decision: string; approver: string; restatement: string } | undefined {

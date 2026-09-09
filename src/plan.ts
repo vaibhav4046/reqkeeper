@@ -9,6 +9,7 @@
 
 import { encodeCall } from "./abi.ts";
 import type { Policy, SourceFacts } from "./policy.ts";
+import { loadStandingPolicy, type StandingPolicy } from "./standing-policy.ts";
 
 export const NAMESPACE = "request-network:sepolia";
 export const SEPOLIA = 11155111;
@@ -42,7 +43,22 @@ export interface InvoiceFacts {
   readonly hasBeenPaid?: boolean;
 }
 
-export function buildPolicy(f: InvoiceFacts): Policy {
+/**
+ * The policy a plan is checked against.
+ *
+ * Every constraint here used to come from `f` — the same invoice the agent supplied and the
+ * same object `checkPolicy` would then compare it to. That made five of the nine refusal
+ * codes structurally unreachable on both real entry points: an agent could name an attacker
+ * payee, a 500 FAU fee and its own ceiling, and get a clean approval sentence. The refusal
+ * table demonstrated a gate that only ever existed inside the harness.
+ *
+ * The operator's standing policy wins wherever it is set. Where it is not, the invoice's own
+ * value is used and `policySource` says so, so a bare clone still runs and nobody is told
+ * they are protected when they are not. A ceiling is always the LOWER of the two: an agent
+ * may tighten its own limit, never raise it above what a human wrote down.
+ */
+export function buildPolicy(f: InvoiceFacts, standing: StandingPolicy = loadStandingPolicy()): Policy {
+  const lower = (a: string, b: string | null) => (b === null ? a : (BigInt(a) < BigInt(b) ? a : b));
   return {
     version: 1,
     chainId: SEPOLIA,
@@ -51,10 +67,12 @@ export function buildPolicy(f: InvoiceFacts): Policy {
       decimals: f.tokenDecimals ?? 18,
       symbol: f.tokenSymbol ?? "FAU",
     },
-    allowedPayees: [f.payee.toLowerCase()],
-    maxTotalDebitBaseUnits: f.maxTotalDebitBaseUnits,
-    allowedFeeRecipients: [f.feeAddress.toLowerCase()],
-    maxFeeBaseUnits: f.feeAmount,
+    allowedPayees:
+      standing.allowedPayees.length > 0 ? standing.allowedPayees : [f.payee.toLowerCase()],
+    maxTotalDebitBaseUnits: lower(f.maxTotalDebitBaseUnits, standing.maxTotalDebitBaseUnits),
+    allowedFeeRecipients:
+      standing.allowedFeeRecipients.length > 0 ? standing.allowedFeeRecipients : [f.feeAddress.toLowerCase()],
+    maxFeeBaseUnits: lower(f.feeAmount, standing.maxFeeBaseUnits),
     planTtlSeconds: 3600,
   };
 }

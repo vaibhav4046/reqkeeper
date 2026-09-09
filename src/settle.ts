@@ -57,6 +57,14 @@ export interface SettleDeps {
    * how a duplicate obligation reported SETTLED using the first payment's log.
    */
   readonly sourceSaysPaid: (requestId: string, txHash: string) => Promise<boolean>;
+  /**
+   * How many DISTINCT humans must approve before anything is dispatched.
+   *
+   * One is the honest default for a single operator. A workspace that wants two pairs of eyes
+   * sets two, and one person approving twice still counts once — the store counts distinct
+   * approvers, not rows.
+   */
+  readonly quorum?: number;
 }
 
 
@@ -322,6 +330,7 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
   // A rejection is permanent for the plan it rejected. Re-asking is how an agent turns a no
   // into a yes by attrition, so the recorded decision is consulted before any new one is
   // taken. A genuinely different plan hashes differently and gets its own hearing.
+  const quorum = Math.max(1, deps.quorum ?? 1);
   const priorDecision = store.getApproval(planHash);
   if (priorDecision?.decision === "REJECTED") {
     store.setState(input.obligationId, "REVIEW_REJECTED", input.now);
@@ -367,6 +376,20 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
       planHash,
     });
   }
+  // A quorum is counted over distinct approvers of THIS plan hash, so a second signature on
+  // a different plan cannot be borrowed to reach the threshold.
+  const approvers = store.approversFor(planHash);
+  if (approvers.length < quorum) {
+    return out({
+      state: "AWAITING_APPROVAL",
+      refusal: "AWAITING_APPROVAL",
+      detail: `this workspace requires ${quorum} approvers; ${approvers.length} so far`,
+      providerWriteIssued: false,
+      planHash,
+      restatement,
+    });
+  }
+
   store.setState(input.obligationId, "APPROVED", input.now);
 
   // --- 5. re-check at the dispatch boundary -------------------------------

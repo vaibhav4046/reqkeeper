@@ -219,7 +219,7 @@ Six files, in the order that explains the design:
 Needs Node 24+. Nothing else — no `npm install`, no `node_modules`.
 
 ```bash
-npm test                  # 160 unit tests
+npm test                  # 170 unit tests
 npm run harness           # 26 cases, 24 of them refusals -> docs/refusals.json
 npm run verify:onchain    # reads Sepolia via public RPC, no credentials
 npm run verify:seam       # proves the calldata gate against the live API (needs the KeeperHub key)
