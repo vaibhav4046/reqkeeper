@@ -9,6 +9,7 @@
   },
   "scripts": {
     "test": "node --experimental-strip-types --test",
+    "typecheck": "tsc --noEmit",
     "gate-a": "node --experimental-strip-types scripts/gate-a.ts",
     "harness": "node --experimental-strip-types scripts/harness.ts",
     "verify:onchain": "node --experimental-strip-types scripts/verify-onchain.ts",
@@ -24,5 +25,9 @@
     "invoices": "node tools/invoice/create-batch.mjs",
     "verify:live": "node --experimental-strip-types scripts/verify-live.ts",
     "resolve": "node --experimental-strip-types scripts/resolve.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "typescript": "5.9"
   }
 }

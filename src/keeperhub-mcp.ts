@@ -276,7 +276,7 @@ export class KeeperHubMcpProvider implements ExecutionProvider {
         }),
         signal: AbortSignal.timeout(this.#timeout),
       });
-      body = await res.json();
+      body = (await res.json()) as typeof body;
     } catch {
       return { hash, verified: false, receiptStatus: "timeout", gasUsed: "0" };
     }

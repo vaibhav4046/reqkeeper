@@ -544,7 +544,11 @@ export class Store {
    * HTTP request already in flight — that is what the immutable attempt row and the
    * provider's idempotency key are for.
    */
-  claimJobs(opts: { limit: number; now: number; leaseMs: number }): Job[] {
+  claimJobs(opts: { limit: number; now: number; leaseMs: number; dueBy?: number }): Job[] {
+    // `dueBy` separates "what is ready" from "what time it is". The retry backoff exists to
+    // stop a timer hammering an RPC; it is not a safety property, so an operator asking
+    // explicitly may look ahead of it. Leases and deferrals still run on the real clock.
+    const dueBy = opts.dueBy ?? opts.now;
     return this.tx(() => {
       const rows = this.#db
         .prepare(
@@ -552,7 +556,7 @@ export class Store {
             WHERE status = 'pending' AND due_at <= ? AND lease_expires_at <= ?
             ORDER BY due_at LIMIT ?`,
         )
-        .all(opts.now, opts.now, opts.limit) as Array<{ id: number }>;
+        .all(dueBy, opts.now, opts.limit) as Array<{ id: number }>;
 
       const claimed: Job[] = [];
       for (const { id } of rows) {
@@ -570,7 +574,7 @@ export class Store {
                       attempts, fencing_generation AS fencingGeneration
                  FROM jobs WHERE id = ?`,
             )
-            .get(id) as Job,
+            .get(id) as unknown as Job,
         );
       }
       return claimed;

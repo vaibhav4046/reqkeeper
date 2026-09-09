@@ -231,7 +231,8 @@ if (existsSync(LIVE)) {
   const sample = live.rows.filter((r) => r.tx_hash).slice(0, 3);
   for (const r of sample) {
     const seen = await findPaymentByReference(
-      live.rows.find((x) => x.case_id === r.case_id)?.payment_reference ?? "",
+      (live.rows.find((x) => x.case_id === r.case_id) as { payment_reference?: string } | undefined)
+        ?.payment_reference ?? "",
       { lookbackBlocks: 300_000 },
     );
     say(

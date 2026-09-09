@@ -22,6 +22,7 @@ import { obligationId } from "./identity.ts";
 import type { ExecutionProvider } from "./provider.ts";
 import { buildPolicy, buildSourceFacts, buildSteps, NAMESPACE, type InvoiceFacts } from "./plan.ts";
 import { settleObligation } from "./settle.ts";
+import { drainUntilQuiet } from "./worker.ts";
 import type { Store } from "./store.ts";
 
 export const PROTOCOL_VERSION = "2024-11-05";
@@ -94,6 +95,16 @@ export const TOOLS = [
     },
   },
   {
+    name: "resolve_pending",
+    description:
+      "Close out a payment that already went out but has not finished: a receipt not yet " +
+      "mined, or a Request indexer that has not caught up. Reads chain receipts and the " +
+      "event log and moves state accordingly. It has no send path at all, so it can never " +
+      "pay anything — which is why it is the correct answer to RECONCILIATION_PENDING and " +
+      "EXECUTION_OUTCOME_UNKNOWN, and calling settle_obligation again is not.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
     name: "refusal_codes",
     description:
       "The refusal vocabulary: every code this system can answer with, and what it means. " +
@@ -116,6 +127,17 @@ const TERMINAL_FOR_AGENTS: Record<string, string> = {
   OBLIGATION_RESERVED: "Another plan holds this obligation. Do not race it.",
   CACHED_FAILURE: "The provider is replaying a cached failure. Rotating the key would pay twice; do not.",
   EVIDENCE_CONFLICT: "The provider and the chain disagree. A human must look before anything else happens.",
+  RECONCILIATION_PENDING:
+    "Paid on chain, not yet indexed by Request. Call resolve_pending; never settle_obligation.",
+  EXECUTION_OUTCOME_UNKNOWN:
+    "A send happened and its result is unknown. Call resolve_pending to observe it. A retry would pay twice.",
+  CALLDATA_MISMATCH:
+    "The calldata means something other than the invoice. Fix the bytes, not the retry count.",
+  REFERENCE_ALREADY_CLAIMED:
+    "Another obligation already holds this payment reference. It is the same debt under a different name.",
+  SOURCE_ALREADY_PAID: "The chain already shows this reference paid. There is nothing left to pay.",
+  SIMULATION_BLOCKED: "The payment would revert. A retry repeats the revert.",
+  EXECUTION_REVERTED: "The transaction reverted on chain. A new plan and a new approval are required.",
   SIMULATE_EXECUTED: "A dry run really executed. Treat as a real send and stop.",
 };
 
@@ -186,6 +208,34 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
         obligationId: oid,
         state: row.state,
         auditTrail: ctx.store.auditTrail(oid),
+      };
+    }
+
+    case "resolve_pending": {
+      // Deliberately takes no invoice: resolution is about payments already made, and an
+      // agent that could re-describe the invoice here could steer the reconciliation.
+      const passes = await drainUntilQuiet(
+        {
+          store: ctx.store,
+          provider: ctx.provider,
+          sourceSaysPaid: async (requestId: string, txHash: string) => {
+            const row = ctx.store.obligationForRecovery(obligationId(NAMESPACE, requestId));
+            if (!row?.paymentReference) return false;
+            const seen = await findPayment(row.paymentReference, {
+              rpcUrl: ctx.rpcUrl,
+              lookbackBlocks: 300_000,
+            });
+            return seen.found && seen.txHash?.toLowerCase() === txHash.toLowerCase();
+          },
+        },
+        // An agent asking to resolve is not a timer, so it does not wait out the retry
+        // backoff. Everything it can do is still read-only.
+        { now: Date.now(), maxPasses: 3, stepMs: 0, lookaheadMs: 60_000 },
+      );
+      return {
+        advanced: passes.flatMap((r) => r.advanced),
+        completed: passes.reduce((n, r) => n + r.completed, 0),
+        stillPending: ctx.store.pendingJobCount(),
       };
     }
 

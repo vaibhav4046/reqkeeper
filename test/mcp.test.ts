@@ -210,12 +210,67 @@ test("obligation_status exposes the audit trail after a proposal", async () => {
   assert.ok(r.json.auditTrail.some((e: { action: string }) => e.action === "PROPOSED"));
 });
 
+
+test("resolve_pending closes out a payment the indexer had not caught up with", async () => {
+  const c = ctx();
+  // The indexer is behind: the payment lands on chain, Request has not seen it yet.
+  let indexed = false;
+  const lagging: McpContext = {
+    ...c,
+    findPayment: async () =>
+      indexed && c.provider.totalSends() > 0
+        ? { found: true, txHash: `0x${"0".repeat(63)}1`, amount: ONE }
+        : { found: false },
+  };
+
+  const proposal = await call(lagging, "propose_payment", INVOICE);
+  c.store.recordApproval({
+    planHash: proposal.json.planHash,
+    obligationId: obligationId(NAMESPACE, REQUEST_ID),
+    approver: "human@example.com",
+    decision: "APPROVED",
+    restatement: proposal.json.approvalSentence,
+  });
+
+  const settled = await call(lagging, "settle_obligation", INVOICE);
+  assert.equal(settled.json.state, "RECONCILIATION_PENDING");
+  const sendsAfterPayment = c.provider.totalSends();
+  assert.equal(sendsAfterPayment, 1);
+
+  // Settling again is not the answer, and the surface says so rather than trying.
+  const again = await call(lagging, "settle_obligation", INVOICE);
+  assert.equal(again.json.refusal, "ALREADY_DISPATCHED");
+  assert.equal(c.provider.totalSends(), sendsAfterPayment);
+
+  // The indexer catches up. Resolution is what closes it, and it moves no money.
+  indexed = true;
+  const resolved = await call(lagging, "resolve_pending", {});
+  assert.equal(resolved.json.stillPending, 0);
+  assert.equal(
+    (await call(lagging, "obligation_status", { requestId: REQUEST_ID })).json.state,
+    "SETTLED",
+  );
+  assert.equal(c.provider.totalSends(), sendsAfterPayment, "resolution must not send");
+});
+
 test("every refusal code carries do-not-retry guidance for an agent", async () => {
   const r = await call(ctx(), "refusal_codes");
-  for (const code of ["ALREADY_DISPATCHED", "REVIEW_REJECTED", "CACHED_FAILURE", "EVIDENCE_CONFLICT"]) {
+  for (const code of [
+    "ALREADY_DISPATCHED",
+    "REVIEW_REJECTED",
+    "CACHED_FAILURE",
+    "EVIDENCE_CONFLICT",
+    "RECONCILIATION_PENDING",
+    "EXECUTION_OUTCOME_UNKNOWN",
+    "CALLDATA_MISMATCH",
+    "REFERENCE_ALREADY_CLAIMED",
+  ]) {
     assert.ok(r.json.codes[code], `no guidance for ${code}`);
   }
   assert.match(r.json.codes.CACHED_FAILURE, /would pay twice/);
+  // The two states that used to be dead ends must point at the tool that resolves them.
+  assert.match(r.json.codes.RECONCILIATION_PENDING, /resolve_pending/);
+  assert.match(r.json.codes.EXECUTION_OUTCOME_UNKNOWN, /resolve_pending/);
 });
 
 test("a settled obligation is never re-entered, and its state never regresses", async () => {

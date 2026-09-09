@@ -110,7 +110,7 @@ let n = 0;
 async function run(
   scenario: string,
   expected: string,
-  build: () => { facts: SourceFacts; fault?: Fault; approval?: typeof APPROVED | { approver: string; decision: "REJECTED" }; now?: number; factsAtDispatch?: SourceFacts; requestId?: string; pre?: (s: Store, o: string) => void },
+  build: () => { facts: SourceFacts; fault?: Fault; approval?: typeof APPROVED | { approver: string; decision: "REJECTED" }; now?: number; factsAtDispatch?: SourceFacts; requestId?: string; pre?: (s: Store, o: string) => void; steps?: ReturnType<typeof stepsFor> },
 ): Promise<void> {
   n++;
   const cfg = build();

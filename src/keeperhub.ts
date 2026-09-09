@@ -181,7 +181,7 @@ export class KeeperHubProvider implements ExecutionProvider {
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getTransactionReceipt", params: [hash] }),
         signal: AbortSignal.timeout(this.#timeout),
       });
-      body = await res.json();
+      body = (await res.json()) as typeof body;
     } catch {
       return { hash, verified: false, receiptStatus: "timeout", gasUsed: "0" };
     }

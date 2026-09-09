@@ -15,7 +15,7 @@
  * is fail to advance a state, never pay twice.
  */
 
-import type { State } from "./machine.ts";
+import { isTerminal, type State } from "./machine.ts";
 import type { ExecutionProvider } from "./provider.ts";
 import type { Job, Store } from "./store.ts";
 
@@ -47,10 +47,15 @@ const LEASE_MS = 30_000;
  */
 export async function drainOnce(
   deps: WorkerDeps,
-  opts: { now: number; limit?: number },
+  opts: { now: number; limit?: number; lookaheadMs?: number },
 ): Promise<DrainResult> {
   const { store } = deps;
-  const jobs = store.claimJobs({ limit: opts.limit ?? 25, now: opts.now, leaseMs: LEASE_MS });
+  const jobs = store.claimJobs({
+    limit: opts.limit ?? 25,
+    now: opts.now,
+    leaseMs: LEASE_MS,
+    dueBy: opts.now + (opts.lookaheadMs ?? 0),
+  });
 
   let completed = 0;
   let deferred = 0;
@@ -92,6 +97,12 @@ async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Reso
   const { store } = deps;
   const obligation = store.obligationForRecovery(job.obligationId);
   if (!obligation) return { done: true, advanced: [] }; // nothing to resolve; drop the job
+
+  // A settled or closed obligation has nothing left to observe. Without this the job is
+  // deferred forever: every pass reads a good receipt, tries to move a terminal state, and
+  // is refused by the machine. The outbox would never drain for exactly the obligations
+  // that finished correctly.
+  if (isTerminal(obligation.state)) return { done: true, advanced: [] };
 
   const advanced: Array<{ obligationId: string; from: State; to: State }> = [];
   const move = (to: State): void => {
@@ -174,13 +185,13 @@ async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Reso
  */
 export async function drainUntilQuiet(
   deps: WorkerDeps,
-  opts: { now: number; maxPasses?: number; stepMs?: number },
+  opts: { now: number; maxPasses?: number; stepMs?: number; lookaheadMs?: number },
 ): Promise<DrainResult[]> {
   const passes: DrainResult[] = [];
   const step = opts.stepMs ?? RETRY_MS;
   let now = opts.now;
   for (let i = 0; i < (opts.maxPasses ?? 5); i++) {
-    const r = await drainOnce(deps, { now });
+    const r = await drainOnce(deps, { now, lookaheadMs: opts.lookaheadMs });
     passes.push(r);
     if (r.claimed === 0) break;
     now += step;

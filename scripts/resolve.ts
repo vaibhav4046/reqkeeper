@@ -84,7 +84,9 @@ async function sourceSaysPaid(requestId: string, txHash: string): Promise<boolea
 
 const results = await drainUntilQuiet(
   { store, provider: { receipt }, sourceSaysPaid },
-  { now: Date.now(), maxPasses: passes, stepMs: 0 },
+  // Run by hand, this is an operator asking, not a timer polling: look past the retry
+  // backoff rather than reporting "nothing moved" for work that is scheduled a moment out.
+  { now: Date.now(), maxPasses: passes, stepMs: 0, lookaheadMs: 60_000 },
 );
 
 const claimed = results.reduce((n, r) => n + r.claimed, 0);

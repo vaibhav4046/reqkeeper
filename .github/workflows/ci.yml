@@ -1,0 +1,33 @@
+# The three claims this repository makes, checked on every push.
+#
+# Types are erased at run time by --experimental-strip-types and never checked, so the
+# typecheck step is what makes the annotations in src/ mean anything. The harness step is
+# the scored artifact: it fails the build if any refusal stops refusing.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - run: npm ci
+
+      - name: typecheck
+        run: npm run typecheck
+
+      - name: unit tests
+        run: npm test
+
+      # No network, no credentials: deterministic fault injection against an in-memory
+      # provider that counts physical sends. Exits non-zero if a case stops behaving.
+      - name: refusal harness
+        run: npm run harness
