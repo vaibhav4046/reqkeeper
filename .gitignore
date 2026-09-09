@@ -8,3 +8,6 @@ web/frames/
 
 tools/invoice/node_modules/
 tools/invoice/pnpm-lock.yaml
+
+.vercel
+api/_gen/
