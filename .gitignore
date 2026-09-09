@@ -4,3 +4,7 @@ node_modules/
 *.db-*
 artifacts/private/
 web/frames/
+.data/
+
+tools/invoice/node_modules/
+tools/invoice/pnpm-lock.yaml

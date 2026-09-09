@@ -12,6 +12,7 @@
     "gate-a": "node --experimental-strip-types scripts/gate-a.ts",
     "harness": "node --experimental-strip-types scripts/harness.ts",
     "verify:onchain": "node --experimental-strip-types scripts/verify-onchain.ts",
-    "verify:seam": "node --experimental-strip-types scripts/verify-seam.ts"
+    "verify:seam": "node --experimental-strip-types scripts/verify-seam.ts",
+    "settle:live": "node --experimental-strip-types scripts/settle-live.ts"
   }
 }

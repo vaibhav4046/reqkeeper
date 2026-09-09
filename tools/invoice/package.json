@@ -1,0 +1,16 @@
+{
+  "name": "reqkeeper-invoice-tools",
+  "private": true,
+  "type": "module",
+  "description": "Creates a real Request invoice with no Client ID, via the public Sepolia gateway.",
+  "scripts": {
+    "create": "node create-invoice.mjs",
+    "check": "node check-paid.mjs"
+  },
+  "dependencies": {
+    "@requestnetwork/epk-signature": "0.15.0",
+    "@requestnetwork/payment-detection": "0.59.0",
+    "@requestnetwork/request-client.js": "0.64.0",
+    "ethers": "5.7.2"
+  }
+}

@@ -8,7 +8,10 @@ second payment.
 - **Integrated project:** [Request Network](https://request.network) — invoices on Ethereum Sepolia
 - **Execution:** KeeperHub direct execution (`/api/execute/contract-call`)
 - **Network:** Ethereum Sepolia (11155111). Testnet only, deliberately. Mainnet is disabled in code.
-- **Cost to run:** $0. No paid API, no card, no dependencies.
+- **Cost to run:** $0. No paid API, no card. `src/` and every `scripts/` entry have zero
+  dependencies; the one-time invoice-creation step in `tools/invoice/` uses the official
+  Request SDK, and is separate for exactly that reason.
+- **Credentials needed:** one. A KeeperHub API key. No Request Client ID — see below.
 
 ---
 
@@ -141,6 +144,7 @@ npm test                  # 128 unit tests
 npm run harness           # 24 refusal cases -> docs/refusals.json
 npm run verify:onchain    # reads Sepolia via public RPC, no credentials
 npm run verify:seam       # proves the calldata gate against the live API (needs the KeeperHub key)
+npm run settle:live       # settles one real Request obligation; run twice to see the refusal
 ```
 
 `verify:onchain` needs no wallet, no account and no API key. It independently confirms the
@@ -159,20 +163,63 @@ Worth running before anything else: a widely repeated answer online gives Reques
 ERC20FeeProxy as `0x370DE27f…`, which is actually the FAU **token**. Both are deployed. They
 are different contracts. This script tells you so.
 
-## Live on Sepolia
+## Live on Sepolia: one obligation, paid once
 
-Not a fixture. These executed through `POST /api/execute/contract-call` and were verified by
-reading the chain back, not by trusting the response:
+A real Request invoice, paid through KeeperHub by the same `settle()` function that produces
+the 24 refusals. `npm run settle:live` reproduces it, and running it **twice** is the point.
+
+```
+requestId        : 012072a1818e83b2f153aa232112c03d09147c02ca5be45c6d507a78d4d5e70576
+paymentReference : 0x0056dcf7fc0a464f
+obligationId     : 5928c34b56e16441eb52d407ed7f320216988d0d34c6f3bb5ae286d1fa6020f9
+```
+
+| Run | State | Refusal | Provider write | Tx |
+|---|---|---|---|---|
+| **1st** | `SETTLED` | — | `true` | [`0x90a4f848…`](https://sepolia.etherscan.io/tx/0x90a4f84864fa5c7c3b565d570135ab14f3358bff4da522239284f60c082612c2) |
+| **2nd** | `EXECUTION_OUTCOME_UNKNOWN` | `ALREADY_DISPATCHED` | **`false`** | *same hash, nothing sent* |
+
+> `step 0 of this plan was already dispatched at 1788922264 (execution 3s4xsrjwrt30wohqcwbfk);`
+> `checking that execution, no new payment submitted`
+
+The second run is the entire product. Same obligation, same approved plan, a fresh process, and
+no second payment — enforced by `UNIQUE(obligation_id)` and the `firstSendAt` guard in the local
+store, which outlive the provider's 24-hour idempotency window rather than depending on it.
+
+**The approval sentence a human actually signed off**, derived from the same values as the
+calldata at the same moment:
+
+> Pay 1 FAU to 0xc43d766cb7c48b9b198db87441b97c09e81717a1 on chain 11155111, plus 0 fee.
+> Total leaving the wallet: 1 FAU (1000000000000000000 base units).
+
+**Three independent confirmations**, because a provider's status string is never evidence:
+
+| Source | Says |
+|---|---|
+| `eth_getTransactionReceipt` | `success`, `verified=true`, `gasUsed=91694` |
+| ERC20FeeProxy event log | reference `0x0056dcf7fc0a464f` for exactly `1000000000000000000` |
+| Request Network's own detection | `balance: 1000000000000000000`, 1 payment event, `hasBeenPaid: true` |
+
+Setup executions, also live and also verified by reading the chain:
 
 | What | Transaction | Verified by |
 |---|---|---|
-| mint 100 FAU to the payer | [`0x5b722787…`](https://sepolia.etherscan.io/tx/0x5b722787ce6523d7d0d7094a4d82159809c06a395bf990bce90b107712040a74) | `Transfer(0x0 → payer, 100e18)` log, block 11664587 |
+| mint 100 FAU to the payer | [`0x5b722787…`](https://sepolia.etherscan.io/tx/0x5b722787ce6523d7d0d7094a4d82159809c06a395bf990bce90b107712040a74) | `Transfer(0x0 → payer, 100e18)`, block 11664587 |
 | approve ERC20FeeProxy | [`0x0e6b631a…`](https://sepolia.etherscan.io/tx/0x0e6b631ad0071e33c1d94601cbbafa4f0f0ac5d64926f84043c71bf148b88d61) | `allowance(payer → proxy)` reads `100e18` |
 
 Payer: [`0x027D54A6…`](https://sepolia.etherscan.io/address/0x027D54A692e0e80173141777BdB847c1726FA1F3)
-— KeeperHub's own Turnkey wallet, not a browser wallet. The remaining leg is the invoice.
+— KeeperHub's own Turnkey wallet, not a browser wallet.
+
+### No Request Client ID was used
+
+Request's v2 REST API requires one, and it is only obtainable by hand: sign into the dashboard
+with a wallet, then generate it *inside a payment destination's settings*. The protocol itself
+requires nothing — `sepolia.gateway.request.network` accepts `persistTransaction` unauthenticated
+— so [`tools/invoice/`](tools/invoice/) creates the invoice there, signing with a burner keypair
+generated on the spot. The whole demo runs on **one** credential: the KeeperHub API key.
 
 ## The refusal table
+
 
 Generated by `npm run harness`, written to [`docs/refusals.json`](docs/refusals.json).
 24 cases, 24 as specified, **16 of 22 refusals happen before any provider write**.
@@ -264,24 +311,24 @@ These are published because they are true, and because vague claims poison the c
 
 Stated plainly rather than left for a reviewer to discover.
 
-- **Gate A is partly run.** Steps 1, 2, 6 and 7 are live: real executions land on Sepolia and
-  their receipts are read back independently. Steps 4, 5 and 8 need a Request Client ID, which
-  is only obtainable from a payment destination's settings in the dashboard after a SIWE
-  sign-in. Until that exists there is no invoice to pay, so no harness row is labelled live.
+- **The 24 harness rows are still `FIXTURE`.** One obligation has settled live and refused a
+  live replay, but the other 23 scenarios — a lapsed replay window, a cached provider failure,
+  a rival plan holding the obligation — are reproduced against `FixtureProvider`, because
+  provoking them for real would mean deliberately paying twice. The refusal *logic* is the same
+  code in both cases; the fault injection is not.
+- **The live settlement used a burner payee.** The invoice's payee is a keypair generated by
+  `tools/invoice/`, not a counterparty. That is what makes it reproducible by a stranger, but it
+  does mean no third party has confirmed receipt.
 - **`Idempotency-Key` is accepted by KeeperHub but its behaviour is unconfirmed.** The header is
   sent on every execution and the API does not reject it. Whether it actually deduplicates
   cannot be tested without deliberately paying twice, so no claim is made about it here — which
   is the entire reason duplicate protection lives in this codebase's `UNIQUE(obligation_id)` and
   `firstSendAt` guard rather than depending on the provider's.
-- **Two of the three settlement legs are live; the invoice leg is not.** Executions land
-  (`mint`, `approve` — real Sepolia hashes below) and receipts are read independently. Creating
-  the Request invoice still needs a Client ID, so no end-to-end `SETTLED` has occurred and every
-  row in `docs/refusals.json` remains tagged `FIXTURE`.
 - No frontend yet. No demo video yet.
 - The bounty PR for #1959/#1929 is not opened.
 
-Everything claimed above is reproducible by running the three commands. Everything not claimed
-is in this section.
+Everything claimed above is reproducible by running the commands in "Run it". Everything not
+claimed is in this section.
 
 ## Architecture
 
