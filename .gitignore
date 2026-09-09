@@ -11,3 +11,4 @@ tools/invoice/pnpm-lock.yaml
 
 .vercel
 api/_gen/
+tools/video/.frames/
