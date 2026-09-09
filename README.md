@@ -44,14 +44,58 @@ sufficient.
 
 ---
 
+## The approved bytes are not the signed bytes
+
+This was found by probing the live API, and it is the sharpest edge in the composition.
+
+Request Network hands you **finished calldata**. `GET /request/{id}/pay` returns
+`{to, data, value}`, fully encoded, payment reference embedded.
+
+KeeperHub will not send finished calldata. Probed on 2026-09-09, with the refusals printed
+verbatim by `npm run verify:seam`:
+
+```
+contract-call, data      -> HTTP 400 {"error":"Missing required field","field":"functionName"}
+contract-call, callData   -> HTTP 400 {"error":"Missing required field","field":"functionName"}
+raw route                 -> HTTP 400 {"error":"Invalid action type: raw"}
+transaction route         -> HTTP 400 {"error":"Invalid action type: transaction"}
+```
+
+The only write surface is `(contractAddress, functionName, functionArgs)`, and KeeperHub
+re-encodes it against an ABI **it** resolves, using ethers 6.17.0. So between "the human
+approved these bytes" and "the signer signed these bytes" there is a decode step, a transport,
+and a re-encode performed by the execution platform on an ABI nobody in the approval loop saw.
+
+That is not a hypothetical. It is the ordinary path for paying a Request invoice through
+KeeperHub, and it is invisible unless you go looking.
+
+**What ReqKeeper does about it.** [`src/abi.ts`](src/abi.ts) decodes the approved calldata and
+re-encodes it locally; the arguments are dispatched only if the re-encode is byte-identical to
+what was approved. Anything else refuses, non-retryably, before a single network call:
+
+| Smuggled variant | Refusal |
+|---|---|
+| trailing bytes appended after the arguments | `calldata_mismatch` |
+| a selector that is not on the allowlist | `selector_not_allowed` |
+| dirty high bytes packed above an address | `calldata_mismatch` |
+
+The codec is deliberately tiny and refuses every type it does not implement, because a codec
+that silently mis-encodes an argument is worse than none — it fails the byte-comparison that
+was supposed to be the safety net. Its correctness is not self-asserted: `npm test` checks it
+against **KeeperHub's own encoder output**, captured byte-for-byte from a live simulate's
+revert payload. Two independent implementations, same 260 bytes.
+
+---
+
 ## What another team should look at first
 
-Five files, in the order that explains the design:
+Six files, in the order that explains the design:
 
 | File | Why it matters |
 |---|---|
 | [`src/identity.ts`](src/identity.ts) | The three identities: obligation, plan, step. All derived from persisted state — no clock, no randomness, no generated text ever enters a key. |
 | [`src/money.ts`](src/money.ts) | Exact fixed-point money. Throws rather than truncating. |
+| [`src/abi.ts`](src/abi.ts) | The calldata integrity gate. Verified against ethers 6.17.0. |
 | [`src/settle.ts`](src/settle.ts) | The dispatch protocol. **The order of checks is the safety property.** |
 | [`src/store.ts`](src/store.ts) | Transactional outbox, job leases, fencing generations. |
 | [`scripts/harness.ts`](scripts/harness.ts) | The refusal table. This is the deliverable. |
@@ -61,9 +105,10 @@ Five files, in the order that explains the design:
 Needs Node 24+. Nothing else — no `npm install`, no `node_modules`.
 
 ```bash
-npm test                  # 105 unit tests
+npm test                  # 128 unit tests
 npm run harness           # 24 refusal cases -> docs/refusals.json
 npm run verify:onchain    # reads Sepolia via public RPC, no credentials
+npm run verify:seam       # proves the calldata gate against the live API (needs the KeeperHub key)
 ```
 
 `verify:onchain` needs no wallet, no account and no API key. It independently confirms the
@@ -178,9 +223,17 @@ Stated plainly rather than left for a reviewer to discover.
   is only obtainable by signing a SIWE message in the dashboard. Every row in
   `docs/refusals.json` is therefore tagged `FIXTURE`. No row is labelled live, and none will
   be until a real Sepolia hash exists.
+- **The live provider's executed path is unverified.** [`src/keeperhub.ts`](src/keeperhub.ts) is
+  written and its *simulated* path is confirmed against the real API — the calldata gate, the
+  argument encoding, and the chain round-trip all run in `npm run verify:seam`. But no call has
+  ever returned an execution response, because the payer wallet holds no gas, so
+  `#toExecuteResult` maps a shape nobody has observed. It is written to fail closed: an
+  unrecognised status becomes `pending`, never `completed`.
+- **`Idempotency-Key` is accepted by KeeperHub but its behaviour is unconfirmed.** The header is
+  sent and the API does not reject it. Whether it actually deduplicates cannot be tested without
+  spending gas twice, so no claim is made about it here.
 - No frontend yet. No demo video yet.
 - The bounty PR for #1959/#1929 is not opened.
-- `src/provider.ts` has a `FixtureProvider` only. The live provider is not written.
 
 Everything claimed above is reproducible by running the three commands. Everything not claimed
 is in this section.
@@ -190,13 +243,15 @@ is in this section.
 ```
 src/money.ts       exact fixed-point money, uint256-safe
 src/keccak.ts      Keccak-256 (Node ships sha3-256, which is NOT this)
+src/abi.ts         minimal ABI codec + the calldata integrity gate
 src/identity.ts    obligation / plan / step identities, canonical JSON
 src/policy.ts      deterministic gate -> 9 refusal codes
 src/machine.ts     24 states, one transition table
 src/store.ts       node:sqlite, 6 tables, outbox, leases, fencing
 src/provider.ts    execution boundary + fault injection
+src/keeperhub.ts   the live provider; independent receipt reads
 src/settle.ts      the dispatch protocol
-scripts/           harness, on-chain verification
+scripts/           harness, on-chain verification, seam verification
 docs/MASTER.md     full build spec, evidence status, source register
 ```
 
