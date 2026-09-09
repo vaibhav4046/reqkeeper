@@ -88,6 +88,54 @@ Every layer says it is someone else's problem:
 
 KeeperHub owns reliability *within* a run. Nothing owns obligation identity *across* runs.
 
+### Prior art, and the honest delta
+
+Neither gate is novel. MetaMask's Delegation Framework ships both on-chain: `IdEnforcer.sol`
+keeps a BitMap of used ids and reverts `require(!getIsUsed(...), "IdEnforcer:id-already-used")`;
+`ExactCalldataEnforcer.sol` reverts unless `keccak256(termsCallData_) == keccak256(callData_)`.
+Both require the payer to be an ERC-7710 delegator smart account.
+
+**The delta:** this payer is a KeeperHub Turnkey EOA executing through a relayer/forwarder. No
+delegator account exists to attach a caveat to, and there is no per-obligation on-chain
+provisioning transaction to attach it in — so both enforcers are unavailable and both gates are
+rebuilt off-chain in front of dispatch. Weaker, and therefore has to be reproducible. Say this in
+the README rather than pretending the framework does not exist.
+
+"Approved bytes are not signed bytes" is likewise named prior art: WYSIWYS (EF clear-signing post,
+May 2026), ERC-7730, arXiv 2606.02668 for the agent approval channel, Checkmarx
+"Lies-in-the-Loop" for the exploit, `experimental_toolApprovalSecret` in the Vercel AI SDK for a
+shipped fix. **What is not covered by any of them:** clear signing assumes the human reads the
+fields correctly and the *display* is under attack. Here the encoder is downstream of the display
+— KeeperHub re-encodes server-side from `(contractAddress, functionName, functionArgs)` — so
+nothing the human saw is what gets signed. That is the contribution. OWASP LLM06 never mentions
+approval-versus-execution divergence, and the agentic threat list dropped the human channel (T10)
+as an HCI/process concern rather than an agent-logic one.
+
+KeeperHub published the thesis itself in March 2026 — signers "saw a routine transfer", actually
+signed a `delegatecall` — and prescribed **monitoring**. An alert is a race; a byte comparison
+before dispatch is not.
+
+### Duplicates that actually cost money
+
+Bug trackers show the mechanism; these show the loss. Lead the README with these.
+
+| Case | Loss |
+|---|---|
+| ICON Network, 27 Aug 2026 | 2 signed withdrawal messages replayed 1,492 times (1,490 succeeded), 119,866,000 ICX released. Verbatim: "the uniqueness check (the guard meant to stop a message from being processed twice) only validated the high bits of the serial number." |
+| City of Richmond auditor, 11 May 2026 | 50 duplicates, $5,759,563.64; largest a single $5,092,722.08 wire processed twice; three voided duplicates auto-reissued the same day. |
+| UK Cabinet Office NFI 2022-24 | 819 duplicate payments worth £11m. |
+
+The 24-hour ceiling is an industry pattern, not a KeeperHub bug: Stripe's own docs say keys "may be
+pruned after 24 hours" and "We generate a new request if a key is reused after the original is
+pruned."
+
+**Market claim, inverted.** There is no public case of an AI agent making a duplicate payment, and
+the README must not imply one. The honest claim is that agents are kept out of accounts payable
+*because* nothing at this seam proves exactly-once: PwC finds 20% of executives would trust agents
+with financial transactions, and on the Finch benchmark GPT-5.1 Pro passes 38.4% of finance
+workflows. (The Lobstar Wilde $441,780 incident is a **decimals** error, not a duplicate — see the
+DECIMALS HAZARD note in §9. Never cite it as duplicate evidence.)
+
 ### Why Request Network specifically
 
 **The invoice is the idempotency key.** Every Request invoice carries a canonical request ID and
@@ -805,3 +853,14 @@ not a claim that upstream docs supply a solution.
 | S20 | Scrolljacking usability findings | `nngroup.com/articles/scrolljacking-101` |
 | S21 | HyperFrames render formats incl. `png-sequence` | `~/.claude/skills/hyperframes-cli/references/preview-render.md` |
 | S22 | HyperFrames three adapter, `hf-seek`, duration requirement | `~/.claude/skills/hyperframes-animation/adapters/three.md` |
+| S23 | MetaMask `IdEnforcer.sol` / `ExactCalldataEnforcer.sol` — the on-chain rival | `github.com/MetaMask/delegation-framework/tree/main/src/enforcers` |
+| S24 | Caveat enforcers require an ERC-7710 delegator smart account | `docs.metamask.io/delegation-toolkit/concepts/delegation/caveat-enforcers/` |
+| S25 | KeeperHub prescribes monitoring for the Bybit `delegatecall` class | `keeperhub.com/blog/003-bybit-attack-caught-by-wrong-people` |
+| S26 | ICON replay: broken uniqueness check, 1,492 replays, 119,866,000 ICX | `icon.foundation/blog/2026/icon-network-replay-exploit-post-mortem` |
+| S27 | City of Richmond: 50 duplicates, $5,759,563.64 | `rva.gov/sites/default/files/2026-05/OCA 2026-09 Continuous Monitoring - Duplicate Payments 5.11.26.pdf` |
+| S28 | UK NFI 2022-24: 819 duplicates, £11m | `gov.uk/government/publications/national-fraud-initiative-reports/national-fraud-initiative-report-2022-2024-html` |
+| S29 | Idempotency keys "may be pruned after 24 hours" — industry pattern | `docs.stripe.com/api/idempotent_requests` |
+| S30 | WYSIWYS / clear signing; "billions in user losses, including the Bybit hack" | `blog.ethereum.org/2026/05/12/clear-signing-announcement` · ERC-7730 |
+| S31 | Consent integrity bound "to the exact action that executes" | arXiv 2606.02668 · Checkmarx "Lies-in-the-Loop" · `ai-sdk.dev/docs/agents/tool-approvals` |
+| S32 | 20% of executives would trust agents with financial transactions | `pwc.com/us/en/tech-effect/ai-analytics/ai-agent-survey.html` |
+| S33 | Finch benchmark: GPT-5.1 Pro passes 38.4% of finance workflows | arXiv 2512.13168 |
