@@ -19,6 +19,7 @@
     "approve": "node --experimental-strip-types scripts/approve.ts",
     "demo": "node --experimental-strip-types scripts/demo.ts",
     "demo:video": "node --experimental-strip-types scripts/demo.ts && node tools/video/render.mjs docs/demo-transcript.txt docs/demo.mp4",
+    "build": "node tools/web/build.mjs && tsc -p tsconfig.api.json",
     "build:web": "node tools/web/build.mjs",
     "harness:live": "node --experimental-strip-types scripts/live-harness.ts",
     "verify:mcp": "node --experimental-strip-types scripts/verify-mcp.ts",

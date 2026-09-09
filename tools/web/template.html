@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>ReqKeeper Console</title>
 <script id="reqkeeper-data" type="application/json">__DATA__</script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=JetBrains+Mono:wght@400;500;700&display=swap">
@@ -406,7 +407,10 @@
         ctx.fillRect(p.x, p.y, 1, 1);
       }
       if (revealed < order.length) {
-        const p = order[Math.min(revealed, order.length - 1)];
+        // The first rAF timestamp can predate t0, making `revealed` negative; an
+        // unclamped negative index reads undefined here and the throw kills the
+        // whole animation loop, leaving the mark permanently blank.
+        const p = order[Math.max(0, Math.min(revealed, order.length - 1))];
         ctx.fillStyle = "#DCEAE6";
         ctx.fillRect(p.x, p.y, 1, 1); // the cursor, riding the leading edge
       }
