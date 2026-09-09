@@ -79,7 +79,11 @@ async function sourceSaysPaid(requestId: string, txHash: string): Promise<boolea
   const reference = obligation?.paymentReference;
   if (!reference) return false;
   const sighting = await findPaymentByReference(reference, { lookbackBlocks: 300_000, rpcUrl });
-  return sighting.found === true && sighting.txHash?.toLowerCase() === txHash.toLowerCase();
+  return (
+    sighting.found === true &&
+    sighting.txHash?.toLowerCase() === txHash.toLowerCase() &&
+    (obligation.invoiceBaseUnits === null || sighting.amount === obligation.invoiceBaseUnits)
+  );
 }
 
 const results = await drainUntilQuiet(

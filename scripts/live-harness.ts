@@ -360,6 +360,7 @@ if (spare) {
       {
         namespace: ns,
         requestId: spare.requestId,
+        paymentReference: spare.paymentReference,
         obligationId: oid,
         facts: sourceFacts,
         steps,

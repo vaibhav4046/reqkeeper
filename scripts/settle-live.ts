@@ -149,6 +149,7 @@ const outcome = await settleObligation(
   {
     namespace: NS,
     requestId: REQUEST_ID,
+    paymentReference: REFERENCE,
     obligationId: oid,
     facts,
     steps,

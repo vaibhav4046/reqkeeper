@@ -15,6 +15,7 @@
  */
 
 import { DatabaseSync } from "node:sqlite";
+import { canonicalReference } from "./identity.ts";
 import { ReplanError, assertTransition, canReplan, type State } from "./machine.ts";
 
 export type JobKind = "DISPATCH_STEP" | "OBSERVE_EXECUTION" | "RECONCILE_SOURCE";
@@ -153,11 +154,36 @@ function migrate(db: DatabaseSync): void {
     // is derived from the invoice by Request and is what the chain actually carries.
     db.exec("ALTER TABLE obligations ADD COLUMN payment_reference TEXT");
   }
-  // One payment reference is one debt, whatever the caller called it.
+  // Existing rows predate canonicalisation, so fold them to one spelling before the unique
+  // index is asked to hold. Rows that are not hex are left alone rather than mangled.
   db.exec(
-    "CREATE UNIQUE INDEX IF NOT EXISTS obligations_reference ON obligations (payment_reference) " +
-      "WHERE payment_reference IS NOT NULL",
+    "UPDATE obligations SET payment_reference = lower(payment_reference) " +
+      "WHERE payment_reference IS NOT NULL AND payment_reference GLOB '0x*'",
   );
+
+  // One payment reference is one debt, whatever the caller called it.
+  try {
+    db.exec(
+      "CREATE UNIQUE INDEX IF NOT EXISTS obligations_reference ON obligations (payment_reference) " +
+        "WHERE payment_reference IS NOT NULL",
+    );
+  } catch (e) {
+    // The index cannot be built because rows already violate it — which means this database
+    // already holds two obligations for one debt. That is the exact condition this project
+    // exists to prevent, so it is reported as what it is instead of as a SQL error.
+    const dupes = db
+      .prepare(
+        "SELECT payment_reference AS ref, COUNT(*) AS n FROM obligations " +
+          "WHERE payment_reference IS NOT NULL GROUP BY payment_reference HAVING n > 1",
+      )
+      .all() as Array<{ ref: string; n: number }>;
+    throw new Error(
+      "this database already contains more than one obligation for the same payment reference, " +
+        "so the uniqueness constraint cannot be applied: " +
+        dupes.map((d) => `${d.ref} x${d.n}`).join(", ") +
+        ` (${(e as Error).message})`,
+    );
+  }
 }
 
 function staleFence(jobId: number, generation: number): Error {
@@ -247,7 +273,9 @@ export class Store {
         "IMPORTED",
         o.sourceFactsJson,
         o.sourceFactsHash,
-        o.paymentReference ?? null,
+        o.paymentReference === undefined || o.paymentReference === null
+          ? null
+          : canonicalReference(o.paymentReference),
         now,
         now,
       );
@@ -281,7 +309,7 @@ export class Store {
       .prepare(
         "SELECT obligation_id AS obligationId, state FROM obligations WHERE payment_reference = ?",
       )
-      .get(paymentReference) as { obligationId: string; state: string } | undefined;
+      .get(canonicalReference(paymentReference)) as { obligationId: string; state: string } | undefined;
   }
 
   /**
@@ -330,19 +358,46 @@ export class Store {
     });
   }
 
-  /** Everything a resolver needs to finish a settlement it did not start. */
+  /**
+   * Everything a resolver needs to finish a settlement it did not start.
+   *
+   * The invoice amount comes along because reconciliation has to check it. A resolver that
+   * only matches the reference and the transaction hash will accept a payment of the wrong
+   * size as proof, which is the same class of mistake as accepting another transaction.
+   */
   obligationForRecovery(obligationId: string):
-    | { obligationId: string; requestId: string; state: State; paymentReference: string | null }
+    | {
+        obligationId: string;
+        requestId: string;
+        state: State;
+        paymentReference: string | null;
+        invoiceBaseUnits: string | null;
+      }
     | undefined {
-    return this.#db
+    const row = this.#db
       .prepare(
         `SELECT obligation_id AS obligationId, request_id AS requestId, state,
-                payment_reference AS paymentReference
+                payment_reference AS paymentReference, source_facts_json AS factsJson
            FROM obligations WHERE obligation_id = ?`,
       )
       .get(obligationId) as
-      | { obligationId: string; requestId: string; state: State; paymentReference: string | null }
+      | { obligationId: string; requestId: string; state: State; paymentReference: string | null; factsJson: string }
       | undefined;
+    if (!row) return undefined;
+    let invoiceBaseUnits: string | null = null;
+    try {
+      const parsed = JSON.parse(row.factsJson) as { invoiceBaseUnits?: string };
+      invoiceBaseUnits = parsed.invoiceBaseUnits ?? null;
+    } catch {
+      invoiceBaseUnits = null;
+    }
+    return {
+      obligationId: row.obligationId,
+      requestId: row.requestId,
+      state: row.state,
+      paymentReference: row.paymentReference,
+      invoiceBaseUnits,
+    };
   }
 
   /**

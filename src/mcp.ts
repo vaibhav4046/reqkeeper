@@ -225,7 +225,12 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
               rpcUrl: ctx.rpcUrl,
               lookbackBlocks: 300_000,
             });
-            return seen.found && seen.txHash?.toLowerCase() === txHash.toLowerCase();
+            // Same three questions settle asks: our reference, our transaction, our amount.
+            return (
+              seen.found &&
+              seen.txHash?.toLowerCase() === txHash.toLowerCase() &&
+              (row.invoiceBaseUnits === null || seen.amount === row.invoiceBaseUnits)
+            );
           },
         },
         // An agent asking to resolve is not a timer, so it does not wait out the retry

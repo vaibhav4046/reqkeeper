@@ -19,8 +19,13 @@ export interface SettleInput {
   /**
    * The invoice's payment reference. This, not the request id, is what the chain carries and
    * what makes two proposals the same debt.
+   *
+   * Required. It used to be optional, and the live settlement script did not pass it — so on
+   * the one path that moved real money the partial UNIQUE index (`WHERE payment_reference IS
+   * NOT NULL`) never applied and there was no duplicate defence at all. An optional identity
+   * is not an identity.
    */
-  readonly paymentReference?: string;
+  readonly paymentReference: string;
   readonly obligationId: string;
   readonly facts: SourceFacts;
   readonly steps: ReadonlyArray<{ kind: string; to: string; data: string; value: string }>;
@@ -71,6 +76,15 @@ function calldataDisagreesWithFacts(
 ): string | null {
   const eq = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
+  // Section 7 dispatches `steps[steps.length - 1]` and nothing else. A plan whose last step is
+  // an allowance therefore reports a settled invoice while the payment was never sent, and an
+  // empty plan reserves the obligation forever having authorised nothing. Both are refused
+  // here rather than left to be discovered by a payee who was not paid.
+  if (steps.length === 0) {
+    return "this plan has no steps: approving it would authorise nothing and dispatch nothing";
+  }
+  const names: string[] = [];
+
   for (const [i, step] of steps.entries()) {
     let call;
     try {
@@ -78,6 +92,8 @@ function calldataDisagreesWithFacts(
     } catch (e) {
       return `step ${i}: ${(e as Error).message}`;
     }
+
+    names.push(call.functionName);
 
     if (call.functionName === "transferFromWithReferenceAndFee") {
       const [token, payee, amount, reference, fee, feeRecipient] = call.args;
@@ -102,6 +118,14 @@ function calldataDisagreesWithFacts(
     }
 
     return `step ${i} calls ${call.functionName}, which no invoice authorises`;
+  }
+
+  const last = names[names.length - 1];
+  if (last !== "transferFromWithReferenceAndFee") {
+    return `the last step of this plan is ${last}, but only the last step is dispatched; the payment would never be sent`;
+  }
+  if (names.filter((n) => n === "transferFromWithReferenceAndFee").length > 1) {
+    return "this plan carries more than one payment; one obligation is one payment";
   }
   return null;
 }
@@ -167,7 +191,7 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
   // The request id is free text supplied by the caller. Two spellings of one invoice used to
   // produce two obligations, two approvals and two sends of the same payment. The reference
   // is derived from the invoice by Request, so it is the identity that actually binds.
-  if (input.paymentReference) {
+  {
     const holder = store.obligationForReference(input.paymentReference);
     if (holder && holder.obligationId !== input.obligationId) {
       store.audit(input.obligationId, "system", "REFUSED", {

@@ -126,6 +126,7 @@ async function run(
       namespace: NS,
       requestId,
       obligationId: oid,
+      paymentReference: REFERENCE,
       facts: cfg.facts,
       steps: cfg.steps ?? stepsFor(cfg.facts),
       approval: "approval" in cfg ? cfg.approval : APPROVED,
@@ -211,7 +212,7 @@ await run("provider rate limits the preflight", "rate_limited", () => ({ facts: 
   const requestId = "req-replay";
   const oid = obligationId(NS, requestId);
   const deps = { store, provider, policy, sourceSaysPaid: async () => true };
-  const input = { namespace: NS, requestId, obligationId: oid, facts: facts(), steps: stepsFor(facts()), approval: APPROVED, now: 1_000_000 };
+  const input = { namespace: NS, requestId, paymentReference: REFERENCE, obligationId: oid, facts: facts(), steps: stepsFor(facts()), approval: APPROVED, now: 1_000_000 };
 
   const first = await settleObligation(deps, input);
   const sendsAfterFirst = provider.totalSends();
@@ -247,7 +248,7 @@ await run("provider rate limits the preflight", "rate_limited", () => ({ facts: 
   const requestId = "req-inttl";
   const oid = obligationId(NS, requestId);
   const deps = { store, provider, policy, sourceSaysPaid: async () => true };
-  const input = { namespace: NS, requestId, obligationId: oid, facts: facts(), steps: stepsFor(facts()), approval: APPROVED, now: 2_000_000 };
+  const input = { namespace: NS, requestId, paymentReference: REFERENCE, obligationId: oid, facts: facts(), steps: stepsFor(facts()), approval: APPROVED, now: 2_000_000 };
 
   await settleObligation(deps, input);
   const sendsAfterFirst = provider.totalSends();
@@ -290,7 +291,7 @@ for (const [label, advanceMs, want] of [
   const oid = obligationId(NS, requestId);
   // The chain never confirms, so the first call stops short of SETTLED.
   const deps = { store, provider, policy, sourceSaysPaid: async () => false };
-  const input = { namespace: NS, requestId, obligationId: oid, facts: facts(), steps: stepsFor(facts()), approval: APPROVED, now: 3_000_000 };
+  const input = { namespace: NS, requestId, paymentReference: REFERENCE, obligationId: oid, facts: facts(), steps: stepsFor(facts()), approval: APPROVED, now: 3_000_000 };
 
   await settleObligation(deps, input);
   const sendsAfterFirst = provider.totalSends();

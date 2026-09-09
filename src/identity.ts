@@ -133,3 +133,21 @@ export function idempotencyKey(
   }
   return sha256Hex(`reqkeeper.step.v1:${obligationIdHex}:${planHashHex}:${stepIndex}`);
 }
+
+/**
+ * The one spelling of a payment reference.
+ *
+ * `0xAA` and `0xaa` are the same eight bytes on chain, but SQLite compares TEXT byte by byte,
+ * so a UNIQUE index over the raw string treats them as two different debts — and an attacker,
+ * or an agent that simply upper-cased a hex string, gets a second payment out of it. Case is
+ * a rendering choice, not identity, so it is removed before the value is ever stored or
+ * looked up. A reference that is not hex is refused outright rather than normalised, because
+ * a value this load-bearing must not be guessed at.
+ */
+export function canonicalReference(reference: string): string {
+  const trimmed = String(reference).trim();
+  if (!/^0x[0-9a-fA-F]+$/.test(trimmed)) {
+    throw new Error(`payment reference must be 0x-prefixed hex, got ${JSON.stringify(reference)}`);
+  }
+  return trimmed.toLowerCase();
+}
