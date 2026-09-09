@@ -204,8 +204,11 @@ say(`${"─".repeat(74)}`);
 say();
 
 // The renderer reads this, so the video is generated from the run rather than typed.
-if (process.env.DEMO_TRANSCRIPT) {
+// Written unconditionally rather than behind an env var, because an env-var prefix in an
+// npm script (`FOO=bar node ...`) is not portable to Windows cmd, which is what npm uses here.
+{
   const { writeFileSync } = await import("node:fs");
-  writeFileSync(process.env.DEMO_TRANSCRIPT, out.join("\n"), "utf8");
-  console.error(`\ntranscript written to ${process.env.DEMO_TRANSCRIPT}`);
+  const target = process.env.DEMO_TRANSCRIPT ?? "docs/demo-transcript.txt";
+  writeFileSync(target, out.join("\n"), "utf8");
+  console.error(`\ntranscript written to ${target}`);
 }
