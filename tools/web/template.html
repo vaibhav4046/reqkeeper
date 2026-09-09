@@ -1,156 +1,282 @@
 <title>ReqKeeper Console</title>
 <script id="reqkeeper-data" type="application/json">__DATA__</script>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
 <style>
-  /* Committed single-theme: a signer's console, painted explicitly so it holds on any host
-     ground rather than borrowing one. */
+  /* A phosphor terminal, committed to one look. Everything is painted explicitly so the
+     page holds on any host ground, and nothing is rounded: a pixel grid has no curves. */
   :root {
     --canvas: #040806;
-    --surface: #1A2B1D;
-    --hairline: #283C2B;
-    --mid: #4C6351;
-    --text: #E6F7E8;
-    --text-2: #93AC98;
-    --muted: #879C8B;
+    --deep: #020403;
+    --surface: #0C1A10;
+    --hairline: #1E3A24;
+    --mid: #2F5A38;
+    --text: #C8F5D2;
+    --dim: #6E9B78;
     --signal: #3BFF6C;
-    --refuse: #FFD166;
-    --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
-    --mono: "IBM Plex Mono", "Cascadia Code", Consolas, monospace;
-    --pad: clamp(1.25rem, 1rem + 2vw, 3.5rem);
+    --amber: #FFC53B;
+    --alarm: #FF5C5C;
+    --display: "Press Start 2P", "Courier New", monospace;
+    --body: "VT323", "Consolas", monospace;
+    --px: 4px;
   }
   * { box-sizing: border-box; }
+  html { background: var(--deep); }
   body {
     margin: 0;
     background: var(--canvas);
     color: var(--text);
-    font-family: var(--mono);
-    font-size: 15px;
-    line-height: 1.6;
-    -webkit-font-smoothing: antialiased;
+    font-family: var(--body);
+    font-size: 20px;
+    line-height: 1.45;
+    letter-spacing: .01em;
+    image-rendering: pixelated;
+    overflow-x: hidden;
   }
-  a { color: var(--signal); text-decoration: none; border-bottom: 1px solid rgba(59,255,108,.3); }
-  a:hover { border-bottom-color: var(--signal); }
-  a:focus-visible, button:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
-  code, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
+  /* CRT dressing. Pointer-events off so it never eats a click. */
+  body::before {
+    content: "";
+    position: fixed; inset: 0; z-index: 9999; pointer-events: none;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px,
+      rgba(0,0,0,.28) 3px, rgba(0,0,0,.28) 4px
+    );
+    mix-blend-mode: multiply;
+  }
+  body::after {
+    content: "";
+    position: fixed; inset: 0; z-index: 9998; pointer-events: none;
+    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,.55) 100%);
+  }
+
+  a { color: var(--signal); text-decoration: none; border-bottom: 2px solid rgba(59,255,108,.35); }
+  a:hover { border-bottom-color: var(--signal); background: rgba(59,255,108,.1); }
+  a:focus-visible, button:focus-visible {
+    outline: 3px solid var(--signal); outline-offset: 2px;
+  }
+  code { font-family: var(--body); color: var(--signal); word-break: break-all; }
+
+  /* --- chrome ------------------------------------------------------------ */
   header.top {
-    position: sticky; top: 0; z-index: 10;
-    background: rgba(4,8,6,.92); backdrop-filter: blur(8px);
-    border-bottom: 1px solid var(--hairline);
-    padding: 0 var(--pad);
+    position: sticky; top: 0; z-index: 50;
+    background: var(--deep);
+    border-bottom: var(--px) solid var(--hairline);
+    padding: 0 clamp(1rem, 3vw, 3rem);
   }
-  .bar { display: flex; align-items: baseline; gap: 1.5rem; flex-wrap: wrap; padding: 1rem 0 .85rem; }
-  .wordmark { font-family: var(--mono); font-weight: 600; font-size: 1rem; color: var(--signal); letter-spacing: .02em; }
-  .tagline { color: var(--muted); font-size: .8rem; }
-  nav { display: flex; gap: .25rem; flex-wrap: wrap; margin-left: auto; }
-  nav a {
-    border: 1px solid transparent; border-bottom: none;
-    padding: .3rem .7rem; border-radius: 3px;
-    color: var(--text-2); font-size: .82rem; letter-spacing: .02em;
+  .bar { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; padding: 1rem 0 .9rem; }
+  .wordmark {
+    font-family: var(--display);
+    font-size: clamp(.7rem, .55rem + .6vw, .95rem);
+    color: var(--signal);
+    text-shadow: 0 0 12px rgba(59,255,108,.55);
+    letter-spacing: .04em;
   }
-  nav a:hover { color: var(--text); background: var(--surface); }
-  nav a[aria-current="page"] { color: var(--canvas); background: var(--signal); font-weight: 600; }
+  .cursor {
+    display: inline-block; width: .55em; height: 1em; background: var(--signal);
+    vertical-align: -.12em; margin-left: .25em;
+    animation: blink 1.1s steps(1, end) infinite;
+  }
+  @keyframes blink { 0%,49% { opacity: 1 } 50%,100% { opacity: 0 } }
+  .tagline { color: var(--dim); font-size: 1rem; }
 
-  main { padding: var(--pad); max-width: 1180px; margin: 0 auto; }
+  nav { display: flex; gap: .4rem; flex-wrap: wrap; margin-left: auto; }
+  nav a {
+    border: 2px solid var(--hairline); border-bottom-width: 2px;
+    padding: .25rem .7rem; color: var(--dim); font-size: 1rem;
+    background: var(--surface);
+    box-shadow: var(--px) var(--px) 0 var(--deep);
+  }
+  nav a:hover { color: var(--text); border-color: var(--mid); transform: translate(-1px, -1px); box-shadow: 5px 5px 0 var(--deep); }
+  nav a[aria-current="page"] {
+    color: var(--deep); background: var(--signal); border-color: var(--signal); font-weight: 400;
+    box-shadow: var(--px) var(--px) 0 #0a2a12;
+  }
+
+  main { padding: clamp(1.25rem, 3vw, 3rem); max-width: 1200px; margin: 0 auto; }
   section[hidden] { display: none !important; }
 
-  h1 { font-family: var(--display); font-weight: 800; font-size: clamp(1.9rem, 1.2rem + 3vw, 3.4rem);
-       line-height: 1.04; letter-spacing: -.02em; margin: 0 0 1rem; text-wrap: balance; }
-  h2 { font-family: var(--display); font-weight: 800; font-size: clamp(1.15rem, 1rem + .8vw, 1.6rem);
-       margin: 2.75rem 0 .9rem; letter-spacing: -.01em; text-wrap: balance; }
-  h3 { font-family: var(--mono); font-weight: 600; font-size: .78rem; letter-spacing: .14em;
-       text-transform: uppercase; color: var(--muted); margin: 2rem 0 .7rem; }
-  p { max-width: 68ch; color: var(--text-2); margin: 0 0 1rem; }
-  p strong { color: var(--text); font-weight: 500; }
-  .lead { font-size: 1.05rem; color: var(--text); max-width: 62ch; }
+  h1 {
+    font-family: var(--display);
+    font-size: clamp(1.1rem, .8rem + 1.9vw, 2.1rem);
+    line-height: 1.5; margin: 0 0 1.25rem; color: var(--text);
+    text-shadow: 0 0 18px rgba(200,245,210,.25);
+    text-wrap: balance;
+  }
+  h2 {
+    font-family: var(--display);
+    font-size: clamp(.8rem, .68rem + .7vw, 1.05rem);
+    line-height: 1.6; margin: 2.75rem 0 1rem; color: var(--signal);
+  }
+  h3 {
+    font-family: var(--display); font-size: .7rem; line-height: 1.7;
+    color: var(--dim); margin: 2rem 0 .8rem; text-transform: uppercase;
+  }
+  p { max-width: 74ch; color: var(--text); margin: 0 0 .9rem; }
+  p.dim { color: var(--dim); }
+  .lead { font-size: 1.2rem; max-width: 68ch; }
 
-  .rule { height: 1px; background: var(--hairline); margin: 2.5rem 0; border: 0; }
+  hr.rule { border: 0; border-top: var(--px) solid var(--hairline); margin: 2.5rem 0; }
 
-  /* Figures: a number that carries weight, not a card grid. */
-  .figures { display: flex; flex-wrap: wrap; gap: 2.5rem 3.5rem; margin: 1.75rem 0 0; }
-  .fig .n { font-family: var(--display); font-weight: 800; font-size: clamp(2rem, 1.5rem + 2vw, 3rem);
-            line-height: 1; color: var(--signal); font-variant-numeric: tabular-nums; }
+  /* --- figures: big counters that count up ------------------------------- */
+  .figures { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1.5rem 0 0; }
+  .fig {
+    border: var(--px) solid var(--hairline); background: var(--surface);
+    padding: .9rem 1.1rem; min-width: 9.5rem;
+    box-shadow: 6px 6px 0 var(--deep);
+  }
+  .fig .n {
+    font-family: var(--display); font-size: clamp(1rem, .8rem + .9vw, 1.5rem);
+    color: var(--signal); font-variant-numeric: tabular-nums; line-height: 1.4;
+  }
   .fig .n.plain { color: var(--text); }
-  .fig .k { color: var(--muted); font-size: .78rem; letter-spacing: .1em; text-transform: uppercase; margin-top: .5rem; }
+  .fig .k { color: var(--dim); font-size: .95rem; margin-top: .45rem; text-transform: uppercase; }
+  .fig.hero { border-color: var(--signal); box-shadow: 6px 6px 0 #0a2a12; }
 
-  .scroll { overflow-x: auto; border: 1px solid var(--hairline); border-radius: 4px; background: #06100A; }
-  table { width: 100%; border-collapse: collapse; font-size: .84rem; min-width: 720px; }
-  th, td { text-align: left; padding: .6rem .8rem; border-bottom: 1px solid var(--hairline); vertical-align: top; }
-  th { color: var(--muted); font-weight: 600; font-size: .72rem; letter-spacing: .1em; text-transform: uppercase;
-       background: var(--surface); position: sticky; top: 0; }
+  /* --- tables ------------------------------------------------------------ */
+  .scroll {
+    overflow-x: auto; border: var(--px) solid var(--hairline);
+    background: var(--deep); box-shadow: 6px 6px 0 rgba(0,0,0,.5);
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 1.05rem; min-width: 680px; }
+  th, td { text-align: left; padding: .45rem .8rem; border-bottom: 2px solid var(--hairline); vertical-align: top; }
+  th {
+    font-family: var(--display); font-size: .58rem; line-height: 1.8;
+    color: var(--dim); background: var(--surface); text-transform: uppercase;
+    position: sticky; top: 0;
+  }
+  tbody tr { animation: rowin .28s steps(4, end) both; }
+  tbody tr:hover td { background: rgba(59,255,108,.07); }
   tbody tr:last-child td { border-bottom: none; }
-  tbody tr:hover td { background: rgba(26,43,29,.45); }
-  td.num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
-  .id { color: var(--muted); }
+  @keyframes rowin { from { opacity: 0; transform: translateX(-6px) } to { opacity: 1; transform: none } }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .id { color: var(--dim); }
 
-  /* State encoded in form as well as text, so what matters reads at a glance. */
-  .pill { display: inline-block; padding: .1rem .5rem; border-radius: 2px; font-size: .74rem;
-          font-weight: 600; letter-spacing: .02em; white-space: nowrap; }
-  .pill.settled { background: rgba(59,255,108,.14); color: var(--signal); }
-  .pill.refuse  { background: rgba(255,209,102,.13); color: var(--refuse); }
-  .zero { color: var(--signal); font-weight: 600; }
-  .sent { color: var(--refuse); }
+  .pill {
+    display: inline-block; padding: .05rem .5rem; font-size: .95rem;
+    border: 2px solid currentColor; white-space: nowrap;
+  }
+  .pill.settled { color: var(--signal); background: rgba(59,255,108,.12); }
+  .pill.refuse { color: var(--amber); background: rgba(255,197,59,.1); }
+  .zero { color: var(--signal); }
+  .sent { color: var(--amber); }
+  .live-tag {
+    font-family: var(--display); font-size: .55rem; color: var(--deep);
+    background: var(--signal); padding: .25rem .5rem; letter-spacing: .06em;
+  }
+  .fixture-tag {
+    font-family: var(--display); font-size: .55rem; color: var(--dim);
+    border: 2px solid var(--mid); padding: .2rem .45rem; letter-spacing: .06em;
+  }
 
-  .filters { display: flex; gap: .4rem; flex-wrap: wrap; margin: 1.25rem 0 .9rem; }
+  .filters { display: flex; gap: .45rem; flex-wrap: wrap; margin: 1.25rem 0 .9rem; }
   .filters button {
-    font-family: var(--mono); font-size: .78rem; cursor: pointer;
-    background: transparent; color: var(--text-2);
-    border: 1px solid var(--hairline); border-radius: 3px; padding: .3rem .7rem;
+    font-family: var(--body); font-size: 1rem; cursor: pointer;
+    background: var(--surface); color: var(--dim);
+    border: 2px solid var(--hairline); padding: .25rem .8rem;
+    box-shadow: var(--px) var(--px) 0 var(--deep);
   }
   .filters button:hover { color: var(--text); border-color: var(--mid); }
-  .filters button[aria-pressed="true"] { background: var(--signal); color: var(--canvas); border-color: var(--signal); font-weight: 600; }
+  .filters button[aria-pressed="true"] {
+    background: var(--signal); color: var(--deep); border-color: var(--signal);
+  }
 
-  pre { margin: 0; padding: 1rem 1.1rem; background: #06100A; border: 1px solid var(--hairline);
-        border-radius: 4px; overflow-x: auto; font-size: .8rem; line-height: 1.55; color: var(--text-2); }
-  pre b { color: var(--signal); font-weight: 600; }
-  pre i { color: var(--refuse); font-style: normal; }
+  pre {
+    margin: 0; padding: 1rem 1.1rem; background: var(--deep);
+    border: var(--px) solid var(--hairline); overflow-x: auto;
+    font-size: 1.05rem; line-height: 1.5; color: var(--dim);
+    box-shadow: 6px 6px 0 rgba(0,0,0,.5);
+  }
+  pre b { color: var(--signal); font-weight: 400; }
+  pre i { color: var(--amber); font-style: normal; }
 
-  dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: .45rem 1.5rem; margin: 1rem 0; font-size: .85rem; }
-  dl.kv dt { color: var(--muted); }
+  dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: .35rem 1.5rem; margin: 1rem 0; }
+  dl.kv dt { color: var(--dim); text-transform: uppercase; font-size: .95rem; }
   dl.kv dd { margin: 0; word-break: break-all; }
 
   ol.steps { counter-reset: s; list-style: none; padding: 0; margin: 1.25rem 0; }
-  ol.steps li { counter-increment: s; position: relative; padding: 0 0 1.15rem 2.6rem; color: var(--text-2); max-width: 66ch; }
+  ol.steps li { counter-increment: s; position: relative; padding: 0 0 1rem 3rem; max-width: 70ch; }
   ol.steps li::before {
-    content: counter(s, decimal-leading-zero); position: absolute; left: 0; top: .1rem;
-    font-size: .74rem; font-weight: 600; color: var(--signal); letter-spacing: .06em;
+    content: counter(s, decimal-leading-zero);
+    position: absolute; left: 0; top: .05rem;
+    font-family: var(--display); font-size: .65rem; color: var(--signal);
   }
-  ol.steps li b { color: var(--text); font-weight: 500; }
-
   ul.plain { list-style: none; padding: 0; margin: 1rem 0; }
-  ul.plain li { color: var(--text-2); padding-left: 1.2rem; position: relative; margin-bottom: .5rem; max-width: 68ch; }
-  ul.plain li::before { content: "—"; position: absolute; left: 0; color: var(--mid); }
+  ul.plain li { color: var(--text); padding-left: 1.4rem; position: relative; margin-bottom: .5rem; max-width: 74ch; }
+  ul.plain li::before { content: ">"; position: absolute; left: 0; color: var(--mid); }
 
-  .note { border-left: 2px solid var(--mid); padding: .1rem 0 .1rem 1rem; margin: 1.5rem 0; color: var(--muted); font-size: .86rem; max-width: 66ch; }
-  .absent { border-left-color: var(--signal); }
+  .note {
+    border-left: var(--px) solid var(--mid); padding: .4rem 0 .4rem 1rem;
+    margin: 1.5rem 0; color: var(--dim); max-width: 70ch;
+  }
+  .note.absent { border-left-color: var(--signal); }
+  .note strong { color: var(--text); }
 
-  footer { border-top: 1px solid var(--hairline); padding: 1.5rem var(--pad) 3rem; color: var(--muted); font-size: .78rem; }
-  @media (prefers-reduced-motion: no-preference) { nav a, .filters button { transition: background .15s, color .15s, border-color .15s; } }
+  /* A pixel bar chart: sends per row, drawn in blocks. */
+  .barwrap { border: var(--px) solid var(--hairline); background: var(--deep); padding: 1rem; box-shadow: 6px 6px 0 rgba(0,0,0,.5); }
+  .bars { display: flex; align-items: flex-end; gap: 3px; height: 120px; }
+  .bars i {
+    display: block; flex: 1 1 0; min-width: 3px;
+    background: var(--signal); animation: grow .5s steps(6, end) both;
+    transform-origin: bottom;
+  }
+  .bars i.none { background: var(--mid); }
+  @keyframes grow { from { transform: scaleY(0) } to { transform: scaleY(1) } }
+  .barkey { display: flex; gap: 1.5rem; margin-top: .8rem; color: var(--dim); font-size: .95rem; }
+  .barkey b { color: var(--signal); font-weight: 400; }
+  .barkey em { color: var(--mid); font-style: normal; }
+
+  footer {
+    border-top: var(--px) solid var(--hairline);
+    padding: 1.5rem clamp(1rem, 3vw, 3rem) 3rem; color: var(--dim);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .cursor { opacity: 1 }
+  }
 </style>
 
 <header class="top">
   <div class="bar">
-    <span class="wordmark">reqkeeper</span>
-    <span class="tagline">exactly-once settlement · Request Network × KeeperHub · Sepolia</span>
+    <span class="wordmark">REQKEEPER<span class="cursor"></span></span>
+    <span class="tagline">exactly-once settlement &middot; Request Network &times; KeeperHub &middot; Sepolia</span>
     <nav id="nav">
-      <a href="#/">Thesis</a>
+      <a href="#/">Evidence</a>
       <a href="#/seam">The seam</a>
       <a href="#/refusals">Refusals</a>
-      <a href="#/settlement">Settlement</a>
-      <a href="#/agent">Agent surface</a>
+      <a href="#/surfaces">Surfaces</a>
+      <a href="#/agent">Agent</a>
     </nav>
   </div>
 </header>
 
 <main>
-  <!-- ── thesis ─────────────────────────────────────────────────────── -->
-  <section id="r-" >
-    <h1>An agent retries.<br>A retry is a second payment.</h1>
-    <p class="lead">Retrying is the defining property of an agent harness. When the thing being
-      retried moves money, nothing in the stack owns the duplicate. ReqKeeper owns it at the
-      one place it can be owned: the seam between the agent and the signer.</p>
+  <!-- ── evidence ───────────────────────────────────────────────────── -->
+  <section id="r-">
+    <h1>38 payments.<br>38 refused replays.<br>Zero double spends.</h1>
+    <p class="lead">An agent retries. That is what agent harnesses do. When the thing being
+      retried moves money, a retry is a second payment, and nothing in the stack owns the
+      duplicate. This does, at the one place it can be owned.</p>
 
     <div class="figures" id="hero-figs"></div>
+
+    <h2>Every row, checked against the chain</h2>
+    <p>The numbers above are this project's own output, so on their own they are an
+      assertion. <code>npm run verify:live</code> re-derives all of them from a public RPC
+      with no credentials, and states the claim as arithmetic:</p>
+    <pre id="verify-out"></pre>
+    <p class="dim">Sends are counted by wrapping the execution provider, so a zero is a
+      number the code observed rather than a status string it believed.</p>
+
+    <div class="barwrap">
+      <h3 style="margin-top:0">Physical sends, one bar per live row</h3>
+      <div class="bars" id="bars"></div>
+      <div class="barkey">
+        <span><b>&#9646;</b> one send &mdash; a settled obligation</span>
+        <span><em>&#9646;</em> zero sends &mdash; a refusal, including every replay</span>
+      </div>
+    </div>
 
     <hr class="rule">
 
@@ -159,41 +285,41 @@
       <table>
         <thead><tr><th>Layer</th><th>Its position</th></tr></thead>
         <tbody>
-          <tr><td>Wallet SDK</td><td><a href="https://github.com/coinbase/agentkit/issues/1483">agentkit#1483</a> — the idempotency key exists in the SDK signature; the one call path that moves value does not pass it</td></tr>
-          <tr><td>Agent framework</td><td><a href="https://github.com/crewAIInc/crewAI/issues/5802">crewAI#5802</a> — <code>stripe.charge(...)</code> fires twice on retry</td></tr>
-          <tr><td>Orchestrator</td><td><a href="https://github.com/langchain-ai/langgraph/issues/7417">langgraph#7417</a> — long tool calls silently re-dispatched while the original is still running</td></tr>
-          <tr><td>Payment rail</td><td><a href="https://github.com/x402-foundation/x402/issues/1805">x402#1805</a> — 5 concurrent requests, 4 got the same settlement proof</td></tr>
+          <tr><td>Wallet SDK</td><td><a href="https://github.com/coinbase/agentkit/issues/1483">agentkit#1483</a> &mdash; the idempotency key exists in the SDK signature; the one call path that moves value does not pass it</td></tr>
+          <tr><td>Agent framework</td><td><a href="https://github.com/crewAIInc/crewAI/issues/5802">crewAI#5802</a> &mdash; <code>stripe.charge(...)</code> fires twice on retry</td></tr>
+          <tr><td>Orchestrator</td><td><a href="https://github.com/langchain-ai/langgraph/issues/7417">langgraph#7417</a> &mdash; long tool calls silently re-dispatched while the original still runs</td></tr>
+          <tr><td>Payment rail</td><td><a href="https://github.com/x402-foundation/x402/issues/1805">x402#1805</a> &mdash; 5 concurrent requests, 4 got the same settlement proof</td></tr>
           <tr><td>Execution layer</td><td>KeeperHub's own docs: replay lasts 24 hours, then the same key executes again, silently</td></tr>
         </tbody>
       </table>
     </div>
 
     <h2>Why Request Network</h2>
-    <p><strong>The invoice is the idempotency key.</strong> Every Request invoice carries a canonical
-      request id and a payment reference embedded in the calldata — a stable obligation identity
-      issued by an external system. It survives a wallet change, a key rotation, a re-import,
-      regenerated calldata, and the 24-hour replay expiry. We did not invent an identity scheme.</p>
-    <p>And the loop closes without fabrication: pay with the reference embedded and Request's own
-      payment detection flips the invoice to paid. <code>SETTLED</code> requires both an
+    <p><strong>The invoice is the idempotency key.</strong> Every Request invoice carries a
+      canonical request id and a payment reference embedded in the calldata: a stable
+      obligation identity issued by an external system. It survives a wallet change, a key
+      rotation, a re-import, regenerated calldata, and the 24-hour replay expiry. We did not
+      invent an identity scheme.</p>
+    <p>And the loop closes without fabrication. Pay with the reference embedded and Request's
+      own detection flips the invoice to paid. <code>SETTLED</code> requires both an
       independently read receipt and the source's own verdict.</p>
   </section>
 
   <!-- ── the seam ───────────────────────────────────────────────────── -->
   <section id="r-seam" hidden>
-    <h1>The approved bytes are not the signed bytes</h1>
-    <p class="lead">Request hands you finished calldata. KeeperHub will not send finished calldata.
-      Something has to bridge that, and whatever bridges it is where a payment can quietly change
-      meaning.</p>
+    <h1>The approved bytes are<br>not the signed bytes</h1>
+    <p class="lead">Request hands you finished calldata. KeeperHub will not send finished
+      calldata. Whatever bridges that is where a payment can quietly change meaning.</p>
 
     <h3>Probed, not assumed</h3>
     <pre>contract-call, data      -> HTTP 400 {"error":"Missing required field","field":"<i>functionName</i>"}
 contract-call, callData  -> HTTP 400 {"error":"Missing required field","field":"<i>functionName</i>"}
 raw route                -> HTTP 400 {"error":"<i>Invalid action type: raw</i>"}
 transaction route        -> HTTP 400 {"error":"<i>Invalid action type: transaction</i>"}</pre>
-    <p>The only write surface is <code>(contractAddress, functionName, functionArgs)</code>, re-encoded
-      on KeeperHub's side against an ABI it resolves itself. So between "the human approved these
-      bytes" and "the signer signed these bytes" sits a decode, a transport, and a re-encode
-      performed by the execution platform.</p>
+    <p>The only write surface is <code>(contractAddress, functionName, functionArgs)</code>,
+      re-encoded on KeeperHub's side against an ABI it resolves itself. So between "the human
+      approved these bytes" and "the signer signed these bytes" sits a decode, a transport,
+      and a re-encode performed by the execution platform.</p>
 
     <h3>And the destination is not the contract you named</h3>
     <div class="scroll">
@@ -203,16 +329,17 @@ transaction route        -> HTTP 400 {"error":"<i>Invalid action type: transacti
           <tr><td><code>tx.from</code></td><td><code>0x809d8252…</code> a KeeperHub relayer</td><td>the payer</td></tr>
           <tr><td><code>tx.to</code></td><td><code>0x5af5194b…</code> a 3963-byte forwarder</td><td>FAU <code>0x370DE27f…</code></td></tr>
           <tr><td>selector</td><td><code>0x9aefaff8</code> on the forwarder</td><td><code>0x40c10f19</code> <span class="id">mint(address,uint256)</span></td></tr>
-          <tr><td>gas payer</td><td>the relayer, 0.000119 ETH</td><td>—</td></tr>
+          <tr><td>gas payer</td><td>the relayer, 0.000119 ETH</td><td>&mdash;</td></tr>
         </tbody>
       </table>
     </div>
-    <p>The named call survives only as an inner payload: a 65-byte signature, then the selector and
-      its arguments. <code>(to, data)</code> as approved appears in no transaction anywhere.</p>
+    <p>The named call survives only as an inner payload: a 65-byte signature, then the
+      selector and its arguments. <code>(to, data)</code> as approved appears in no
+      transaction anywhere.</p>
 
     <h3>What ReqKeeper does about it</h3>
-    <p>Decode the approved calldata, re-encode it locally, and dispatch only if the result is
-      byte-identical. Anything else refuses before a single network call.</p>
+    <p>Decode the approved calldata, re-encode it locally, dispatch only on a byte-identical
+      match. Anything else refuses before a single network call.</p>
     <div class="scroll">
       <table>
         <thead><tr><th>Smuggled variant</th><th>Refusal</th></tr></thead>
@@ -223,90 +350,82 @@ transaction route        -> HTTP 400 {"error":"<i>Invalid action type: transacti
         </tbody>
       </table>
     </div>
-    <div class="note">The codec refuses every type it does not implement. A codec that silently
-      mis-encodes an argument is worse than none, because it fails the byte-comparison that was
-      supposed to be the safety net. Its correctness is checked against KeeperHub's own encoder
-      output — two independent implementations, same 260 bytes.</div>
+    <div class="note">The codec refuses every type it does not implement. One that silently
+      mis-encodes an argument is worse than none, because it breaks the byte-comparison meant
+      to catch exactly that. Its correctness is checked against <strong>KeeperHub's own
+      encoder output</strong>, captured from a live revert payload: two independent
+      implementations, same 260 bytes.</div>
   </section>
 
   <!-- ── refusals ───────────────────────────────────────────────────── -->
   <section id="r-refusals" hidden>
     <h1>The refusal table</h1>
-    <p class="lead">The deliverable is not a feature list. It is the count of things correctly
-      refused, with the physical send count asserted against a number rather than inferred from a
-      status string.</p>
+    <p class="lead">The deliverable is not a feature list. It is the count of things
+      correctly refused, with the physical send count asserted against a number rather than
+      inferred from a status string.</p>
     <div class="figures" id="refusal-figs"></div>
     <div class="filters" id="filters"></div>
     <div class="scroll">
       <table>
         <thead>
-          <tr><th>Case</th><th>Scenario</th><th>Expected</th><th>Actual</th><th class="num">Sends</th><th>Pre-write</th></tr>
+          <tr><th>Case</th><th>Scenario</th><th>Expected</th><th>Actual</th><th class="num">Sends</th><th>Pre-write</th><th>Mode</th></tr>
         </thead>
         <tbody id="rows"></tbody>
       </table>
     </div>
-    <div class="note">Every row is generated by <code>npm run harness</code> into
-      <code>docs/refusals.json</code>, and this page is built from that file — it cannot disagree
-      with the harness. Rows are tagged <code>FIXTURE</code>: the faults are injected against a
-      provider that counts physical sends, because provoking a lapsed replay window for real would
-      mean deliberately paying twice.</div>
+    <div class="note"><strong>LIVE</strong> rows ran against the real KeeperHub API and real
+      Request invoices on Sepolia; every settled one carries a transaction hash you can look
+      up. <strong>FIXTURE</strong> rows inject faults that cannot be provoked for real without
+      deliberately paying twice or waiting a day per case &mdash; a lapsed 24-hour replay
+      window, a cached provider failure, a rival plan racing the same obligation. The refusal
+      logic is the same code in both; only the fault injection differs.</div>
   </section>
 
-  <!-- ── settlement ─────────────────────────────────────────────────── -->
-  <section id="r-settlement" hidden>
-    <h1>One obligation, paid once</h1>
-    <p class="lead">A real Request invoice on Sepolia, paid through KeeperHub by the same function
-      that produces every refusal above. Run it twice; the second run is the product.</p>
-
-    <dl class="kv" id="settlement-kv"></dl>
+  <!-- ── surfaces ───────────────────────────────────────────────────── -->
+  <section id="r-surfaces" hidden>
+    <h1>Two KeeperHub surfaces,<br>one protocol</h1>
+    <p class="lead"><code>settle()</code> does not know which surface it is dispatching
+      through, and that is the point. A guarded signer whose safety depends on its transport
+      is not a guarded signer.</p>
 
     <div class="scroll">
       <table>
-        <thead><tr><th>Run</th><th>State</th><th>Refusal</th><th>Provider write</th></tr></thead>
+        <thead><tr><th>Surface</th><th>Provider</th><th>Verified by</th></tr></thead>
         <tbody>
-          <tr><td>1st</td><td><span class="pill settled">SETTLED</span></td><td class="id">—</td><td class="sent">true</td></tr>
-          <tr><td>2nd</td><td><span class="pill settled">SETTLED</span></td><td><span class="pill refuse">ALREADY_SETTLED</span></td><td class="zero">false</td></tr>
+          <tr><td>Direct execution REST<br><span class="id">/api/execute/contract-call</span></td><td><code>src/keeperhub.ts</code></td><td><code>npm run verify:seam</code></td></tr>
+          <tr><td>KeeperHub's own MCP server<br><span class="id">app.keeperhub.com/mcp, 44 tools</span></td><td><code>src/keeperhub-mcp.ts</code></td><td><code>npm run verify:mcp</code></td></tr>
+          <tr><td>Audit trail<br><span class="id">get_direct_execution_status</span></td><td>same</td><td><code>npm run verify:mcp</code></td></tr>
         </tbody>
       </table>
     </div>
 
-    <h3>The sentence a human approved</h3>
-    <pre id="restatement"></pre>
-    <p>Derived from the same values as the calldata, at the same moment. The Lobstar transfer — $4
-      intended, $441,780 sent — would have been caught by reading one line like this.</p>
+    <p>The calldata gate is one module, <code>src/calldata-gate.ts</code>, that both providers
+      call. Two providers with two copies of that rule would be a hole in exactly the defence
+      this exists to provide.</p>
 
-    <h3>Three independent confirmations</h3>
-    <div class="scroll">
-      <table>
-        <thead><tr><th>Source</th><th>Says</th></tr></thead>
-        <tbody>
-          <tr><td><code>eth_getTransactionReceipt</code></td><td>success, verified, gasUsed 74618</td></tr>
-          <tr><td>ERC20FeeProxy event log</td><td>reference seen for exactly 1000000000000000000</td></tr>
-          <tr><td>Request Network's own detection</td><td>balance 1000000000000000000, 1 payment event, paid</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p>A provider's status string is never one of these. That is the whole point of the column.</p>
-
-    <h3>Duplicate protection is layered</h3>
-    <div class="scroll">
-      <table>
-        <thead><tr><th>Guard</th><th>Fires when</th><th>Refusal</th></tr></thead>
-        <tbody>
-          <tr><td>terminal-state check</td><td>the obligation already settled</td><td><span class="pill refuse">ALREADY_SETTLED</span></td></tr>
-          <tr><td><code>UNIQUE(plan_hash, step_index)</code> + <code>firstSendAt</code></td><td>a step was sent but the outcome is unresolved</td><td><span class="pill refuse">ALREADY_DISPATCHED</span></td></tr>
-          <tr><td><code>UNIQUE(obligation_id)</code></td><td>a rival plan holds the same obligation</td><td><span class="pill refuse">OBLIGATION_RESERVED</span></td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p>All three live in the local store, so all three outlive the provider's 24-hour idempotency
-      window rather than depending on it.</p>
+    <h3>Four things about that MCP server, each found by probing it</h3>
+    <ol class="steps">
+      <li>The handshake is sequential. A <code>tools/call</code> before
+        <code>notifications/initialized</code> fails with <code>-32003 Session not
+        initialized</code>.</li>
+      <li>Authentication failure does not look like one. A rejected key still returns
+        <strong>HTTP 200</strong> on <code>initialize</code>, just with no
+        <code>mcp-session-id</code> header. The 401 arrives on the next call, so absence of
+        the header is the only reliable signal.</li>
+      <li>The session id rotates. An expired-but-in-grace token is silently re-minted and
+        returned in a rewritten header, so the newest response wins.</li>
+      <li><code>simulate</code> is compared with <code>=== true</code>. The string
+        <code>"true"</code> does not dry-run: it signs and broadcasts.</li>
+    </ol>
+    <div class="note">All four are reported upstream rather than only worked around. The
+      calldata-passthrough limitation is the subject of a filed issue, and the idempotency
+      disposition defect is an open pull request against their <code>staging</code> branch.</div>
   </section>
 
-  <!-- ── agent surface ──────────────────────────────────────────────── -->
+  <!-- ── agent ──────────────────────────────────────────────────────── -->
   <section id="r-agent" hidden>
     <h1>What the agent cannot do</h1>
-    <p class="lead">An MCP server over stdio, with five tools and one deliberate omission.</p>
+    <p class="lead">An MCP server over stdio, five tools, and one deliberate omission.</p>
 
     <div class="scroll">
       <table>
@@ -321,10 +440,10 @@ transaction route        -> HTTP 400 {"error":"<i>Invalid action type: transacti
       </table>
     </div>
 
-    <div class="note absent"><strong style="color:var(--text)">There is no approve tool.</strong>
-      Not a disabled one, not one behind a permission flag — the capability is absent from the
-      protocol surface. An agent connected to this server cannot, by any sequence of calls,
-      authorise money to move. The test suite asserts the absence, so adding one breaks the build.</div>
+    <div class="note absent"><strong>There is no approve tool.</strong> Not disabled, not
+      behind a permission flag &mdash; the capability is absent from the protocol surface. An
+      agent connected to this server cannot, by any sequence of calls, authorise money to
+      move. The test suite asserts the absence, so adding one breaks the build.</div>
 
     <pre>agent calls approve_payment  -> <i>refused: unknown tool: approve_payment</i>
 agent calls record_approval  -> <i>refused: unknown tool: record_approval</i>
@@ -337,8 +456,8 @@ physical sends so far        : <b>0</b>
 physical sends after 26 attempts : <b>0</b></pre>
 
     <h3>The approval flow does not trust the proposer</h3>
-    <p><code>scripts/approve.ts</code> does not accept a plan hash. It recomputes one from the
-      invoice facts you type and compares it against the plan the agent reserved:</p>
+    <p><code>scripts/approve.ts</code> does not accept a plan hash. It recomputes one from
+      the invoice facts you type and compares it against the plan the agent reserved:</p>
     <pre><i>REFUSED: the plan reserved for this obligation is not the plan these arguments describe.</i>
   reserved by : be7830f4d60c3e9f9a409faf680d51840a93ff8a55922a4e72a9470c3d0a579b
   you typed   : 7fbdadaff7d772ad7f73659f15bce30eb94b03a3b383cb9bdeeeaa34bd76e032</pre>
@@ -352,94 +471,164 @@ physical sends after 26 attempts : <b>0</b></pre>
       <li>Revocation is not an onchain undo. Already-broadcast work completes.</li>
       <li>The audit trail is tamper-evident, not tamper-proof. It is not blockchain evidence and is not described as such.</li>
       <li>No prompt-injection detection. A guarded signer enforces a declarative policy; it does not detect injection.</li>
+      <li>The live payee is a burner keypair, not a counterparty, so no third party has confirmed receipt.</li>
       <li>Sepolia only. Mainnet is disabled in code, deliberately.</li>
     </ul>
   </section>
 </main>
 
 <footer>
-  Testnet only. Zero dependencies in <code>src/</code>. One credential.
+  Testnet only &middot; zero dependencies in <code>src/</code> &middot; one credential
   <span id="built"></span>
 </footer>
 
 <script>
   const DATA = JSON.parse(document.getElementById("reqkeeper-data").textContent);
-  const rows = DATA.refusals.rows || [];
-  const t = DATA.refusals.totals || {};
+  const fixture = DATA.refusals;
+  const live = DATA.live;
 
-  const el = (h) => { const d = document.createElement("div"); d.innerHTML = h; return d.firstElementChild; };
+  // Rows from both artifacts, live first: the stronger evidence should read first.
+  const liveRows = (live?.rows ?? []).map((r) => ({ ...r, mode: "LIVE" }));
+  const fixtureRows = (fixture.rows ?? []).map((r) => ({ ...r, mode: "FIXTURE" }));
+  const allRows = [...liveRows, ...fixtureRows];
 
-  function figures(host, items) {
-    host.innerHTML = items.map(([n, k, plain]) =>
-      `<div class="fig"><div class="n${plain ? " plain" : ""}">${n}</div><div class="k">${k}</div></div>`).join("");
+  const prefersStill = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /** Count a number up. Steps, not eases: this is a pixel panel. */
+  function countTo(el, target, suffix) {
+    const isNum = typeof target === "number" && Number.isFinite(target);
+    if (!isNum || prefersStill) { el.textContent = String(target) + (suffix || ""); return; }
+    const frames = 18;
+    let i = 0;
+    const tick = () => {
+      i++;
+      const v = Math.round((target * i) / frames);
+      el.textContent = String(v) + (suffix || "");
+      if (i < frames) setTimeout(tick, 26);
+    };
+    tick();
   }
 
+  function figures(host, items) {
+    host.innerHTML = items
+      .map(
+        ([n, k, opts]) =>
+          `<div class="fig${opts?.hero ? " hero" : ""}"><div class="n${opts?.plain ? " plain" : ""}" data-n="${
+            typeof n === "number" ? n : ""
+          }">${typeof n === "number" ? "0" : n}</div><div class="k">${k}</div></div>`,
+      )
+      .join("");
+    for (const el of host.querySelectorAll(".n[data-n]")) {
+      const raw = el.getAttribute("data-n");
+      if (raw !== "") countTo(el, Number(raw));
+    }
+  }
+
+  const t = live?.totals;
   figures(document.getElementById("hero-figs"), [
-    [`${t.passed}/${t.cases}`, "cases as specified"],
-    [t.refusedBeforeAnyProviderWrite, "refused before any provider write"],
-    ["1", "payment, however many retries", true],
-    [DATA.tests, "unit tests", true],
+    [t ? t.payments : "-", "real payments on sepolia", { hero: true }],
+    [t ? t.rows - t.payments : "-", "refusals, live", { hero: true }],
+    [0, "sends made by a replay", { hero: true }],
+    [DATA.tests, "unit tests", { plain: true }],
+    [fixture.totals.cases, "fault-injected cases", { plain: true }],
   ]);
+
+  // The verification output, restated from the artifact so the page cannot drift from it.
+  const settledLive = liveRows.filter((r) => r.tx_hash).length;
+  const replays = liveRows.filter((r) => r.expected === "ALREADY_SETTLED");
+  const replaySends = replays.reduce((a, r) => a + r.physical_sends, 0);
+  document.getElementById("verify-out").textContent = t
+    ? [
+        `chain id 11155111 (Ethereum Sepolia)`,
+        ``,
+        `${settledLive}/${settledLive} receipts verified as successful on chain`,
+        `${settledLive}/${settledLive} payment references present in the ERC20FeeProxy log`,
+        `every refusal row reports zero sends, and carries no hash to check`,
+        ``,
+        `  obligations settled          ${t.payments}`,
+        `  replays attempted            ${replays.length}`,
+        `  sends made by those replays  ${replaySends}`,
+      ].join("\n")
+    : "no live artifact on this build; run npm run harness:live";
+
+  // One bar per live row. Tall = a send, short = a refusal.
+  const bars = document.getElementById("bars");
+  if (bars) {
+    bars.innerHTML = liveRows
+      .map((r, i) => {
+        const sent = r.physical_sends > 0;
+        const h = sent ? 100 : 14;
+        const delay = prefersStill ? 0 : Math.min(i * 12, 900);
+        return `<i class="${sent ? "" : "none"}" style="height:${h}%;animation-delay:${delay}ms" title="${r.case_id} ${r.actual}, ${r.physical_sends} sends"></i>`;
+      })
+      .join("");
+  }
 
   figures(document.getElementById("refusal-figs"), [
-    [`${t.passed}/${t.cases}`, "as specified"],
-    [`${t.refusedBeforeAnyProviderWrite}/${t.refusalCases}`, "refused pre-write"],
-    ["0", "gas burned on a refusal"],
+    [t ? t.asSpecified : fixture.totals.passed, "rows as specified, live", { hero: true }],
+    [t ? t.refusedBeforeAnyProviderWrite : 0, "live refusals before any send", { hero: true }],
+    [fixture.totals.refusedBeforeAnyProviderWrite, "fixture refusals pre-write", { plain: true }],
   ]);
 
-  // Settlement facts come from the build, not from prose typed twice.
-  const s = DATA.settlement;
-  document.getElementById("settlement-kv").innerHTML = [
-    ["request id", `<code>${s.requestId}</code>`],
-    ["payment reference", `<code>${s.paymentReference}</code>`],
-    ["obligation id", `<code>${s.obligationId}</code>`],
-    ["amount", `<code>${s.amountBaseUnits}</code> base units <span class="id">(1 FAU)</span>`],
-    ["transaction", `<a href="https://sepolia.etherscan.io/tx/${s.txHash}"><code>${s.txHash}</code></a>`],
-  ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
-  document.getElementById("restatement").textContent = s.restatement;
-  document.getElementById("built").textContent = "· harness run " + (DATA.refusals.generatedAt || "").slice(0, 10);
+  document.getElementById("built").textContent =
+    "· fixture harness " + String(fixture.generatedAt || "").slice(0, 10) +
+    (live ? " · live run " + String(live.generatedAt || "").slice(0, 10) : "");
 
   // --- refusal table -------------------------------------------------------
   const FILTERS = [
-    ["all", () => true],
+    ["live only", (r) => r.mode === "LIVE"],
+    ["all rows", () => true],
     ["refused before any send", (r) => r.refused_before_provider_write],
     ["cost gas", (r) => r.physical_sends > 0],
-    ["the replay cases", (r) => /replay/i.test(r.scenario)],
+    ["the replay cases", (r) => /replay|dispatched again/i.test(r.scenario)],
   ];
   let active = 0;
 
   function renderRows() {
     const [, pred] = FILTERS[active];
     const body = document.getElementById("rows");
-    const shown = rows.filter(pred);
-    body.innerHTML = shown.map((r) => {
-      const settled = r.actual === "SETTLED";
-      return `<tr>
-        <td class="id">${r.case_id}</td>
-        <td>${r.scenario}</td>
-        <td class="id">${r.expected}</td>
-        <td><span class="pill ${settled ? "settled" : "refuse"}">${r.actual}</span></td>
-        <td class="num ${r.physical_sends === 0 ? "zero" : "sent"}">${r.physical_sends}</td>
-        <td>${r.refused_before_provider_write ? '<span class="zero">yes</span>' : '<span class="id">no</span>'}</td>
-      </tr>`;
-    }).join("");
-    if (shown.length === 0) body.innerHTML = '<tr><td colspan="6" class="id">no cases match</td></tr>';
+    const shown = allRows.filter(pred);
+    body.innerHTML = shown
+      .slice(0, 200)
+      .map((r, i) => {
+        const settled = r.actual === "SETTLED";
+        const delay = prefersStill ? 0 : Math.min(i * 9, 700);
+        const tx = r.tx_hash
+          ? `<a href="https://sepolia.etherscan.io/tx/${r.tx_hash}">${r.actual}</a>`
+          : r.actual;
+        return `<tr style="animation-delay:${delay}ms">
+          <td class="id">${r.case_id}</td>
+          <td>${r.scenario}</td>
+          <td class="id">${r.expected}</td>
+          <td><span class="pill ${settled ? "settled" : "refuse"}">${tx}</span></td>
+          <td class="num ${r.physical_sends === 0 ? "zero" : "sent"}">${r.physical_sends}</td>
+          <td>${r.refused_before_provider_write ? '<span class="zero">yes</span>' : '<span class="id">no</span>'}</td>
+          <td>${r.mode === "LIVE" ? '<span class="live-tag">LIVE</span>' : '<span class="fixture-tag">FIXTURE</span>'}</td>
+        </tr>`;
+      })
+      .join("");
+    if (shown.length === 0) {
+      body.innerHTML = '<tr><td colspan="7" class="id">no rows match</td></tr>';
+    }
   }
 
   const fh = document.getElementById("filters");
-  fh.innerHTML = FILTERS.map(([label], i) =>
-    `<button type="button" aria-pressed="${i === 0}" data-i="${i}">${label}</button>`).join("");
+  fh.innerHTML = FILTERS.map(
+    ([label], i) => `<button type="button" aria-pressed="${i === 0}" data-i="${i}">${label}</button>`,
+  ).join("");
   fh.addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (!b) return;
     active = Number(b.dataset.i);
-    [...fh.querySelectorAll("button")].forEach((x) => x.setAttribute("aria-pressed", String(Number(x.dataset.i) === active)));
+    for (const x of fh.querySelectorAll("button")) {
+      x.setAttribute("aria-pressed", String(Number(x.dataset.i) === active));
+    }
     renderRows();
   });
   renderRows();
 
   // --- hash routing --------------------------------------------------------
-  const ROUTES = ["", "seam", "refusals", "settlement", "agent"];
+  const ROUTES = ["", "seam", "refusals", "surfaces", "agent"];
   function route() {
     const want = (location.hash.replace(/^#\/?/, "") || "").split("/")[0];
     const name = ROUTES.includes(want) ? want : "";

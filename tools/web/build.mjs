@@ -26,6 +26,11 @@ function env(name, fallback = "") {
 
 const refusals = JSON.parse(readFileSync(path("docs/refusals.json"), "utf8"));
 
+// The live artifact is the stronger evidence, so the page carries it when it exists rather
+// than making a reader go and find it.
+const livePath = path("docs/refusals-live.json");
+const live = existsSync(livePath) ? JSON.parse(readFileSync(livePath, "utf8")) : null;
+
 /**
  * Test count taken from an actual run, not from counting `test(` with a regex — that
  * undercounted by more than a hundred because it only matched declarations at the start of a
@@ -57,6 +62,7 @@ const payee = (env("PAYEE_BURNER") || "0x000000000000000000000000000000000000000
 const data = {
   tests,
   refusals,
+  live,
   settlement: {
     requestId: env("REQUEST_ID", "(not settled yet)"),
     paymentReference: env("PAYMENT_REFERENCE", "-"),
@@ -77,6 +83,7 @@ const payload = JSON.stringify(data).replace(/</g, "\\u003c");
 writeFileSync(path("web/console.html"), template.replace("__DATA__", payload), "utf8");
 
 console.log(
-  `web/console.html written — ${refusals.rows.length} refusal rows, ` +
-    `${refusals.totals.passed}/${refusals.totals.cases} as specified, ${tests} tests`,
+  `web/console.html written — ${refusals.rows.length} fixture rows, ` +
+    `${live ? `${live.rows.length} live rows, ${live.totals.payments} real payments, ` : "no live artifact, "}` +
+    `${tests} tests`,
 );
