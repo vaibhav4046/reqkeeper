@@ -75,6 +75,16 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     return;
   }
 
+  if (!parsed || typeof parsed !== "object") {
+    send(res, 400, { jsonrpc: "2.0", id: null, error: { code: -32600, message: "invalid request: expected object or batch" } });
+    return;
+  }
+
+  if (Array.isArray(parsed) && parsed.length === 0) {
+    send(res, 400, { jsonrpc: "2.0", id: null, error: { code: -32600, message: "invalid request: empty batch" } });
+    return;
+  }
+
   // A batch is a list. Notifications produce no reply, so they are filtered out of it.
   const requests = Array.isArray(parsed) ? parsed : [parsed];
   if (requests.length > 20) {

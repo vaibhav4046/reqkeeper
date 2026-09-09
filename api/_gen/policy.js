@@ -6,7 +6,7 @@
  * are the rows of the refusal table that the submission is scored on, so they are part of
  * the contract, not debug output.
  */
-import { assertFitsUint256, baseUnitsFromString } from "./money.js";
+import { assertFitsUint256, baseUnitsFromString, MAX_UINT256 } from "./money.js";
 /**
  * Networks where a mistake costs real money. Refused outright, whatever the policy says.
  *
@@ -59,7 +59,13 @@ export function checkPolicy(policy, facts) {
     if (facts.tokenDecimals !== policy.token.decimals) {
         return refuse("TOKEN_DECIMALS_MISMATCH", `token reports ${facts.tokenDecimals} decimals, policy pinned ${policy.token.decimals}`);
     }
-    const payee = normaliseAddress(facts.payee);
+    let payee;
+    try {
+        payee = normaliseAddress(facts.payee);
+    }
+    catch {
+        return refuse("PAYEE_NOT_ALLOWED", `payee ${facts.payee} is not a valid EVM address`);
+    }
     const allowed = policy.allowedPayees.map(normaliseAddress);
     if (!allowed.includes(payee)) {
         return refuse("PAYEE_NOT_ALLOWED", `${payee} is not an allowlisted recipient`);
@@ -71,7 +77,13 @@ export function checkPolicy(policy, facts) {
     const fee = baseUnitsFromString(facts.feeBaseUnits);
     const maxFee = baseUnitsFromString(policy.maxFeeBaseUnits);
     if (fee > 0n) {
-        const feeRecipient = normaliseAddress(facts.feeRecipient);
+        let feeRecipient;
+        try {
+            feeRecipient = normaliseAddress(facts.feeRecipient);
+        }
+        catch {
+            return refuse("FEE_RECIPIENT_UNKNOWN", `fee recipient ${facts.feeRecipient} is not a valid EVM address`);
+        }
         const allowedFees = policy.allowedFeeRecipients.map(normaliseAddress);
         if (!allowedFees.includes(feeRecipient)) {
             return refuse("FEE_RECIPIENT_UNKNOWN", `fee recipient ${feeRecipient} is not recognised`);
@@ -83,7 +95,9 @@ export function checkPolicy(policy, facts) {
     // The cap applies to what actually leaves the wallet. Checking the invoice alone lets a
     // quoted fee push the real debit over the ceiling the human thought they were setting.
     const total = invoice + fee;
-    assertFitsUint256(total, "total debit");
+    if (total > MAX_UINT256) {
+        return refuse("LIMIT_EXCEEDED", `total debit exceeds uint256 maximum`);
+    }
     const cap = baseUnitsFromString(policy.maxTotalDebitBaseUnits);
     if (total > cap) {
         return refuse("LIMIT_EXCEEDED", `total debit ${total} (invoice ${invoice} + fee ${fee}) exceeds cap ${cap}`);

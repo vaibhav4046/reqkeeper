@@ -266,17 +266,29 @@ export class Store {
   }
 
   audit(obligationId: string | null, actor: string, action: string, detail: unknown, now = Date.now()): void {
-    const detailJson = JSON.stringify(detail ?? {});
-    const tip = this.#db.prepare("SELECT row_hash AS h FROM audit ORDER BY id DESC LIMIT 1").get() as
-      | { h: string }
-      | undefined;
-    const prev = tip?.h ?? "";
-    const rowHash = auditHash(prev, obligationId, actor, action, detailJson, now);
-    this.#db
-      .prepare(
-        "INSERT INTO audit (obligation_id, actor, action, detail_json, at, prev_hash, row_hash) VALUES (?,?,?,?,?,?,?)",
-      )
-      .run(obligationId, actor, action, detailJson, now, prev, rowHash);
+    const doAudit = () => {
+      const detailJson = JSON.stringify(detail ?? {});
+      const tip = this.#db.prepare("SELECT row_hash AS h FROM audit ORDER BY id DESC LIMIT 1").get() as
+        | { h: string }
+        | undefined;
+      const prev = tip?.h ?? "";
+      const rowHash = auditHash(prev, obligationId, actor, action, detailJson, now);
+      this.#db
+        .prepare(
+          "INSERT INTO audit (obligation_id, actor, action, detail_json, at, prev_hash, row_hash) VALUES (?,?,?,?,?,?,?)",
+        )
+        .run(obligationId, actor, action, detailJson, now, prev, rowHash);
+    };
+
+    try {
+      this.tx(doAudit);
+    } catch (e: unknown) {
+      if (e instanceof Error && /cannot start a transaction within a transaction/.test(e.message)) {
+        doAudit();
+      } else {
+        throw e;
+      }
+    }
   }
 
   /**

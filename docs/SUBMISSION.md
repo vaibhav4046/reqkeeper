@@ -88,7 +88,7 @@ Nothing here rests on this codebase reporting on itself.
 - `npm run harness` — 26 fault-injection cases, 26 as specified, 18 of the 24 refusals happening
   before any provider write, asserted against a provider that counts physical sends rather than
   reporting a status string.
-- 192 unit tests, `tsc --noEmit` clean, CI runs all three on every push.
+- 239 unit tests, `tsc --noEmit` clean, CI runs all three on every push.
 
 Sepolia, paying in FAU — a faucet token anyone can mint for free. Real transactions, real
 receipts, an asset worth nothing. Mainnet is refused in code, with a test per chain.

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-09T10:56:56.192Z",
+  "generatedAt": "2026-09-09T17:37:03.547Z",
   "mode": "FIXTURE",
   "note": "Deterministic fault injection against an in-memory provider that counts physical sends. These rows prove the refusal logic, not the live integration. Live rows require Gate A and are tagged LIVE_TESTNET when present.",
   "totals": {

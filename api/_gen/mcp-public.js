@@ -135,13 +135,17 @@ async function callTool(name, args, deps) {
 }
 /** One JSON-RPC request in, one response out. `null` means it was a notification. */
 export async function handlePublic(req, deps = {}) {
-    const id = req.id ?? null;
+    if (!req || typeof req !== "object" || Array.isArray(req)) {
+        return { jsonrpc: "2.0", id: null, error: { code: -32600, message: "invalid request: expected JSON object" } };
+    }
+    const r = req;
+    const id = r.id ?? null;
     const reply = (result) => ({ jsonrpc: "2.0", id, result });
     const fail = (code, message) => ({ jsonrpc: "2.0", id, error: { code, message } });
-    if (req.id === undefined && typeof req.method === "string" && req.method.startsWith("notifications/")) {
+    if (r.id === undefined && typeof r.method === "string" && r.method.startsWith("notifications/")) {
         return null;
     }
-    switch (req.method) {
+    switch (r.method) {
         case "initialize":
             return reply({
                 protocolVersion: "2025-06-18",
@@ -153,8 +157,8 @@ export async function handlePublic(req, deps = {}) {
         case "tools/list":
             return reply({ tools: PUBLIC_TOOLS });
         case "tools/call": {
-            const name = String(req.params?.name ?? "");
-            const args = (req.params?.arguments ?? {});
+            const name = String(r.params?.name ?? "");
+            const args = (r.params?.arguments ?? {});
             try {
                 const out = await callTool(name, args, deps);
                 return reply({ content: [{ type: "text", text: JSON.stringify(out, null, 2) }] });
@@ -169,6 +173,6 @@ export async function handlePublic(req, deps = {}) {
         case "ping":
             return reply({});
         default:
-            return fail(-32601, `method not found: ${req.method}`);
+            return fail(-32601, `method not found: ${r.method}`);
     }
 }

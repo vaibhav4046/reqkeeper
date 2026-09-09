@@ -12,7 +12,9 @@ export const DEFAULT_RPC = "https://ethereum-sepolia-rpc.publicnode.com";
  */
 const EVENT_TOPIC = keccak256Hex("TransferWithReferenceAndFee(address,address,uint256,bytes,uint256,address)");
 function referenceTopic(reference) {
-    const hex = reference.replace(/^0x/, "");
+    let hex = reference.replace(/^0x/, "");
+    if (hex.length % 2 !== 0)
+        hex = "0" + hex;
     const bytes = new Uint8Array(hex.length / 2);
     for (let i = 0; i < bytes.length; i++)
         bytes[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
