@@ -12,8 +12,8 @@ compared byte for byte before anything is sent.
 
 Proof: 38 real payments on Sepolia, 38 replays refused at zero sends, 45 live refusals before any
 provider write. Every row re-derives from a public RPC with no credentials. The token is **FAU, a
-Sepolia faucet token anyone can mint for free**: real transactions moving an asset that is worth
-nothing. Real bytes, real receipts, no value at risk — which is what makes it reproducible.
+Sepolia faucet token anyone can mint for free**: real bytes, real receipts, an asset worth nothing.
+That is what makes it reproducible by a stranger rather than a claim you have to take on trust.
 
 ```mermaid
 flowchart LR
@@ -33,27 +33,23 @@ flowchart LR
 **Who this is for:** payers that cannot be a smart account — a custodial or relayed EOA (here, a
 KeeperHub Turnkey wallet) whose agent must not pay the same invoice twice. **Not for you if** your
 payer can be an [ERC-7710 delegator smart account](https://docs.metamask.io/delegation-toolkit/concepts/delegation/caveat-enforcers/):
-use MetaMask's on-chain enforcers instead, which are strictly better. Next section says why.
+use MetaMask's on-chain enforcers, which are strictly better. Next section says why.
 
 - **Integrated project:** [Request Network](https://request.network) — invoices on Ethereum Sepolia
-- **Execution:** two KeeperHub surfaces behind one interface — direct execution and its own MCP
-  server, plus the audit trail
-- **Evidence:** [`docs/refusals-live.json`](docs/refusals-live.json) — all 83 rows
+- **Execution:** two KeeperHub surfaces behind one interface, direct execution and its own MCP
+  server, plus the audit trail. **Evidence:** [`docs/refusals-live.json`](docs/refusals-live.json), all 83 rows.
 - **Network:** Ethereum Sepolia (11155111). Mainnet is disabled in code.
 - **Cost to run:** $0, no card. `src/` and `scripts/` have zero dependencies; only the one-time
   invoice creation in `tools/invoice/` uses the official Request SDK, which is why it is separate.
-- **Credentials needed:** one. A KeeperHub API key. No Request Client ID — see below.
-
----
+- **Credentials needed:** one KeeperHub API key. No Request Client ID — see below.
 
 ## Prior art, and the honest delta
 
-**MetaMask's Delegation Framework already ships both of these gates on-chain, which is better
-than what is here.** [`IdEnforcer.sol`](https://github.com/MetaMask/delegation-framework/tree/main/src/enforcers)
+**MetaMask's Delegation Framework already ships both of these gates on-chain, which is better than
+what is here.** [`IdEnforcer.sol`](https://github.com/MetaMask/delegation-framework/tree/main/src/enforcers)
 keeps a BitMap of used ids and reverts `IdEnforcer:id-already-used`; `ExactCalldataEnforcer.sol`
-reverts unless `keccak256(termsCallData_) == keccak256(callData_)`. If your payer can be an
-[ERC-7710 delegator smart account](https://docs.metamask.io/delegation-toolkit/concepts/delegation/caveat-enforcers/),
-use those: the chain enforces them and no operator can skip them.
+reverts unless `keccak256(termsCallData_) == keccak256(callData_)`. The chain enforces both and no
+operator can skip them.
 
 The delta is the payer. Here it is a KeeperHub Turnkey EOA executing through a relayer/forwarder —
 no delegator smart account to attach a caveat to, and no per-obligation on-chain provisioning
@@ -63,12 +59,10 @@ wrote this thesis themselves in March 2026 — ["The signers saw a routine trans
 actually signed was a `delegatecall` to a malicious contract"](https://keeperhub.com/blog/003-bybit-attack-caught-by-wrong-people)
 — and prescribed monitoring. An alert is a race. A byte comparison before dispatch is not.
 
----
-
 ## Nobody owns the duplicate
 
-Duplicate payments are not a hypothesis about the future. They are a recurring, expensive,
-well-documented failure of systems with far more process around them than an agent has:
+Duplicate payments are not a hypothesis. They are a recurring, expensive, well-documented failure
+of systems with far more process around them than an agent has:
 
 | Where | What a broken duplicate guard cost |
 |---|---|
@@ -107,8 +101,6 @@ The settle path does not call Request's API at all, it reads the chain evidence 
 from; `tools/invoice/check-paid.mjs` asks Request directly and confirmed `hasBeenPaid: true`, but
 that is a separate check, not the gate.
 
----
-
 ## The approved bytes are not the signed bytes
 
 This has a name and a standard, and this project did not discover it. The Ethereum Foundation calls
@@ -122,20 +114,18 @@ Vercel's AI SDK shipped a fix without naming the problem —
 [`experimental_toolApprovalSecret`](https://ai-sdk.dev/docs/agents/tool-approvals), a "signature
 [that] binds the approval to the exact tool name, tool call ID, and input arguments".
 
-**Clear signing does not catch this case, and that gap is the contribution.** Clear signing assumes
-the human reads the fields correctly and the *display* is what is under attack. Here the encoder is
-downstream of the display: KeeperHub re-encodes server-side from
-`(contractAddress, functionName, functionArgs)`, so nothing the human saw is what gets signed.
-Rendering the right thing at the human cannot fix an encoder that runs after them. The check has to
-sit after the human and before the signer, on bytes.
+**Clear signing does not catch this case, and that gap is the contribution.** It assumes the human
+reads the fields correctly and the *display* is what is under attack. Here the encoder is
+downstream of the display: KeeperHub re-encodes server-side from `(contractAddress, functionName,
+functionArgs)`, so nothing the human saw is what gets signed. Rendering the right thing at the
+human cannot fix an encoder that runs after them; the check has to sit after the human and before
+the signer, on bytes. Nor have the standards bodies covered it — OWASP's LLM06 never mentions
+approval-versus-execution divergence, and its agentic threat list carried the human channel as T10
+before deleting it as "primarily a vulnerability in the human-computer interaction (HCI) and
+operational process layer".
 
-Nor have the standards bodies covered it. OWASP's LLM06 Excessive Agency never mentions
-approval-versus-execution divergence, and OWASP's agentic threat list carried the human channel as
-T10 before deleting it as "primarily a vulnerability in the human-computer interaction (HCI) and
-operational process layer". The concrete instance below was found by probing the live API.
-
-Request Network hands you **finished calldata**. `GET /request/{id}/pay` returns
-`{to, data, value}`, fully encoded, payment reference embedded.
+The concrete instance below was found by probing the live API. Request Network hands you **finished
+calldata**: `GET /request/{id}/pay` returns `{to, data, value}`, fully encoded, reference embedded.
 
 KeeperHub will not send finished calldata. Probed on 2026-09-09, with the refusals printed
 verbatim by `npm run verify:seam`:
@@ -192,20 +182,16 @@ payer**: after an `approve`, `allowance(payer → ERC20FeeProxy)` reads `100e18`
 `allowance(forwarder → proxy)` stays `0`. Had it been the other way round, a Request payment could
 never settle through this route at all.
 
----
-
 ## What another team should look at first
 
-Six files, in the order that explains the design:
-
-| File | Why it matters |
-|---|---|
-| [`src/identity.ts`](src/identity.ts) | The three identities: obligation, plan, step. All derived from persisted state — no clock, no randomness, no generated text ever enters a key. |
-| [`src/money.ts`](src/money.ts) | Exact fixed-point money. Throws rather than truncating. |
-| [`src/abi.ts`](src/abi.ts) | The calldata integrity gate. Verified against ethers 6.17.0. |
-| [`src/settle.ts`](src/settle.ts) | The dispatch protocol. **The order of checks is the safety property.** |
-| [`src/store.ts`](src/store.ts) | Transactional outbox, job leases, fencing generations. |
-| [`scripts/harness.ts`](scripts/harness.ts) | The refusal table. This is the deliverable. |
+Six files, in the order that explains the design — [`src/identity.ts`](src/identity.ts) (the three
+identities, all derived from persisted state: no clock, no randomness, no generated text ever
+enters a key), [`src/money.ts`](src/money.ts) (exact fixed-point, throws rather than truncating),
+[`src/abi.ts`](src/abi.ts) (the calldata gate, verified against ethers 6.17.0),
+[`src/settle.ts`](src/settle.ts) (**the order of checks is the safety property**),
+[`src/store.ts`](src/store.ts) (outbox, leases, fencing), and
+[`scripts/harness.ts`](scripts/harness.ts) — the refusal table, which is the deliverable. Full map
+at the bottom.
 
 ## Run it
 
@@ -213,7 +199,7 @@ Needs Node 24+. Nothing else — no `npm install`, no `node_modules`.
 
 ```bash
 npm run gate-a            # the make-or-break gate: does this integration exist end to end?
-npm test                  # 170 unit tests
+npm test                  # 187 unit tests
 npm run harness           # 26 cases, 24 of them refusals -> docs/refusals.json
 npm run verify:onchain    # reads Sepolia via public RPC, no credentials
 npm run verify:seam       # proves the calldata gate against the live API (needs the KeeperHub key)
@@ -265,11 +251,11 @@ Duplicate protection is layered, refusing at different distances from the money:
 | `UNIQUE(plan_hash, step_index)` + `firstSendAt` | a plan's step was already sent but the outcome is unresolved | `ALREADY_DISPATCHED` — harness case C25 |
 | `reserved_by_plan`, claimed inside `BEGIN IMMEDIATE` | a rival plan holds the same obligation | `OBLIGATION_RESERVED` |
 
-All three live in the local store, so all three outlive the provider's 24-hour idempotency
-window rather than depending on it.
+All three live in the local store, so all three outlive the provider's 24-hour idempotency window
+rather than depending on it.
 
-**The approval sentence a human actually signed off**, derived from the same values as the
-calldata at the same moment:
+**The approval sentence a human actually signed off**, from the same values as the calldata at the
+same moment:
 
 > Pay 1 FAU to 0xc43d766cb7c48b9b198db87441b97c09e81717a1 on chain 11155111, plus 0 fee.
 > Total leaving the wallet: 1 FAU (1000000000000000000 base units).
@@ -313,10 +299,10 @@ credential total: the KeeperHub API key.
 | `refusal_codes` | the refusal vocabulary, each with do-not-retry guidance |
 
 **There is no approve tool** — not disabled, not permission-flagged, absent from the protocol
-surface. No sequence of calls authorises money to move. On the agent path, approval is written only by
-[`scripts/approve.ts`](scripts/approve.ts), a human CLI the server neither exposes nor can invoke.
-(The two live *scripts* — `settle-live.ts` and `live-harness.ts` — self-approve inline, because
-they are the owner driving their own wallet non-interactively. No agent can reach that path.)
+surface. No sequence of calls authorises money to move. On the agent path approval is written only
+by [`scripts/approve.ts`](scripts/approve.ts), a human CLI the server neither exposes nor can
+invoke. (The two live *scripts*, `settle-live.ts` and `live-harness.ts`, self-approve inline: that
+is the owner driving their own wallet non-interactively, and no agent can reach that path.)
 
 `test/mcp.test.ts` asserts the absence, including that the handler refuses `approve`,
 `approve_payment`, `record_approval`, `authorize` and `sign_plan` if a client guesses at them,
@@ -343,10 +329,8 @@ invoice, not an id.
 
 ```jsonc
 // register with any MCP client
-{ "mcpServers": { "reqkeeper": {
-    "command": "node",
-    "args": ["--experimental-strip-types", "scripts/mcp-server.ts"],
-    "cwd": "/path/to/reqkeeper" } } }
+{ "mcpServers": { "reqkeeper": { "command": "node",
+    "args": ["--experimental-strip-types", "scripts/mcp-server.ts"], "cwd": "/path/to/reqkeeper" } } }
 ```
 
 ## 38 payments, 38 sends, 38 refused replays
@@ -376,8 +360,8 @@ Full rows, with every transaction hash and payment reference, in
 
 ## Two KeeperHub surfaces, one protocol
 
-`settle()` does not know which surface it is dispatching through, and that is the point: a
-duplicate guard whose safety depends on its transport is not a duplicate guard.
+`settle()` does not know which surface it dispatches through, and that is the point: a duplicate
+guard whose safety depends on its transport is not a duplicate guard.
 
 | Surface | Provider | Verified by |
 |---|---|---|
@@ -402,7 +386,7 @@ Two things about that MCP server that are easy to get wrong, both found by probi
 
 Generated by `npm run harness` into [`docs/refusals.json`](docs/refusals.json): 26 cases, 26 as
 specified, **18 of 24 refusals happen before any provider write**. The provider counts *physical
-sends*, so "0 gas burned" is asserted against a number, not inferred from a status string.
+sends*, so "0 gas burned" is a number, not an inference from a status string.
 
 | Case | Scenario | Refusal | Sends |
 |---|---|---|---|
@@ -426,10 +410,10 @@ The split is deliberate — C23/C24 settle first, so the terminal-state check re
 is rebuilt; C25/C26 never reach `SETTLED` and fall through to the guards built for that case.
 Without the unconfirmed pair, the terminal-state check would have silently shadowed both.
 
-**C25 found a real bug in this codebase.** A plan still inside its TTL whose provider idempotency
-cache had lapsed re-entered dispatch, reused the same attempt row and called `execute()` again —
-and the provider, having forgotten the key, paid a second time. The guard is now on `firstSendAt`
-in `src/settle.ts`; C25 exists so it cannot regress.
+**C25 found a real bug in this codebase.** A plan inside its TTL whose provider idempotency cache
+had lapsed re-entered dispatch, reused the same attempt row and called `execute()` again — and the
+provider, having forgotten the key, paid twice. The guard is now on `firstSendAt`; C25 exists so it
+cannot regress.
 
 ## Three platform hazards, modelled explicitly
 
@@ -450,8 +434,6 @@ the hazard behind harness case `C19` is **modelled, not observed**. The check st
 returned hash would be unambiguous evidence of a real send, but the bug is not claimed to be live.
 Stated rather than quietly dropped: an earlier note asserted it on the issue tracker alone.
 
----
-
 ## Honest limitations
 
 1. **The policy gate is only as real as the operator's standing policy.** With
@@ -460,17 +442,17 @@ Stated rather than quietly dropped: an earlier note asserted it on the issue tra
    approval**, not an invoice that was hostile to begin with. Set those two (see
    [`.env.example`](.env.example)) and it becomes a ceiling the invoice cannot raise;
    `describeStandingPolicy()` prints which of the two you are running.
-2. **Duplicate protection is deployment-scoped.** It prevents a second successful payment of
-   the same canonical Request obligation *through this deployment*. It cannot stop an
-   independent wallet, another deployment, or a human paying the invoice out of band.
+2. **Duplicate protection is deployment-scoped.** It prevents a second successful payment of the
+   same canonical Request obligation *through this deployment*. It cannot stop an independent
+   wallet, another deployment, or a human paying the invoice out of band.
 3. **No semantic dedup across request ids.** Two different Request ids may represent the same
    real-world invoice. Not detected.
-4. **Revocation is not an onchain undo.** Already-broadcast work completes. Cancellation only
+4. **Revocation is not an onchain undo.** Already-broadcast work completes; cancellation only
    stops unsent actions.
 5. **The audit trail detects tampering; it cannot prevent it.** Each row hash-chains to the one
-   before, and `verifyAuditChain()` names the row where an edit or a deletion breaks the chain.
-   But an administrator holding the database can recompute the whole chain and produce a
-   consistent forgery. Detection without an external anchor, not blockchain evidence.
+   before, and `verifyAuditChain()` names the row where an edit or deletion breaks the chain. But
+   an administrator holding the database can recompute the chain and produce a consistent forgery.
+   Detection without an external anchor — not blockchain evidence.
 6. **`simulate` is not treated as a safety boundary.** #1959 did not reproduce when probed
    (retraction above); the assertion stays, the platform bug is not claimed to be live.
 7. **A restored older database can forget broadcasts** that happened after the backup.
@@ -482,31 +464,31 @@ Stated rather than quietly dropped: an earlier note asserted it on the issue tra
     rates drift 30.1% → 36.8% while inline comments fall 22% (p=0.0014, arXiv 2606.22721). This
     design reduces prompt *count*; it does not make a per-action queue safe.
 
-**Configuration, not a limitation: quorum.** `quorum` defaults to 1 — one operator reviewing their
-own proposal, labelled as such. Set it higher and `settle()` refuses until that many **distinct**
-approvers have signed *this plan hash*; one person approving twice counts once. An agent
-credential can never approve, at any quorum.
+**Configuration, not a limitation: quorum.** It defaults to 1 — one operator reviewing their own
+proposal, labelled as such. Set it higher and `settle()` refuses until that many **distinct**
+approvers have signed *this plan hash*; one person approving twice counts once. An agent credential
+can never approve, at any quorum.
 
 ## What is not done
 
 - **Some scenarios are still fixture, and have to be.** A lapsed 24-hour replay window, a cached
   provider failure, and a rival plan racing the same obligation are reproduced against
-  `FixtureProvider` — provoking them for real means deliberately paying twice, or waiting a day
-  per case. The refusal *logic* is the same code in both; only the fault injection differs.
-- **The live settlement used a burner payee.** The invoice's payee is a keypair generated by
+  `FixtureProvider` — provoking them for real means deliberately paying twice, or waiting a day per
+  case. The refusal *logic* is the same code in both; only the fault injection differs.
+- **The live settlement used a burner payee.** The payee is a keypair generated by
   `tools/invoice/`, not a counterparty. That is what makes it reproducible by a stranger, but it
   does mean no third party has confirmed receipt.
 - **`Idempotency-Key` is accepted by KeeperHub but its behaviour is unconfirmed.** It is sent on
   every execution and not rejected; whether it deduplicates cannot be tested without deliberately
   paying twice. Which is why duplicate protection lives in this codebase's identity constraints
   and `firstSendAt` guard rather than depending on the provider's.
-- **The console is read-only.** [`web/index.html`](web/index.html) is a client-side console —
-  four views, filterable and searchable, with a settle-flow replay — over data embedded at build
-  time by `npm run build:web`. It reads; proposing and approving stay CLI-only.
+- **The console is read-only.** [`web/index.html`](web/index.html) is a client-side console — four
+  hash-routed views, a live search filter over every row, and a settle-flow replay — over data
+  embedded at build time by `npm run build:web`. It reads; proposing and approving stay CLI-only.
 - The bounty PR for #1959/#1929 is not opened.
 
-Everything claimed above is reproducible by running the commands in "Run it". Everything not
-claimed is in this section.
+Everything claimed above is reproducible with the commands in "Run it". Everything not claimed is
+in this section.
 
 ## Architecture
 

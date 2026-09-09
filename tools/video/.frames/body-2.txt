@@ -1,0 +1,22 @@
+ReqKeeper — exactly-once settlement of Request Network obligations
+
+  An agent retries. That is what agent harnesses do.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

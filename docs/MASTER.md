@@ -68,8 +68,9 @@ launder an assumption into a fact by restating it.
 
 **Target (the "live project"):** Request Network, on Ethereum Sepolia.
 **Product:** exactly-once settlement of Request payment obligations through KeeperHub.
-**Upstream fix:** a PR to KeeperHub fixing `#1959`/`#1929` — `?simulate=true` is ignored and the
-transaction really executes.
+**Upstream fix:** ~~a PR to KeeperHub fixing `#1959`/`#1929`.~~ **Retracted 2026-09-09:**
+`simulate: true` did NOT reproduce when probed live — the API returned a correct dry run, no hash,
+no execution. The `EVIDENCE_CONFLICT` check stays; the platform bug is not claimed to be live.
 
 ### Thesis
 
@@ -243,8 +244,8 @@ and JSON money fields are decimal strings, never floats.**
 | `plans` | Immutable versioned plan, `plan_hash`, `policy_hash`, `source_facts_hash`, ordered steps, fees, expiry. |
 | `approvals` | Approver, `plan_hash` approved, restatement text shown, decision, reason, timestamp. |
 | `attempts` | One row per dispatch. Persisted provider body, endpoint, `idempotency_key`, `first_send_at`, outcome. Written **and committed before** any outbound call. |
-| `jobs` | kind, unique dedupe key, `due_at`, attempts, `lease_expires_at`, `fencing_generation`, last error code. Claimed with `FOR UPDATE SKIP LOCKED`. |
-| `audit` | Append-only. actor, action, object, correlation id. Tamper-**evident**, not tamper-proof — same DBA can rewrite it. Say so. |
+| `jobs` | kind, unique dedupe key, `due_at`, attempts, `lease_expires_at`, `fencing_generation`, last error code. Claimed with `BEGIN IMMEDIATE` + a lease column, **not** `FOR UPDATE SKIP LOCKED` — SQLite is single-writer and has no such clause; fencing generations make a lost lease safe regardless. |
+| `audit` | Append-only, each row hash-chained to the previous (`prev_hash`, `row_hash`); `verifyAuditChain()` names the row where an edit or deletion breaks it. Detects tampering, cannot prevent it — an administrator can recompute the whole chain. Say so. |
 
 ### Canonical obligation identity
 
@@ -333,7 +334,7 @@ approved plan.
 |---|---|---|
 | Replay expiry | key expires at 24h, same key silently re-executes | `UNIQUE` obligation registry outlives the window; refuse regardless of provider cache |
 | `#1840` | reused key replays a **cached failure**, so retry can never succeed | distinguish "provider cached a failure" from "obligation unpaid"; require a new approved plan, never a key rotation |
-| `#1959` / `#1929` | `?simulate=true` **ignored, transaction really executes** on the transfer route | never trust `simulate` as a safety boundary; assert `wouldRevert`/`status:"simulated"` **and** that no tx hash was returned. If a hash comes back from a simulate call, that is `EVIDENCE_CONFLICT` — treat it as a real send |
+| `#1959` / `#1929` | `?simulate=true` ignored on the transfer route — **did not reproduce 2026-09-09; modelled, not observed** | never trust `simulate` as a safety boundary; assert `wouldRevert`/`status:"simulated"` **and** that no tx hash was returned. If a hash comes back from a simulate call, that is `EVIDENCE_CONFLICT` — treat it as a real send |
 
 That last row is why the bounty PR and the product are the same body of understanding.
 
@@ -416,15 +417,18 @@ Test it first. Everything built before this passes is waste if it fails.
 
 **Owner actions (~60s each, cannot be delegated):**
 
-1. `dashboard.request.network` → `EVM` → `Connect Wallet` → **burner wallet, never a funded one**.
-   Copy the Client ID. It is a public identifier.
+1. ~~Request Client ID.~~ **Not needed, resolved 2026-09-09.** Only Request's v2 REST API wants
+   one; `sepolia.gateway.request.network` accepts `persistTransaction` unauthenticated, which is
+   how `tools/invoice/` raises invoices. The build runs on one credential.
 2. `app.keeperhub.com` → sign up (captcha-gated) → Turnkey wallet auto-provisions →
    Settings → Developer → copy the `kh_` key. **`.env` only. Never in chat, logs, or the repo.**
    This key can move funds.
 
 **Funding:**
 
-3. Sepolia ETH from a faucet (KeeperHub's sponsored gas is mainnet-only).
+3. No Sepolia ETH needed. **Superseded 2026-09-09:** KeeperHub sponsors gas on Sepolia too —
+   a relayer paid 0.000119 ETH for tx `0x5b722787…` from a zero-balance payer. The earlier
+   note that sponsorship is mainnet-only was wrong. See the README.
 4. FAU: call `mint(address,uint256)` on `0x370DE27fdb7D1Ff1e1BaA7D11c5820a324Cf623C` from
    Etherscan's Write Contract tab. `value = 10000000000000000000000` for 10,000 FAU.
 
@@ -515,12 +519,10 @@ Requires at least one filter: `txHash`, `walletAddress`, `paymentReference`, `re
 settlement verdict — one of the two signals `SETTLED` requires. The other is an independent
 `eth_getTransactionReceipt`.
 
-**Doc conflict, unresolved — running system wins.** `docs.request.network/llms.txt` says a Client ID
-is obtainable only "after a payment destination exists". `llms-full.txt` says the opposite: "No
-prerequisite payment destination or payout route required… destinations/routes are optional." The
-live dashboard states "Setting up a destination allows you to generate payment requests." Check for
-a Developer / API / Client ID section first; only configure a destination if the credential is
-genuinely unreachable without one.
+**Doc conflict, RESOLVED 2026-09-09 — the gateway wins.** The docs disagree about when a Client ID
+is obtainable, and it turned out not to matter: the REST API is a convenience layer, and this
+project never uses it. `gate-a` steps 4 and 5 are BLOCKED for exactly this reason and nothing
+depends on them.
 
 **If 8 fails:** isolate the exact failing request, keep sanitised diagnostics, fix that boundary.
 Do not substitute a plain transfer, a dummy contract, or a manually flipped status. Research one
@@ -549,161 +551,14 @@ Slippage rule: cut breadth, never cut Gate A, the registry, the refusal harness,
 
 ---
 
-## 11. Landing page
+## 11. Console (was: landing page)
 
-### Technique — settled with measured numbers
-
-**Canvas is not an LCP candidate.** Paint frames into `<canvas>` and LCP falls to the H1. Use an
-`<img>` hero instead and the 1600x1000 poster becomes LCP and loses. That single fact decides the
-architecture.
-
-Rejected, with reasons:
-
-- **Scroll-scrubbed `<video>`** — seeks snap to keyframes. Locally measured on low-motion footage
-  (x264 CRF 23, 1080p, 150 frames, `scenecut=0`): GOP 150 → 0.19 MB, GOP 5 → **3.77 MB (20x)**,
-  GOP 1 → **12.88 MB (68x)**. The widely-repeated "~5x" figure comes from *high-motion* clips
-  where inter-prediction was not helping anyway. A hero push-in is exactly the worst case.
-  `requestVideoFrameCallback` (95.38%) reports which frame *presented* — it does not make seeking
-  frame-accurate.
-- **WebCodecs** — needs a demuxer (100–300 KB+) before a pixel renders, manual `VideoFrame.close()`
-  or the tab dies, and `ImageDecoder` is `preview`-only in Safari. Whole ecosystem is
-  video-editor-shaped; no scroll-scrub demo exists in any of their galleries.
-- **three.js** — ~150 KB+ gzipped before scene code, for footage already pre-rendered. Backwards.
-- **GSAP ScrollTrigger** — now genuinely free for commercial use (all ex-Club plugins included).
-  But measured from `gsap@3.15.0/dist/`: core **28,268 B gzip** + ScrollTrigger **17,998 B** =
-  **~46 kB gzip**, not the ~35 kB I first quoted. Skipped: `position: sticky` + one
-  `IntersectionObserver` does one pinned hero in ~40 lines. Note it is **not MIT** — GitHub reports
-  `license: null`; it is a Webflow agreement they may amend or terminate.
-
-**Chosen: scroll-scrubbed AVIF sequence → `<canvas>` + `drawImage`.** ~1.5 KB of own JS.
-
-### Budget
-
-120 frames, not 559. That is 3 deg/frame — past the premium turntable tier, and Apple ships 148.
-
-| Tier | Config | Transfer | Peak decoded |
-|---|---|---|---|
-| Desktop >=1024px | 120 @ 1280x800 AVIF | ~1.84 MB | ~100 MB windowed |
-| Tablet | 90 @ 960x600 | ~0.78 MB | ~55 MB |
-| Mobile <768px | 48 @ 720x450 | ~0.23 MB | 62 MB, no windowing |
-| reduced-motion / saveData / 2G | 1 frame | ~16 KB | 4 MB |
-
-**The trap that kills mobile:** decoded RGBA is `w*h*4` regardless of file format. 120 frames at
-1280x800 fully decoded is **492 MB** against iOS Safari's ~224 MB canvas memory cap and its
-16,777,216 px area cap. Guaranteed crash. Mitigation: keep every 8th frame permanently resident
-(15 frames, ~61 MB) as a coarse layer, plus a +/-8 frame window around the cursor, closing bitmaps
-outside it via `ImageBitmap.close()`. Peak ~100 MB.
-
-Per-frame byte figures are **derived from a 0.12 bpp assumption**, not measured on this footage.
-Encode 5 real frames at AVIF q45/q50/q55 and re-run the table before committing. Dark smooth
-gradients band and may force a higher bpp.
-
-### Loading
-
-LCP = the H1. Then: inline a ~2–3 KB 320x200 AVIF of frame 1 as a `data:` URI (needs
-`img-src 'self' data:`) drawn on first paint so the hero is never empty → preload frame 1 full-res
-→ start the sequence **only after LCP paints**, gated on not-reduced-motion, not `saveData`,
-`effectiveType` not 2g → progressive halving: every 8th (15 files, ~230 KB) → 4th → 2nd → all.
-
-**Interactive after ~230 KB, not 1.84 MB.** Frame lookup is "nearest loaded index".
-
-`await img.decode()` before admitting a frame to the pool. A synchronous decode inside a scroll
-handler is the classic 200 ms hitch people blame on the scroll library.
-
-No spinner. If frames never arrive, the poster stays and the pinned section collapses after 6s.
-
-### prefers-reduced-motion
-
-Not "disable the animation" — that leaves three empty screens of spacer.
-
-Unpin (`sticky` → `static`), **remove the 300vh spacer** so the section gets shorter, and replace
-the canvas with three static frames at the narrative beats (index 0, ~60, ~119) inline above their
-copy blocks as ordinary `<img>` with explicit dimensions. Same information, no motion. Never fetch
-the sequence. Keep opacity transitions — reduced *motion*, not reduced *change*. Re-evaluate on
-`mql.addEventListener('change')`; users toggle mid-session.
-
-### Frame pipeline
-
-One HyperFrames composition, two deliverables:
-
-```bash
-npx hyperframes render --format png-sequence            # → scroll-scrub frames
-npx hyperframes render --format mp4 --quality high      # → required submission video
-```
-
-Render the object on **transparent** background; paint `--canvas` in CSS. Palette stays retunable
-without re-rendering and flat alpha regions compress far harder.
-
-HyperFrames gotchas, from the skill contract:
-- `three` adapter has **no duration auto-inference**. Omit `data-duration` on the root and it hard
-  fails with "Composition has zero duration".
-- Root needs an explicit pixel-sized box or content silently collapses to the top-left.
-- Never pair a CSS initial `transform` with a GSAP tween on the same property — lint rejects it.
-- A lint **error** silently switches off the layout and contrast audits; `check` then reports
-  "0 samples", which reads clean but means nothing ran.
-
-### Palette — verified, not guessed
-
-Tuned to ORYZO's **measured** luminance steps (surface 1.35:1, hairline 1.70:1).
-
-```css
-:root{
-  --canvas:#040806;      /* green-tinted near-black, not neutral */
-  --surface:#1A2B1D;     /* step 1.35:1 vs canvas — matches ORYZO exactly */
-  --hairline:#283C2B;    /* 1.70:1 — matches ORYZO exactly */
-  --mid:#4C6351;         /* 3.08:1 */
-  --text:#E6F7E8;        /* 18.07:1 canvas / 13.38:1 surface — AAA */
-  --text-2:#93AC98;      /*  8.24:1 /  6.11:1 — AA */
-  --text-muted:#879C8B;  /*  6.87:1 /  5.09:1 — AA, worst case, +0.59 margin */
-  --signal:#3BFF6C;      /* 15.07:1 / 11.16:1 — AAA */
-}
-```
-
-Two defects the maths caught that eyeballing would have shipped: `text-muted` was **4.21:1 on
-surface, a fail**; and the first canvas→surface step was **1.12:1, nearly invisible** — fatal in a
-system that bans drop shadows, because that step *is* the entire depth model.
-
-Consider switching the secondary ramp to **translucent tinted white over canvas** instead of flat
-hexes — terminal.shop measures `rgba(229,242,255,0.47)` for body copy, and the low-alpha tint is
-what reads as phosphor rather than "grey text". Re-verify AA on the composited values first.
-
-**Accent discipline:** ORYZO's ember measures only **4.88:1** against its canvas — that orange is
-a *whisper*, which is why their own rules forbid it on buttons. `--signal` at 15:1 is far louder,
-so it must be rarer than theirs or it dominates every screen.
-
-### Motion contract, from the reference capture
-
-| Scroll | Beat |
-|---|---|
-| 0–15% | Full-bleed photographic hero, object in context. Massive wordmark upper-left, micro-caps tagline above, fixed 4-item nav upper-right, vertical serial label right edge, translucent info card lower-left |
-| 15–40% | Photo gone. Object detaches into the void, rotating to 3/4. Heading left column, body right column |
-| 40–75% | Object keeps rotating, held by a hand rising from the bottom. Display line centred top, accent sub-label beneath |
-| 75–100% | Rim-glow creeps in from screen edges on hover. Micro-legal in corner |
-
-Devices with verified precedent (all measured off live DOM):
-
-| Device | Precedent | Spec |
-|---|---|---|
-| vertical serial label | oxide.computer `FIG. 1 —` plate | 11px uppercase mono, 0.64px tracking, right edge of hero |
-| micro-legal footnote | darkroom.engineering numbered columns | **8.9px** uppercase mono, weight 200, under a **177px** headline |
-| display wordmark | darkroom "Therma" | 177px uppercase, -8.9px tracking, justified edge to edge |
-| off-black + variable weight | linear.app | `#08090A`, weight **510**, -0.022em |
-| loading state | lusion.co (the studio ORYZO credits) | oversized `00%` flush bottom-left, **clipped by the viewport edge** |
-
-**Note:** the refero-extracted style doc says "never lowercase for headings". The actual site sets
-its 40–75% display line in **mixed case**. Do not inherit that constraint.
-
-Firefox has **no** scroll-driven CSS in any shipped version (stable is 155; raw MDN BCD says
-`preview` = Nightly only). Author the no-support state as the default inside
-`@supports (animation-timeline: scroll())`. Also: **scrolling does not count toward INP** — but
-long tasks during scroll become input delay for the next real click, and Chrome does not score
-scroll smoothness at all. Passing CWV is not evidence the hero is smooth.
-
-Do not intercept wheel or touch events. `position: sticky` + native scroll keeps momentum,
-PageDown, spacebar, find-in-page and screen readers working; only *read* the position. NN/g found
-most participants were at least mildly disoriented by scrolljacking and some tried to refresh.
-
----
+**Superseded — the 156-line landing-page spec that stood here was never built and its palette
+never shipped.** What shipped instead is `web/index.html`: a client-side console over data
+embedded at build time by `npm run build:web`, four views (Overview / Obligations / Settle /
+Surfaces), hash-routed, with a live search filter and a settle-flow replay, and no hardcoded
+numbers in the markup. Read that file for the actual tokens and motion; do not resurrect the
+spec that was here.
 
 ## 12. Known limitations — publish these
 

@@ -1,0 +1,22 @@
+ReqKeeper — exactly-once settlement of Request Network obligations
+
+  An agent retries. That is what agent harnesses do.
+  When the thing being retried moves money, a retry is a second payment.
+
+  KeeperHub owns reliability within a run.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
