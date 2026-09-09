@@ -10,7 +10,7 @@ ReqKeeper — exactly-once settlement of Request Network obligations
   1. An agent proposes. It cannot approve.   [FIXTURE]
 ──────────────────────────────────────────────────────────────────────────
 
-  MCP tools exposed: propose_payment, settle_obligation, obligation_status, verify_payment, refusal_codes
+  MCP tools exposed: propose_payment, settle_obligation, obligation_status, verify_payment, resolve_pending, refusal_codes
 
   Note what is absent. There is no approve tool — not disabled, not behind a
   flag. The capability is not on the protocol surface at all.
@@ -139,7 +139,7 @@ ReqKeeper — exactly-once settlement of Request Network obligations
   Including two that found real bugs in this codebase, both now regression-tested.
 
 ──────────────────────────────────────────────────────────────────────────
-  npm test          146 tests
+  npm test          152 tests
   npm run harness   26 refusal cases
   npm run verify:seam / verify:onchain / settle:live
 

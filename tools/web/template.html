@@ -54,7 +54,34 @@
   }
   .brand { padding: 18px 16px 16px; border-bottom: 1px solid var(--line); }
   .brand .name { font-family: var(--pixel); font-size: 10px; color: var(--signal); }
+  .brand .name .caret { opacity: 0; animation: caret 1s step-end infinite; }
   .brand .sub { color: var(--faint); font-size: 10px; margin-top: 7px; letter-spacing: .06em; }
+
+  /* The mark is drawn a pixel at a time by the console itself, so it is lit the way the rest
+     of this thing is lit: phosphor on a dark panel, no image asset to go stale. */
+  .mark-wrap { position: relative; margin: 0 auto 14px; width: 136px; height: 120px; }
+  .mark {
+    width: 100%; height: 100%; display: block;
+    image-rendering: pixelated; image-rendering: crisp-edges;
+    filter: drop-shadow(0 0 5px rgba(53, 240, 160, .40)) drop-shadow(0 0 16px rgba(53, 240, 160, .16));
+    animation: phosphor 5s ease-in-out infinite;
+  }
+  /* A faint grid underneath, so the empty canvas reads as a display rather than a gap. */
+  .mark-wrap::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background:
+      repeating-linear-gradient(to bottom, rgba(53, 240, 160, .05) 0 1px, transparent 1px 4px);
+    mix-blend-mode: screen;
+  }
+  @keyframes phosphor {
+    0%, 100% { filter: drop-shadow(0 0 5px rgba(53, 240, 160, .40)) drop-shadow(0 0 16px rgba(53, 240, 160, .16)); }
+    50%      { filter: drop-shadow(0 0 8px rgba(53, 240, 160, .62)) drop-shadow(0 0 24px rgba(53, 240, 160, .26)); }
+  }
+  @keyframes caret { 50% { opacity: 1 } }
+  @media (prefers-reduced-motion: reduce) {
+    .mark { animation: none }
+    .brand .name .caret { animation: none; opacity: 0 }
+  }
   nav { padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; }
   nav button {
     display: flex; align-items: center; gap: 9px; width: 100%;
@@ -195,7 +222,9 @@
 <div class="app">
   <aside>
     <div class="brand">
-      <div class="name">REQKEEPER</div>
+      <div class="mark-wrap"><canvas id="mark" class="mark" width="34" height="30" role="img"
+        aria-label="ReqKeeper: a pixel tyrannosaur holding a coin, its tail breaking into loose pixels"></canvas></div>
+      <div class="name" id="wordmark"></div>
       <div class="sub">EXACTLY-ONCE SETTLEMENT</div>
     </div>
     <nav id="nav">
@@ -307,6 +336,108 @@
 <script>
   const D = JSON.parse(document.getElementById("reqkeeper-data").textContent);
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  // ---- the mark ----------------------------------------------------------
+  //
+  // Drawn here rather than shipped as an image: the console paints it one pixel at a time in
+  // scan order, with a cursor at the leading edge, so it arrives the way everything else in
+  // this tool arrives — as output. `#` is phosphor, `+` is the tail coming apart, and the
+  // loose pixels keep flickering afterwards because they never settled.
+  const MARK = [
+    "..................................",
+    "..................................",
+    "......................#########...",
+    ".....................############.",
+    "....................#######..#####",
+    "................+...##############",
+    "....................######.#.#.#..",
+    "..............+....############...",
+    ".................############.....",
+    "............+..#########.####.....",
+    "..............#######..###..##....",
+    "..........+..######..###.###......",
+    "...+........#######.#.#####.#.#...",
+    "......+....#######.#.##.#..#.#....",
+    ".+........########.#.##.#..#.#....",
+    "....+....#########.#.#####...#....",
+    "........##########.#.##.#..#.#....",
+    "..+....###########.#.##.#..#.#....",
+    ".....+#############.#.#####.#.....",
+    ".+...##############..###.###......",
+    "....##.##.#.###....########.......",
+    "+..####.#####......########.......",
+    "..###.##.##+.......########.......",
+    ".###.####..........########.......",
+    "###.###..+...+.....########.......",
+    "...................########.......",
+    "..+.....+.........###########.....",
+    ".....+.........+..###########.....",
+    "..................................",
+    "..................................",
+  ];
+
+  (function paintMark() {
+    const cv = document.getElementById("mark");
+    if (!cv) return;
+    const ctx = cv.getContext("2d");
+    const W = 34, H = 30;
+
+    const cells = [];
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const c = MARK[y][x];
+        if (c !== ".") cells.push({ x, y, dust: c === "+" });
+      }
+    }
+    // Scan order, so it fills the way a terminal fills: left to right, top to bottom.
+    const order = cells.slice().sort((a, b) => a.y - b.y || a.x - b.x);
+    const REVEAL_MS = 2.1; // per pixel; the whole mark lands in about two seconds
+
+    const draw = (revealed, t) => {
+      ctx.clearRect(0, 0, W, H);
+      for (let i = 0; i < revealed && i < order.length; i++) {
+        const p = order[i];
+        let a = p.dust ? 0.30 + 0.30 * Math.sin(t / 320 + p.x * 7 + p.y * 13) : 1;
+        // A slow diagonal pass, like a beam going over the tube.
+        const band = ((t / 1000) % 6) * 13 - 12;
+        const near = Math.abs(p.x + p.y - band);
+        if (near < 3) a = Math.min(1, a + (3 - near) * 0.22);
+        ctx.fillStyle = "rgba(53, 240, 160, " + a.toFixed(3) + ")";
+        ctx.fillRect(p.x, p.y, 1, 1);
+      }
+      if (revealed < order.length) {
+        const p = order[Math.min(revealed, order.length - 1)];
+        ctx.fillStyle = "#DCEAE6";
+        ctx.fillRect(p.x, p.y, 1, 1); // the cursor, riding the leading edge
+      }
+    };
+
+    const word = document.getElementById("wordmark");
+    if (still) {
+      draw(order.length, 0);
+      if (word) word.textContent = "REQKEEPER";
+      return;
+    }
+
+    const t0 = performance.now();
+    const tick = (t) => {
+      const revealed = Math.floor((t - t0) / REVEAL_MS);
+      draw(revealed, t);
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+
+    // The wordmark types itself once the mark is down, then the caret stays blinking.
+    if (word) {
+      const text = "REQKEEPER";
+      const start = order.length * REVEAL_MS + 120;
+      const type = (i) => {
+        word.innerHTML = text.slice(0, i) + '<span class="caret">_</span>';
+        if (i < text.length) setTimeout(() => type(i + 1), 55);
+      };
+      setTimeout(() => type(0), start);
+    }
+  })();
   const liveRows = (D.live?.rows ?? []).map((r) => ({ ...r, mode: "LIVE" }));
   const fixRows = (D.refusals.rows ?? []).map((r) => ({ ...r, mode: "FIXTURE" }));
   const ALL = [...liveRows, ...fixRows];
@@ -358,7 +489,12 @@
 
   // Codes, counted from the artifact rather than listed by hand.
   const codes = new Map();
-  for (const r of ALL) codes.set(r.actual, (codes.get(r.actual) ?? 0) + 1);
+  // Upper-cased for display only. Some codes come from our own state vocabulary and some are
+  // the provider's, and the difference in casing reads as a typo rather than as a distinction.
+  for (const r of ALL) {
+    const code = String(r.actual).toUpperCase();
+    codes.set(code, (codes.get(code) ?? 0) + 1);
+  }
   kv(
     el("codes-kv"),
     [...codes.entries()]
