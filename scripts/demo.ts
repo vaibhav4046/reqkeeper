@@ -224,6 +224,23 @@ if (existsSync(LIVE)) {
   say("");
   say("  The odd rows paid. The even rows are the same obligation asked to pay again,");
   say("  and every one of them refused at zero sends. That is the product.");
+  say("");
+  say("  None of the above has to be taken on trust. Reading three of those payment");
+  say("  references back off Sepolia now, through a public RPC, no credentials:");
+  say("");
+  const sample = live.rows.filter((r) => r.tx_hash).slice(0, 3);
+  for (const r of sample) {
+    const seen = await findPaymentByReference(
+      live.rows.find((x) => x.case_id === r.case_id)?.payment_reference ?? "",
+      { lookbackBlocks: 300_000 },
+    );
+    say(
+      `    ${r.case_id}  on chain: ${seen.found}  amount ${seen.amount ?? "-"}  ${(seen.txHash ?? "").slice(0, 20)}`,
+    );
+  }
+  say("");
+  say("  npm run verify:live does this for all 38, and checks that every refusal row");
+  say("  really has no transaction. It needs no API key.");
 } else {
   say("  docs/refusals-live.json not present. Run npm run harness:live first.");
 }

@@ -6,7 +6,10 @@ Your agent proposes. You approve the exact bytes. KeeperHub executes. ReqKeeper 
 second payment.
 
 - **Integrated project:** [Request Network](https://request.network) — invoices on Ethereum Sepolia
-- **Execution:** KeeperHub direct execution (`/api/execute/contract-call`)
+- **Execution:** two KeeperHub surfaces behind one interface — direct execution
+  (`/api/execute/contract-call`) and KeeperHub's own MCP server, plus its audit trail
+- **Evidence:** 38 real payments on Sepolia, 38 replays refused at zero sends, every row
+  re-derivable from a public RPC with no credentials
 - **Network:** Ethereum Sepolia (11155111). Testnet only, deliberately. Mainnet is disabled in code.
 - **Cost to run:** $0. No paid API, no card. `src/` and every `scripts/` entry have zero
   dependencies; the one-time invoice-creation step in `tools/invoice/` uses the official
@@ -144,6 +147,9 @@ npm test                  # 146 unit tests
 npm run harness           # 26 cases, 24 of them refusals -> docs/refusals.json
 npm run verify:onchain    # reads Sepolia via public RPC, no credentials
 npm run verify:seam       # proves the calldata gate against the live API (needs the KeeperHub key)
+npm run verify:mcp        # the same, through KeeperHub's own MCP server
+npm run harness:live      # the refusal table against real money -> docs/refusals-live.json
+npm run verify:live       # re-derives every live row from a public RPC, no credentials
 npm run settle:live       # settles one real Request obligation; run twice to see the refusal
 ```
 
@@ -275,6 +281,67 @@ approval flow. That is why the CLI takes the invoice rather than an id.
     "cwd": "/path/to/reqkeeper" } } }
 ```
 
+## 38 payments, 38 sends, 38 refused replays
+
+The fixture harness proves the logic. This is the same protocol against real money.
+
+`npm run harness:live` creates real Request Network invoices, settles each one through
+KeeperHub, then dispatches the same obligation a second time. Sends are counted by wrapping
+the provider, so a zero is a number this code observed and not a status string it believed.
+
+```
+83/83 rows behaved as specified.
+45/45 refusals happened before any provider write (0 gas burned).
+38 real payments, 38 physical sends in total.
+Every send is accounted for by exactly one settled obligation.
+```
+
+**None of that has to be taken on trust.** `npm run verify:live` re-derives every row from a
+public RPC with no credentials, and reports the claim as arithmetic:
+
+```
+38/38 receipts verified as successful on chain
+2835088 gas used in total across them
+38/38 references present on chain
+38 of them for exactly 1000000000000000000 base units
+every refusal row reports zero sends, and carries no hash to check
+
+  obligations settled          38
+  replays attempted            38
+  sends made by those replays  0
+```
+
+Full rows, with every transaction hash and payment reference, in
+[`docs/refusals-live.json`](docs/refusals-live.json).
+
+## Two KeeperHub surfaces, one protocol
+
+`settle()` does not know which surface it is dispatching through, and that is the point. A
+guarded signer whose safety depends on its transport is not a guarded signer.
+
+| Surface | Provider | Verified by |
+|---|---|---|
+| Direct execution REST (`/api/execute/contract-call`) | [`src/keeperhub.ts`](src/keeperhub.ts) | `npm run verify:seam` |
+| KeeperHub's own MCP server (`https://app.keeperhub.com/mcp`, 44 tools) | [`src/keeperhub-mcp.ts`](src/keeperhub-mcp.ts) | `npm run verify:mcp` |
+| Audit trail (`get_direct_execution_status` over MCP) | same | `npm run verify:mcp` |
+
+The calldata gate is one module, [`src/calldata-gate.ts`](src/calldata-gate.ts), that both
+providers call. Two providers with two copies of that rule would be a hole in exactly the
+defence this project exists to provide, so the allowlist and the byte-comparison live in one
+place and `npm test` covers both paths through it.
+
+Four things about the MCP server that are easy to get wrong, each found by probing it:
+
+- The handshake is sequential. A `tools/call` before `notifications/initialized` fails with
+  `-32003 Session not initialized`.
+- Authentication failure does not look like one. A rejected key still returns **HTTP 200** on
+  `initialize`, just with no `mcp-session-id` header. The 401 arrives on the *next* call, so
+  absence of the header is the only reliable signal.
+- The session id rotates. An expired-but-in-grace token is silently re-minted and returned in
+  a rewritten header, so the newest response wins rather than the one `initialize` returned.
+- `simulate` is compared with `=== true`. The string `"true"` does not dry-run: it signs and
+  broadcasts.
+
 ## The refusal table
 
 
@@ -378,11 +445,14 @@ These are published because they are true, and because vague claims poison the c
 
 Stated plainly rather than left for a reviewer to discover.
 
-- **All 26 harness rows are still `FIXTURE`.** One obligation has settled live and refused a
-  live replay, but the other 23 scenarios — a lapsed replay window, a cached provider failure,
-  a rival plan holding the obligation — are reproduced against `FixtureProvider`, because
-  provoking them for real would mean deliberately paying twice. The refusal *logic* is the same
-  code in both cases; the fault injection is not.
+- **Some scenarios are still fixture, and have to be.** 38 obligations have settled live and
+  refused 38 live replays, and 45 live refusals happened before any provider write
+  ([`docs/refusals-live.json`](docs/refusals-live.json), all 83 rows re-derivable from a public
+  RPC with `npm run verify:live`). But a lapsed 24-hour replay window, a cached provider
+  failure, and a rival plan racing the same obligation are still reproduced against
+  `FixtureProvider`, because provoking them for real would mean deliberately paying twice or
+  waiting a day per case. The refusal *logic* is the same code in both; only the fault
+  injection differs.
 - **The live settlement used a burner payee.** The invoice's payee is a keypair generated by
   `tools/invoice/`, not a counterparty. That is what makes it reproducible by a stranger, but it
   does mean no third party has confirmed receipt.

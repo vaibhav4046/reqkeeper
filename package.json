@@ -21,6 +21,7 @@
     "build:web": "node tools/web/build.mjs",
     "harness:live": "node --experimental-strip-types scripts/live-harness.ts",
     "verify:mcp": "node --experimental-strip-types scripts/verify-mcp.ts",
-    "invoices": "node tools/invoice/create-batch.mjs"
+    "invoices": "node tools/invoice/create-batch.mjs",
+    "verify:live": "node --experimental-strip-types scripts/verify-live.ts"
   }
 }
