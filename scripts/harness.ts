@@ -193,8 +193,8 @@ await run("provider rate limits the preflight", "rate_limited", () => ({ facts: 
   const noSecondPayment = sendsAfterSecond === sendsAfterFirst;
   rows.push({
     case_id: `C${String(n).padStart(2, "0")}`,
-    scenario: "replay 25h later, provider idempotency cache expired",
-    expected: "PLAN_EXPIRED",
+    scenario: "replay 25h later, settled, provider cache expired",
+    expected: "ALREADY_SETTLED",
     actual: second.refusal ?? second.state,
     refused_before_provider_write: !second.providerWriteIssued,
     physical_sends: sendsAfterSecond,
@@ -202,7 +202,7 @@ await run("provider rate limits the preflight", "rate_limited", () => ({ facts: 
     independently_verified: false,
     fault_injected: "REPLAY_EXPIRED",
     mode: "FIXTURE",
-    pass: (second.refusal ?? second.state) === "PLAN_EXPIRED" && noSecondPayment,
+    pass: (second.refusal ?? second.state) === "ALREADY_SETTLED" && noSecondPayment,
   });
   store.close();
 }
@@ -228,8 +228,8 @@ await run("provider rate limits the preflight", "rate_limited", () => ({ facts: 
   const sendsAfterSecond = provider.totalSends();
   rows.push({
     case_id: `C${String(n).padStart(2, "0")}`,
-    scenario: "replay inside plan TTL, provider cache expired",
-    expected: "ALREADY_DISPATCHED",
+    scenario: "replay inside plan TTL, settled, provider cache expired",
+    expected: "ALREADY_SETTLED",
     actual: second.refusal ?? second.state,
     refused_before_provider_write: !second.providerWriteIssued,
     physical_sends: sendsAfterSecond,
@@ -237,7 +237,46 @@ await run("provider rate limits the preflight", "rate_limited", () => ({ facts: 
     independently_verified: false,
     fault_injected: "REPLAY_EXPIRED",
     mode: "FIXTURE",
-    pass: (second.refusal ?? second.state) === "ALREADY_DISPATCHED" && sendsAfterSecond === sendsAfterFirst,
+    pass: (second.refusal ?? second.state) === "ALREADY_SETTLED" && sendsAfterSecond === sendsAfterFirst,
+  });
+  store.close();
+}
+
+// ---- the same replays, but from an UNCONFIRMED first leg -------------------
+// The settled short-circuit refuses earlier than these guards, so without a first leg that
+// never reaches SETTLED the attempt-level and TTL guards would be shadowed and untested.
+for (const [label, advanceMs, want] of [
+  ["replay inside plan TTL, outcome unconfirmed", 60_000, "ALREADY_DISPATCHED"],
+  ["replay 25h later, outcome unconfirmed", 25 * 3600 * 1000, "PLAN_EXPIRED"],
+] as const) {
+  n++;
+  const store = new Store();
+  const provider = new FixtureProvider("NONE");
+  const requestId = `req-unconfirmed-${advanceMs}`;
+  const oid = obligationId(NS, requestId);
+  // The chain never confirms, so the first call stops short of SETTLED.
+  const deps = { store, provider, policy, sourceSaysPaid: async () => false };
+  const input = { namespace: NS, requestId, obligationId: oid, facts: facts(), steps: STEPS, approval: APPROVED, now: 3_000_000 };
+
+  await settleObligation(deps, input);
+  const sendsAfterFirst = provider.totalSends();
+
+  provider.setFault("REPLAY_EXPIRED");
+  const second = await settleObligation(deps, { ...input, now: 3_000_000 + advanceMs });
+  const sendsAfterSecond = provider.totalSends();
+
+  rows.push({
+    case_id: `C${String(n).padStart(2, "0")}`,
+    scenario: label,
+    expected: want,
+    actual: second.refusal ?? second.state,
+    refused_before_provider_write: !second.providerWriteIssued,
+    physical_sends: sendsAfterSecond,
+    tx_hash: second.txHash ?? null,
+    independently_verified: false,
+    fault_injected: "REPLAY_EXPIRED",
+    mode: "FIXTURE",
+    pass: (second.refusal ?? second.state) === want && sendsAfterSecond === sendsAfterFirst,
   });
   store.close();
 }

@@ -1,13 +1,13 @@
 {
-  "generatedAt": "2026-09-09T03:11:10.820Z",
+  "generatedAt": "2026-09-09T03:14:49.719Z",
   "mode": "FIXTURE",
   "note": "Deterministic fault injection against an in-memory provider that counts physical sends. These rows prove the refusal logic, not the live integration. Live rows require Gate A and are tagged LIVE_TESTNET when present.",
   "totals": {
-    "cases": 24,
-    "passed": 22,
-    "failed": 2,
-    "refusalCases": 22,
-    "refusedBeforeAnyProviderWrite": 16
+    "cases": 26,
+    "passed": 26,
+    "failed": 0,
+    "refusalCases": 24,
+    "refusedBeforeAnyProviderWrite": 18
   },
   "rows": [
     {
@@ -298,8 +298,8 @@
     },
     {
       "case_id": "C23",
-      "scenario": "replay 25h later, provider idempotency cache expired",
-      "expected": "PLAN_EXPIRED",
+      "scenario": "replay 25h later, settled, provider cache expired",
+      "expected": "ALREADY_SETTLED",
       "actual": "ALREADY_SETTLED",
       "refused_before_provider_write": true,
       "physical_sends": 1,
@@ -307,12 +307,12 @@
       "independently_verified": false,
       "fault_injected": "REPLAY_EXPIRED",
       "mode": "FIXTURE",
-      "pass": false
+      "pass": true
     },
     {
       "case_id": "C24",
-      "scenario": "replay inside plan TTL, provider cache expired",
-      "expected": "ALREADY_DISPATCHED",
+      "scenario": "replay inside plan TTL, settled, provider cache expired",
+      "expected": "ALREADY_SETTLED",
       "actual": "ALREADY_SETTLED",
       "refused_before_provider_write": true,
       "physical_sends": 1,
@@ -320,7 +320,33 @@
       "independently_verified": false,
       "fault_injected": "REPLAY_EXPIRED",
       "mode": "FIXTURE",
-      "pass": false
+      "pass": true
+    },
+    {
+      "case_id": "C25",
+      "scenario": "replay inside plan TTL, outcome unconfirmed",
+      "expected": "ALREADY_DISPATCHED",
+      "actual": "ALREADY_DISPATCHED",
+      "refused_before_provider_write": true,
+      "physical_sends": 1,
+      "tx_hash": "0x0000000000000000000000000000000000000000000000000000000000000001",
+      "independently_verified": false,
+      "fault_injected": "REPLAY_EXPIRED",
+      "mode": "FIXTURE",
+      "pass": true
+    },
+    {
+      "case_id": "C26",
+      "scenario": "replay 25h later, outcome unconfirmed",
+      "expected": "PLAN_EXPIRED",
+      "actual": "PLAN_EXPIRED",
+      "refused_before_provider_write": true,
+      "physical_sends": 1,
+      "tx_hash": null,
+      "independently_verified": false,
+      "fault_injected": "REPLAY_EXPIRED",
+      "mode": "FIXTURE",
+      "pass": true
     }
   ]
 }
