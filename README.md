@@ -43,10 +43,15 @@ rotation, a re-import, regenerated calldata, and the 24-hour replay expiry.
 
 We did not invent an identity scheme. Request already ships one.
 
-And the loop closes without fabrication: pay with the reference embedded, and Request's own
-payment detection flips the invoice to paid. `SETTLED` requires **both** an independently read
-`eth_getTransactionReceipt` **and** Request's `hasBeenPaid`. A provider status string is never
-sufficient.
+And the loop closes without fabrication. `SETTLED` requires **two independent reads**: an
+`eth_getTransactionReceipt`, and the ERC20FeeProxy event log carrying the payment reference —
+the same log Request's own payment detection reads. A provider status string is never
+sufficient for either.
+
+To be precise about what that is not: the settle path does not call Request's API. It reads the
+chain evidence Request's detection is derived from. `tools/invoice/check-paid.mjs` asks Request
+directly, and confirmed `hasBeenPaid: true` for the first settled invoice, but that is a
+separate check and not what gates `SETTLED`.
 
 ---
 
@@ -143,7 +148,7 @@ Six files, in the order that explains the design:
 Needs Node 24+. Nothing else — no `npm install`, no `node_modules`.
 
 ```bash
-npm test                  # 146 unit tests
+npm test                  # 152 unit tests
 npm run harness           # 26 cases, 24 of them refusals -> docs/refusals.json
 npm run verify:onchain    # reads Sepolia via public RPC, no credentials
 npm run verify:seam       # proves the calldata gate against the live API (needs the KeeperHub key)

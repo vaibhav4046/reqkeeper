@@ -43,6 +43,9 @@ export interface AttemptRow {
 
 const SCHEMA = `
 PRAGMA journal_mode = WAL;
+     -- Without this a second process contending for the same database fails instantly with
+     -- SQLITE_BUSY. Two processes settling is the exact scenario this project is about.
+     PRAGMA busy_timeout = 5000;
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS obligations (
@@ -53,6 +56,10 @@ CREATE TABLE IF NOT EXISTS obligations (
   source_facts_json TEXT NOT NULL,
   source_facts_hash TEXT NOT NULL,
   reserved_by_plan  TEXT,
+  -- The debt's real identity. A request id is free text supplied by the caller, so two
+  -- spellings of one invoice used to mint two obligations and pay it twice. The reference is
+  -- derived from the invoice by Request and is what the chain actually carries.
+  payment_reference TEXT,
   row_version       INTEGER NOT NULL DEFAULT 1,
   created_at        INTEGER NOT NULL,
   updated_at        INTEGER NOT NULL
@@ -60,6 +67,9 @@ CREATE TABLE IF NOT EXISTS obligations (
 -- Belt and braces: PRIMARY KEY already enforces this, but the intent is load-bearing
 -- enough to state twice. One canonical Request obligation, one row, forever.
 CREATE UNIQUE INDEX IF NOT EXISTS obligations_identity ON obligations (namespace, request_id);
+-- One payment reference is one debt, whatever the caller called it.
+CREATE UNIQUE INDEX IF NOT EXISTS obligations_reference ON obligations (payment_reference)
+  WHERE payment_reference IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS plans (
   plan_hash          TEXT PRIMARY KEY,
@@ -176,6 +186,7 @@ export class Store {
     requestId: string;
     sourceFactsJson: string;
     sourceFactsHash: string;
+    paymentReference?: string | null;
     now?: number;
   }): { created: boolean; state: string } {
     const now = o.now ?? Date.now();
@@ -184,10 +195,20 @@ export class Store {
     this.#db
       .prepare(
         `INSERT INTO obligations
-           (obligation_id, namespace, request_id, state, source_facts_json, source_facts_hash, created_at, updated_at)
-         VALUES (?,?,?,?,?,?,?,?)`,
+           (obligation_id, namespace, request_id, state, source_facts_json, source_facts_hash, payment_reference, created_at, updated_at)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
       )
-      .run(o.obligationId, o.namespace, o.requestId, "IMPORTED", o.sourceFactsJson, o.sourceFactsHash, now, now);
+      .run(
+        o.obligationId,
+        o.namespace,
+        o.requestId,
+        "IMPORTED",
+        o.sourceFactsJson,
+        o.sourceFactsHash,
+        o.paymentReference ?? null,
+        now,
+        now,
+      );
     return { created: true, state: "IMPORTED" };
   }
 
@@ -204,6 +225,21 @@ export class Store {
       | { obligationId: string; state: string; reservedByPlan: string | null; rowVersion: number; sourceFactsHash: string }
       | undefined;
     return r;
+  }
+
+  /**
+   * The obligation already holding this payment reference, if any.
+   *
+   * The duplicate defence used to key on the request id, which the caller supplies as free
+   * text. Two spellings of one invoice were two obligations and two payments of the same
+   * debt. The reference is derived from the invoice, so this is the question worth asking.
+   */
+  obligationForReference(paymentReference: string): { obligationId: string; state: string } | undefined {
+    return this.#db
+      .prepare(
+        "SELECT obligation_id AS obligationId, state FROM obligations WHERE payment_reference = ?",
+      )
+      .get(paymentReference) as { obligationId: string; state: string } | undefined;
   }
 
   setState(obligationId: string, state: string, now = Date.now()): void {

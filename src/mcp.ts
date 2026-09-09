@@ -214,12 +214,22 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
           store: ctx.store,
           provider: ctx.provider,
           policy: buildPolicy(facts),
-          sourceSaysPaid: async () =>
-            (await findPayment(facts.paymentReference, { rpcUrl: ctx.rpcUrl })).found,
+          sourceSaysPaid: async (_requestId: string, txHash: string) => {
+            // Not just "the reference appears somewhere": it must be OUR transaction for
+            // OUR amount. A boolean over the reference alone accepts another payment's
+            // evidence, which is how a duplicate obligation reported SETTLED.
+            const seen = await findPayment(facts.paymentReference, { rpcUrl: ctx.rpcUrl, lookbackBlocks: 300_000 });
+            return (
+              seen.found &&
+              seen.txHash?.toLowerCase() === txHash.toLowerCase() &&
+              seen.amount === facts.amountBaseUnits
+            );
+          },
         },
         {
           namespace: NAMESPACE,
           requestId: facts.requestId,
+          paymentReference: facts.paymentReference,
           obligationId: oid,
           facts: sourceFacts,
           steps: buildSteps(facts),

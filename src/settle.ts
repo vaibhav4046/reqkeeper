@@ -15,6 +15,11 @@ import type { Store } from "./store.ts";
 export interface SettleInput {
   readonly namespace: string;
   readonly requestId: string;
+  /**
+   * The invoice's payment reference. This, not the request id, is what the chain carries and
+   * what makes two proposals the same debt.
+   */
+  readonly paymentReference?: string;
   readonly obligationId: string;
   readonly facts: SourceFacts;
   readonly steps: ReadonlyArray<{ kind: string; to: string; data: string; value: string }>;
@@ -40,7 +45,11 @@ export interface SettleDeps {
   readonly store: Store;
   readonly provider: ExecutionProvider;
   readonly policy: Policy;
-  /** Independent reconciliation: Request's own verdict. */
+  /**
+   * Independent reconciliation. Must confirm THIS transaction paid THIS amount: a boolean
+   * over the payment reference alone accepts a different transaction's evidence, which is
+   * how a duplicate obligation reported SETTLED using the first payment's log.
+   */
   readonly sourceSaysPaid: (requestId: string, txHash: string) => Promise<boolean>;
 }
 
@@ -100,13 +109,37 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
   const { store, provider, policy } = deps;
   const factsHash = sourceFactsHash(input.facts);
 
-  // --- 0. an obligation whose money already moved is not re-entered -------
+  // --- 0. one payment reference is one debt -------------------------------
+  //
+  // The request id is free text supplied by the caller. Two spellings of one invoice used to
+  // produce two obligations, two approvals and two sends of the same payment. The reference
+  // is derived from the invoice by Request, so it is the identity that actually binds.
+  if (input.paymentReference) {
+    const holder = store.obligationForReference(input.paymentReference);
+    if (holder && holder.obligationId !== input.obligationId) {
+      store.audit(input.obligationId, "system", "REFUSED", {
+        code: "REFERENCE_ALREADY_CLAIMED",
+        heldBy: holder.obligationId,
+      });
+      return out({
+        state: "OBLIGATION_RESERVED",
+        refusal: "REFERENCE_ALREADY_CLAIMED",
+        detail:
+          `payment reference ${input.paymentReference} already belongs to obligation ` +
+          `${holder.obligationId.slice(0, 12)}… (${holder.state}); this is the same debt ` +
+          "under a different request id",
+        providerWriteIssued: false,
+      });
+    }
+  }
+
+  // --- 0b. an obligation whose money already moved is not re-entered ------
   //
   // Without this the pipeline runs again on a settled obligation and setState drags it back
-  // to PAYMENT_PREFLIGHT before the later guards refuse — so the money is safe, but the
+  // to PAYMENT_PREFLIGHT before the later guards refuse, so the money is safe but the
   // recorded state regresses and the agent surface reports a finished payment as
-  // pre-dispatch. Only the money-moved states are short-circuited: PLAN_EXPIRED and
-  // POLICY_DENIED are terminal too, and a fresh plan for those must still be proposable.
+  // pre-dispatch. PLAN_EXPIRED and POLICY_DENIED are terminal too, and a fresh plan for
+  // those must still be proposable, so only the money-moved states short-circuit.
   const priorState = store.getObligation(input.obligationId)?.state;
   if (priorState === "SETTLED" || priorState === "SOURCE_ALREADY_PAID") {
     store.audit(input.obligationId, "system", "REFUSED_REENTRY", { state: priorState });
@@ -124,6 +157,7 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
     requestId: input.requestId,
     sourceFactsJson: JSON.stringify(input.facts),
     sourceFactsHash: factsHash,
+    paymentReference: input.paymentReference ?? null,
     now: input.now,
   });
   store.audit(input.obligationId, "agent", "PROPOSED", { requestId: input.requestId });

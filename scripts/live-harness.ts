@@ -199,12 +199,22 @@ for (const inv of payable) {
     store,
     provider,
     policy: buildPolicy(facts),
-    sourceSaysPaid: async (_requestId: string, _txHash: string) =>
-      (await findPaymentByReference(inv.paymentReference, { lookbackBlocks: 200_000 })).found,
+    sourceSaysPaid: async (_requestId: string, txHash: string) => {
+            // Not just "the reference appears somewhere": it must be OUR transaction for
+            // OUR amount. A boolean over the reference alone accepts another payment's
+            // evidence, which is how a duplicate obligation reported SETTLED.
+            const seen = await findPaymentByReference(inv.paymentReference, { lookbackBlocks: 300_000 });
+            return (
+              seen.found &&
+              seen.txHash?.toLowerCase() === txHash.toLowerCase() &&
+              seen.amount === inv.amountBaseUnits
+            );
+          },
   };
   const input = {
     namespace: NAMESPACE,
     requestId: inv.requestId,
+    paymentReference: inv.paymentReference,
     obligationId: oid,
     facts: sourceFacts,
     steps: buildSteps(facts),

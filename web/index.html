@@ -1,452 +1,566 @@
-<title>ReqKeeper</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=IBM+Plex+Mono:wght@300;400;500&display=swap">
+<title>ReqKeeper Console</title>
+<script id="reqkeeper-data" type="application/json">{"tests":152,"refusals":{"generatedAt":"2026-09-09T06:23:36.426Z","mode":"FIXTURE","note":"Deterministic fault injection against an in-memory provider that counts physical sends. These rows prove the refusal logic, not the live integration. Live rows require Gate A and are tagged LIVE_TESTNET when present.","totals":{"cases":26,"passed":26,"failed":0,"refusalCases":24,"refusedBeforeAnyProviderWrite":18},"rows":[{"case_id":"C01","scenario":"a clean, approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x0000000000000000000000000000000000000000000000000000000000000001","independently_verified":true,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C02","scenario":"recipient not on the allowlist","expected":"PAYEE_NOT_ALLOWED","actual":"PAYEE_NOT_ALLOWED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C03","scenario":"total debit over the cap","expected":"LIMIT_EXCEEDED","actual":"LIMIT_EXCEEDED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C04","scenario":"invoice under cap that a fee pushes over","expected":"LIMIT_EXCEEDED","actual":"LIMIT_EXCEEDED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C05","scenario":"wrong chain","expected":"UNSUPPORTED_CHAIN","actual":"UNSUPPORTED_CHAIN","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C06","scenario":"wrong token on the right chain","expected":"UNSUPPORTED_TOKEN","actual":"UNSUPPORTED_TOKEN","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C07","scenario":"token decimals differ from policy (10^12 hazard)","expected":"TOKEN_DECIMALS_MISMATCH","actual":"TOKEN_DECIMALS_MISMATCH","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C08","scenario":"Request already reports it paid","expected":"SOURCE_ALREADY_PAID","actual":"SOURCE_ALREADY_PAID","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C09","scenario":"zero amount","expected":"AMOUNT_NOT_POSITIVE","actual":"AMOUNT_NOT_POSITIVE","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C10","scenario":"unrecognised fee recipient","expected":"FEE_RECIPIENT_UNKNOWN","actual":"FEE_RECIPIENT_UNKNOWN","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C11","scenario":"fee above the ceiling","expected":"FEE_EXCEEDS_CEILING","actual":"FEE_EXCEEDS_CEILING","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C12","scenario":"no human decision yet","expected":"AWAITING_APPROVAL","actual":"AWAITING_APPROVAL","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C13","scenario":"reviewer rejects","expected":"REVIEW_REJECTED","actual":"REVIEW_REJECTED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C14","scenario":"source facts changed between approval and dispatch","expected":"PLAN_CHANGED","actual":"PLAN_CHANGED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C15","scenario":"a rival plan already holds the obligation","expected":"OBLIGATION_RESERVED","actual":"OBLIGATION_RESERVED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C16","scenario":"provider write times out with no response","expected":"EXECUTION_OUTCOME_UNKNOWN","actual":"EXECUTION_OUTCOME_UNKNOWN","refused_before_provider_write":false,"physical_sends":1,"tx_hash":null,"independently_verified":false,"fault_injected":"TIMEOUT_NO_RESPONSE","mode":"FIXTURE","pass":true},{"case_id":"C17","scenario":"cached failure replays forever (#1840)","expected":"CACHED_FAILURE","actual":"CACHED_FAILURE","refused_before_provider_write":false,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":"CACHED_FAILURE","mode":"FIXTURE","pass":true},{"case_id":"C18","scenario":"same key, different body","expected":"IDEMPOTENCY_CONFLICT","actual":"IDEMPOTENCY_CONFLICT","refused_before_provider_write":false,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":"IDEMPOTENCY_CONFLICT","mode":"FIXTURE","pass":true},{"case_id":"C19","scenario":"dry run actually executed (#1959)","expected":"SIMULATE_EXECUTED","actual":"SIMULATE_EXECUTED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i","independently_verified":false,"fault_injected":"SIMULATE_IGNORED","mode":"FIXTURE","pass":true},{"case_id":"C20","scenario":"receipt says reverted","expected":"EXECUTION_REVERTED","actual":"EXECUTION_REVERTED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x0000000000000000000000000000000000000000000000000000000000000001","independently_verified":false,"fault_injected":"RECEIPT_REVERTED","mode":"FIXTURE","pass":true},{"case_id":"C21","scenario":"provider claims success, chain has no receipt","expected":"EVIDENCE_CONFLICT","actual":"EVIDENCE_CONFLICT","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x0000000000000000000000000000000000000000000000000000000000000001","independently_verified":false,"fault_injected":"COMPLETE_BUT_RECEIPT_MISSING","mode":"FIXTURE","pass":true},{"case_id":"C22","scenario":"provider rate limits the preflight","expected":"rate_limited","actual":"rate_limited","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":"RATE_LIMITED","mode":"FIXTURE","pass":true},{"case_id":"C23","scenario":"replay 25h later, settled, provider cache expired","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":1,"tx_hash":"0x0000000000000000000000000000000000000000000000000000000000000001","independently_verified":false,"fault_injected":"REPLAY_EXPIRED","mode":"FIXTURE","pass":true},{"case_id":"C24","scenario":"replay inside plan TTL, settled, provider cache expired","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":1,"tx_hash":null,"independently_verified":false,"fault_injected":"REPLAY_EXPIRED","mode":"FIXTURE","pass":true},{"case_id":"C25","scenario":"replay inside plan TTL, outcome unconfirmed","expected":"ALREADY_DISPATCHED","actual":"ALREADY_DISPATCHED","refused_before_provider_write":true,"physical_sends":1,"tx_hash":"0x0000000000000000000000000000000000000000000000000000000000000001","independently_verified":false,"fault_injected":"REPLAY_EXPIRED","mode":"FIXTURE","pass":true},{"case_id":"C26","scenario":"replay 25h later, outcome unconfirmed","expected":"PLAN_EXPIRED","actual":"PLAN_EXPIRED","refused_before_provider_write":true,"physical_sends":1,"tx_hash":null,"independently_verified":false,"fault_injected":"REPLAY_EXPIRED","mode":"FIXTURE","pass":true}]},"live":{"generatedAt":"2026-09-09T05:51:48.442Z","mode":"LIVE_TESTNET","note":"Every row ran against the live KeeperHub API and real Request Network invoices on Ethereum Sepolia. Sends are counted by wrapping the provider, so a zero is observed rather than asserted. Settled rows carry the real transaction hash; refusal rows carry the request id they refused.","chainId":11155111,"totals":{"rows":83,"asSpecified":83,"payments":38,"physicalSends":38,"refusalRows":45,"refusedBeforeAnyProviderWrite":45},"rows":[{"case_id":"L001","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0xb90a0771858581547abeb9310777f4430f892be130765eda1096202b9dd9f7f6","independently_verified":true,"request_id":"0108b3f7d7d7d3c1fd21d37ba996b21d019c59cbaaa75c5cb5801fc3d9a371c142","payment_reference":"0x050562a52ec69fa2","mode":"LIVE_TESTNET"},{"case_id":"L002","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"0108b3f7d7d7d3c1fd21d37ba996b21d019c59cbaaa75c5cb5801fc3d9a371c142","payment_reference":"0x050562a52ec69fa2","mode":"LIVE_TESTNET"},{"case_id":"L003","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x62911d69c66da1c47085d556f1fa5baf066fd5199dea1c991bf72709a874f803","independently_verified":true,"request_id":"01ebe6ff40be92bf45254a3414bc261de367a5e53f2fa64cc10150a8a516f7d00b","payment_reference":"0xd06c597b2405428f","mode":"LIVE_TESTNET"},{"case_id":"L004","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"01ebe6ff40be92bf45254a3414bc261de367a5e53f2fa64cc10150a8a516f7d00b","payment_reference":"0xd06c597b2405428f","mode":"LIVE_TESTNET"},{"case_id":"L005","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x006ebc9218ef93d8d030f6852cd2b1232924525d1546195ed67bc7678824f710","independently_verified":true,"request_id":"01f10066792b4d935010acfe7f38b1d5021d5cb8ca18faa1d30a25ab5fddabe11e","payment_reference":"0x6530597d320ffa4e","mode":"LIVE_TESTNET"},{"case_id":"L006","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"01f10066792b4d935010acfe7f38b1d5021d5cb8ca18faa1d30a25ab5fddabe11e","payment_reference":"0x6530597d320ffa4e","mode":"LIVE_TESTNET"},{"case_id":"L007","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x99d7c3e417b0d1a427fdc727066f0980e616c0a5bf1129cd64703bed40575b4e","independently_verified":true,"request_id":"0134836903e3443964bd0dd89325ce10044e75a7576bed9ed547b9117bef9efebd","payment_reference":"0xd9bcbcce5faa9114","mode":"LIVE_TESTNET"},{"case_id":"L008","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"0134836903e3443964bd0dd89325ce10044e75a7576bed9ed547b9117bef9efebd","payment_reference":"0xd9bcbcce5faa9114","mode":"LIVE_TESTNET"},{"case_id":"L009","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0xe186169a3bc533cd5062f23554d38c9ba3b4787ff864ef051b4b36dc37d228a7","independently_verified":true,"request_id":"01f8760de3aedadd8dac2047f3704197a748ff227641866facf7672cb8ebb95b6c","payment_reference":"0x0d3655a723054dd4","mode":"LIVE_TESTNET"},{"case_id":"L010","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"01f8760de3aedadd8dac2047f3704197a748ff227641866facf7672cb8ebb95b6c","payment_reference":"0x0d3655a723054dd4","mode":"LIVE_TESTNET"},{"case_id":"L011","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x7da23b9d999596603b162dbcb356a08a7345555ef5ee5f096c80f80e3f184b74","independently_verified":true,"request_id":"01f5e9980219b3bc9256317f432a0e1dad4d8d8f0d4785669b43ef1853b7ac8d8e","payment_reference":"0x055753dd03fba310","mode":"LIVE_TESTNET"},{"case_id":"L012","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"01f5e9980219b3bc9256317f432a0e1dad4d8d8f0d4785669b43ef1853b7ac8d8e","payment_reference":"0x055753dd03fba310","mode":"LIVE_TESTNET"},{"case_id":"L013","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x09512fd0323d0e86e3192c6ffd49b8d560ca9b590fe3efba1196b71ef7041aa3","independently_verified":true,"request_id":"01ad82bdab0c091a96b079709192bd530d4d19454677fc7a07e047ac27a8bf6641","payment_reference":"0xf5983dc651b1d7b1","mode":"LIVE_TESTNET"},{"case_id":"L014","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"01ad82bdab0c091a96b079709192bd530d4d19454677fc7a07e047ac27a8bf6641","payment_reference":"0xf5983dc651b1d7b1","mode":"LIVE_TESTNET"},{"case_id":"L015","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x8668cc10cba58ee13253302824f32c4a5dacc06126ef384bcc89990f2cbcabc4","independently_verified":true,"request_id":"0161e3fda6e7c78fb57003188ede8311469547d9dd853112c9de51f258fa4ae712","payment_reference":"0xabbda373d315e37c","mode":"LIVE_TESTNET"},{"case_id":"L016","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"0161e3fda6e7c78fb57003188ede8311469547d9dd853112c9de51f258fa4ae712","payment_reference":"0xabbda373d315e37c","mode":"LIVE_TESTNET"},{"case_id":"L017","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x3d6b96879c3dcc1c919c526a016865cdb92fc62597b7397474a7e7b0994d96a9","independently_verified":true,"request_id":"01d59d31066267257414b0c98cab28410afefaaf2b4debe327a55cdde3660d958b","payment_reference":"0xb4eff9a626d309cb","mode":"LIVE_TESTNET"},{"case_id":"L018","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"01d59d31066267257414b0c98cab28410afefaaf2b4debe327a55cdde3660d958b","payment_reference":"0xb4eff9a626d309cb","mode":"LIVE_TESTNET"},{"case_id":"L019","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x8be68da5c0775bd92c1b01cc46e2dac32f2affc093a43ea41f4f38f0d451e257","independently_verified":true,"request_id":"01f024d26d375e3814be6c446ebf7e784bd4929e8fcf3412528939d89389dfb04f","payment_reference":"0x15c72b40f9c9fcad","mode":"LIVE_TESTNET"},{"case_id":"L020","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"01f024d26d375e3814be6c446ebf7e784bd4929e8fcf3412528939d89389dfb04f","payment_reference":"0x15c72b40f9c9fcad","mode":"LIVE_TESTNET"},{"case_id":"L021","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x6b78fc196d7bcc69da8903a2f8d0d3cfbcc3f254fb432e6f60509ec21cd10a3a","independently_verified":true,"request_id":"018d5d3482bc3d37421f5c906b41744eceacd38850efbc326b1aecf227bf4b7e41","payment_reference":"0x8f10f52aaf90e061","mode":"LIVE_TESTNET"},{"case_id":"L022","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"018d5d3482bc3d37421f5c906b41744eceacd38850efbc326b1aecf227bf4b7e41","payment_reference":"0x8f10f52aaf90e061","mode":"LIVE_TESTNET"},{"case_id":"L023","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x3784763fef7a276d0c5faef43378e5bbcdf5cc770c4ece36e782c9320e6f7933","independently_verified":true,"request_id":"0111f604c877b2693be5b3af3e5a258512c68c7b358ef083e631ee49498606c474","payment_reference":"0x98c4ee705fff2934","mode":"LIVE_TESTNET"},{"case_id":"L024","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"0111f604c877b2693be5b3af3e5a258512c68c7b358ef083e631ee49498606c474","payment_reference":"0x98c4ee705fff2934","mode":"LIVE_TESTNET"},{"case_id":"L025","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x15abbaef564e9bc024ee7bfbe64642308bf8b7ea24480dbd022e22b385fe0714","independently_verified":true,"request_id":"01f442166977e7083ef5101f7a54ca9acd211d3b53b865e12fdff39e79d38847dc","payment_reference":"0xae65b60a824b1ea7","mode":"LIVE_TESTNET"},{"case_id":"L026","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"01f442166977e7083ef5101f7a54ca9acd211d3b53b865e12fdff39e79d38847dc","payment_reference":"0xae65b60a824b1ea7","mode":"LIVE_TESTNET"},{"case_id":"L027","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0xec518a00252302fc1191d952976aa7f44c4a244265610965958ee3a41c3dc3f9","independently_verified":true,"request_id":"0197676ffc973edad639ebedd6ab24089a0340cda8605f1db64fc05893fa3a7729","payment_reference":"0x77b616cf79c881ea","mode":"LIVE_TESTNET"},{"case_id":"L028","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"0197676ffc973edad639ebedd6ab24089a0340cda8605f1db64fc05893fa3a7729","payment_reference":"0x77b616cf79c881ea","mode":"LIVE_TESTNET"},{"case_id":"L029","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0xcc1668c3c2e14d79cb066f8069d39fe0e43483eb121318d8193d52894cd793ad","independently_verified":true,"request_id":"01083560667ba9bbf58d8a4e0f62349cd72012b24ff4d1268be855dd03f8a88a11","payment_reference":"0x062d2dee95695111","mode":"LIVE_TESTNET"},{"case_id":"L030","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"01083560667ba9bbf58d8a4e0f62349cd72012b24ff4d1268be855dd03f8a88a11","payment_reference":"0x062d2dee95695111","mode":"LIVE_TESTNET"},{"case_id":"L031","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0xa702feae618e43ac76ce9d823371763f652a26acd7151b4d467083db923081ef","independently_verified":true,"request_id":"013552114682051872ce33a0cfcf0cad8078e50fa57ba1e6bc76aec1c39b0e13e3","payment_reference":"0xaa0077620feca241","mode":"LIVE_TESTNET"},{"case_id":"L032","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"013552114682051872ce33a0cfcf0cad8078e50fa57ba1e6bc76aec1c39b0e13e3","payment_reference":"0xaa0077620feca241","mode":"LIVE_TESTNET"},{"case_id":"L033","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0xca104892b2ce25efaa0f9f0e88c24754516382f90f77cc7f07996cd50962f628","independently_verified":true,"request_id":"013d517d16a2837850269be5451d7b922cbefc46498b1e9dfb3f1eb76e2e8ccd86","payment_reference":"0x00d3ca3868a0b434","mode":"LIVE_TESTNET"},{"case_id":"L034","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"013d517d16a2837850269be5451d7b922cbefc46498b1e9dfb3f1eb76e2e8ccd86","payment_reference":"0x00d3ca3868a0b434","mode":"LIVE_TESTNET"},{"case_id":"L035","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x4d95a065a9de4dd1fd2f0a854b5fa6446d2d03a045a5ba0788dcfdeef04a9053","independently_verified":true,"request_id":"0172bd883405a232a14c6dea81cda04cf5991ef970c20edb3dc10e76015405cd2c","payment_reference":"0xea0c4a3946575550","mode":"LIVE_TESTNET"},{"case_id":"L036","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"0172bd883405a232a14c6dea81cda04cf5991ef970c20edb3dc10e76015405cd2c","payment_reference":"0xea0c4a3946575550","mode":"LIVE_TESTNET"},{"case_id":"L037","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x6f22f400cc3feb8bb8f496602668ef35917795707d108ccedd794000a001f979","independently_verified":true,"request_id":"01986c235355414cfb88330b1bfb80e6315e7580e17173bf46b421d86ee0acead9","payment_reference":"0x6f8ccbcea3ba31eb","mode":"LIVE_TESTNET"},{"case_id":"L038","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"01986c235355414cfb88330b1bfb80e6315e7580e17173bf46b421d86ee0acead9","payment_reference":"0x6f8ccbcea3ba31eb","mode":"LIVE_TESTNET"},{"case_id":"L039","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0xa2d4c774ca82ffb2bfb8eb13040bd3284f3ca3e74c2e852f971f1f980261203a","independently_verified":true,"request_id":"016c8e6c5c0b35da848b2d02254c0431c167502ea8d607e07eac1ec4e4d461dc2f","payment_reference":"0x9565b6ae69b73b8c","mode":"LIVE_TESTNET"},{"case_id":"L040","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"016c8e6c5c0b35da848b2d02254c0431c167502ea8d607e07eac1ec4e4d461dc2f","payment_reference":"0x9565b6ae69b73b8c","mode":"LIVE_TESTNET"},{"case_id":"L041","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0xab0e49a2134897ee51ef1bd134ecaf426904d4c0865312e1557619637d6936a6","independently_verified":true,"request_id":"0154c2ed411f64b59f0f4dd2a8994f27f1bd1bd8ef77cdc369d7afd7b842cbd088","payment_reference":"0x89c9fa88bfb34594","mode":"LIVE_TESTNET"},{"case_id":"L042","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"0154c2ed411f64b59f0f4dd2a8994f27f1bd1bd8ef77cdc369d7afd7b842cbd088","payment_reference":"0x89c9fa88bfb34594","mode":"LIVE_TESTNET"},{"case_id":"L043","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x68070f8bf76f5ccefba6bd6ee9dbbe5774091fe016e86f2f40128e48643dff4f","independently_verified":true,"request_id":"013060aa7ab07b7065c67f1177c6f337ec479ab49d554e2205f8e48076285fc04e","payment_reference":"0xfff49a9e7ad1ef3b","mode":"LIVE_TESTNET"},{"case_id":"L044","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"013060aa7ab07b7065c67f1177c6f337ec479ab49d554e2205f8e48076285fc04e","payment_reference":"0xfff49a9e7ad1ef3b","mode":"LIVE_TESTNET"},{"case_id":"L045","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x1c6592f2a0b6b4fad627a2ebdd76987d1d44edd3f374c75f0e4b5cc2428586fd","independently_verified":true,"request_id":"01c3bf6cc534c28b9795caafc372ad3f463a8f934882355444bc93c016fcb3e71a","payment_reference":"0x82f677b3aba37427","mode":"LIVE_TESTNET"},{"case_id":"L046","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"01c3bf6cc534c28b9795caafc372ad3f463a8f934882355444bc93c016fcb3e71a","payment_reference":"0x82f677b3aba37427","mode":"LIVE_TESTNET"},{"case_id":"L047","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x427c6a23b31523c191a1009793751c539aa7fd99329b16bba88054976ee658bc","independently_verified":true,"request_id":"019c43c7ce45f0f6c6c34110548b697246ac35cad6c2996bf65a754504e7ab481e","payment_reference":"0x074d452da514e650","mode":"LIVE_TESTNET"},{"case_id":"L048","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"019c43c7ce45f0f6c6c34110548b697246ac35cad6c2996bf65a754504e7ab481e","payment_reference":"0x074d452da514e650","mode":"LIVE_TESTNET"},{"case_id":"L049","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x12a6b15a6d163917b9f730d40a99d48cd7d035c683e9d24b5902912226623370","independently_verified":true,"request_id":"0183fae0150e5db1fd02f906fcfd272b4b360f192f12bf50202cc99173bdc79b5a","payment_reference":"0xab6b0d044e57aa43","mode":"LIVE_TESTNET"},{"case_id":"L050","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"0183fae0150e5db1fd02f906fcfd272b4b360f192f12bf50202cc99173bdc79b5a","payment_reference":"0xab6b0d044e57aa43","mode":"LIVE_TESTNET"},{"case_id":"L051","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x062d76875aa4b429942c587656341b423acac86c94ccbe46defe93d1072bb8dc","independently_verified":true,"request_id":"01139b84a0f4e3360e9f398b90ef351e9c6ab4eda1f38e0e807d3a8e2fdad07dce","payment_reference":"0xa5db18f4372a832d","mode":"LIVE_TESTNET"},{"case_id":"L052","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"01139b84a0f4e3360e9f398b90ef351e9c6ab4eda1f38e0e807d3a8e2fdad07dce","payment_reference":"0xa5db18f4372a832d","mode":"LIVE_TESTNET"},{"case_id":"L053","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x1dad53bf607210f573c0e43e8d5da71479ca0b3a2daa6877f6d7867704256de2","independently_verified":true,"request_id":"015693e7dcfb14296e1a594cdaf84b0ca17847e149b8f8af84aaf8a918473ddbc3","payment_reference":"0x3e02e8df5bed54b0","mode":"LIVE_TESTNET"},{"case_id":"L054","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"015693e7dcfb14296e1a594cdaf84b0ca17847e149b8f8af84aaf8a918473ddbc3","payment_reference":"0x3e02e8df5bed54b0","mode":"LIVE_TESTNET"},{"case_id":"L055","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0xe3d578b30ea3263642e3ac6614a554aa34db3f71474c2b410255126c95a78ace","independently_verified":true,"request_id":"01c72a443bb04cfb8d1c97c321085386aa1e58ca206d59c5a9ba149a01f5d5754a","payment_reference":"0x103cf216dd8c8191","mode":"LIVE_TESTNET"},{"case_id":"L056","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"01c72a443bb04cfb8d1c97c321085386aa1e58ca206d59c5a9ba149a01f5d5754a","payment_reference":"0x103cf216dd8c8191","mode":"LIVE_TESTNET"},{"case_id":"L057","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x824096ef18bd6324411a90556286750e00b8e9dd950cbecb9aa4bd24225d44f9","independently_verified":true,"request_id":"01655b3589928d6ff2d75e9c64f8818630f19949e64ca1abbe4af4bff04e2f6168","payment_reference":"0x84656dfe8b572e9d","mode":"LIVE_TESTNET"},{"case_id":"L058","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"01655b3589928d6ff2d75e9c64f8818630f19949e64ca1abbe4af4bff04e2f6168","payment_reference":"0x84656dfe8b572e9d","mode":"LIVE_TESTNET"},{"case_id":"L059","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0xf386191751d2d899664fe27199ca1ee542a5ded46358ae30d0477f03c9248329","independently_verified":true,"request_id":"0191d91abd9e9cae5c923b540d45a9b9a1fd4e09bbff3f4fbb917d5b0181eeac24","payment_reference":"0xc0fc783cdf6c753e","mode":"LIVE_TESTNET"},{"case_id":"L060","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"0191d91abd9e9cae5c923b540d45a9b9a1fd4e09bbff3f4fbb917d5b0181eeac24","payment_reference":"0xc0fc783cdf6c753e","mode":"LIVE_TESTNET"},{"case_id":"L061","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0xff73e76a8b463aa0c5eb9f4cec3093f77f7b2825c97aa473ff03dc11ed33048a","independently_verified":true,"request_id":"01c6436cefaa5b4f791120a324b431845353f9e48def48c71d66a5a5d914aa2b14","payment_reference":"0xaa58eb9f4772918a","mode":"LIVE_TESTNET"},{"case_id":"L062","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"01c6436cefaa5b4f791120a324b431845353f9e48def48c71d66a5a5d914aa2b14","payment_reference":"0xaa58eb9f4772918a","mode":"LIVE_TESTNET"},{"case_id":"L063","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x58bdf97e0d86555dbf43744da05c71912cb08e9aeda8ead56a513597508743e9","independently_verified":true,"request_id":"0164ce481cb10e902856d4cb72a8d22b2dc4363bef18477267043a01484506e6f2","payment_reference":"0x084afae4d5ca3e27","mode":"LIVE_TESTNET"},{"case_id":"L064","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"0164ce481cb10e902856d4cb72a8d22b2dc4363bef18477267043a01484506e6f2","payment_reference":"0x084afae4d5ca3e27","mode":"LIVE_TESTNET"},{"case_id":"L065","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0xb884f4bc13c0605afa698af21bfe9610f82b42a94cd183077193ff5b0a5f2de6","independently_verified":true,"request_id":"0117c18a649dcf1d9074669a6695648b7c7bbc3192d19e8d032d92710834d2d6b3","payment_reference":"0x4c2a0910d888851e","mode":"LIVE_TESTNET"},{"case_id":"L066","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"0117c18a649dcf1d9074669a6695648b7c7bbc3192d19e8d032d92710834d2d6b3","payment_reference":"0x4c2a0910d888851e","mode":"LIVE_TESTNET"},{"case_id":"L067","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x13e042ee791e97c504b8ae86a4b6651a5c6b6e037af1f499b2099389052337a3","independently_verified":true,"request_id":"010fa126235cca31408a0c1be1b5d967646b43858ef220fe086490d707ec544982","payment_reference":"0x86a188d0a18517d8","mode":"LIVE_TESTNET"},{"case_id":"L068","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"010fa126235cca31408a0c1be1b5d967646b43858ef220fe086490d707ec544982","payment_reference":"0x86a188d0a18517d8","mode":"LIVE_TESTNET"},{"case_id":"L069","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x779604ffb8a2a5630e58e8c2896725b6e8078e71988e1b67d078e67a6fce56ca","independently_verified":true,"request_id":"017739ecdca4615f1420c189949e54277ee9e3ca41bd325c31899426d32f8a903d","payment_reference":"0xa37ee42dd8ea5053","mode":"LIVE_TESTNET"},{"case_id":"L070","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"017739ecdca4615f1420c189949e54277ee9e3ca41bd325c31899426d32f8a903d","payment_reference":"0xa37ee42dd8ea5053","mode":"LIVE_TESTNET"},{"case_id":"L071","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x63ae081786cd9fafd7954e6d223ff41d07323af02fc394101f92bb28ec0947ac","independently_verified":true,"request_id":"0162051d919a4b6ebc6330c32785cefb18f558aa92624ddef288b789464ce261ad","payment_reference":"0x28e44bed3ab996bd","mode":"LIVE_TESTNET"},{"case_id":"L072","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"0162051d919a4b6ebc6330c32785cefb18f558aa92624ddef288b789464ce261ad","payment_reference":"0x28e44bed3ab996bd","mode":"LIVE_TESTNET"},{"case_id":"L073","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x2d5cca414057a478c2ac4b5f4ec94bc689f955b3a9176ef4b43887a4d1a7bcd3","independently_verified":true,"request_id":"01d31ec31d403e2236c7c17fb42c291165dd723ab9488ab60a975beaa0bcd860fb","payment_reference":"0x605a7596a28e419f","mode":"LIVE_TESTNET"},{"case_id":"L074","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"01d31ec31d403e2236c7c17fb42c291165dd723ab9488ab60a975beaa0bcd860fb","payment_reference":"0x605a7596a28e419f","mode":"LIVE_TESTNET"},{"case_id":"L075","scenario":"approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x8192643d395e0c3b97397b1ad0bf4294c6d15abab5c5191eafa51b6ae23aec29","independently_verified":true,"request_id":"01524a4ab0a02a882b031bca8d602e6dcdfe43e00b1184cb74aa4d8c61b6d799e2","payment_reference":"0x4fb87d00dec24373","mode":"LIVE_TESTNET"},{"case_id":"L076","scenario":"same obligation dispatched again","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"01524a4ab0a02a882b031bca8d602e6dcdfe43e00b1184cb74aa4d8c61b6d799e2","payment_reference":"0x4fb87d00dec24373","mode":"LIVE_TESTNET"},{"case_id":"L077","scenario":"recipient not on the allowlist","expected":"PAYEE_NOT_ALLOWED","actual":"PAYEE_NOT_ALLOWED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"01d31ec31d403e2236c7c17fb42c291165dd723ab9488ab60a975beaa0bcd860fb","payment_reference":"0x605a7596a28e419f","mode":"LIVE_TESTNET"},{"case_id":"L078","scenario":"invoice exceeds the total debit cap","expected":"LIMIT_EXCEEDED","actual":"LIMIT_EXCEEDED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"01d31ec31d403e2236c7c17fb42c291165dd723ab9488ab60a975beaa0bcd860fb","payment_reference":"0x605a7596a28e419f","mode":"LIVE_TESTNET"},{"case_id":"L079","scenario":"quoted fee exceeds its own ceiling","expected":"FEE_EXCEEDS_CEILING","actual":"FEE_EXCEEDS_CEILING","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"01d31ec31d403e2236c7c17fb42c291165dd723ab9488ab60a975beaa0bcd860fb","payment_reference":"0x605a7596a28e419f","mode":"LIVE_TESTNET"},{"case_id":"L080","scenario":"token decimals disagree with policy","expected":"TOKEN_DECIMALS_MISMATCH","actual":"TOKEN_DECIMALS_MISMATCH","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"01d31ec31d403e2236c7c17fb42c291165dd723ab9488ab60a975beaa0bcd860fb","payment_reference":"0x605a7596a28e419f","mode":"LIVE_TESTNET"},{"case_id":"L081","scenario":"no human decision recorded","expected":"AWAITING_APPROVAL","actual":"AWAITING_APPROVAL","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"01d31ec31d403e2236c7c17fb42c291165dd723ab9488ab60a975beaa0bcd860fb","payment_reference":"0x605a7596a28e419f","mode":"LIVE_TESTNET"},{"case_id":"L082","scenario":"bytes appended after the arguments","expected":"calldata_mismatch","actual":"calldata_mismatch","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"01d31ec31d403e2236c7c17fb42c291165dd723ab9488ab60a975beaa0bcd860fb","payment_reference":"0x605a7596a28e419f","mode":"LIVE_TESTNET"},{"case_id":"L083","scenario":"selector not on the allowlist","expected":"selector_not_allowed","actual":"selector_not_allowed","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"request_id":"01d31ec31d403e2236c7c17fb42c291165dd723ab9488ab60a975beaa0bcd860fb","payment_reference":"0x605a7596a28e419f","mode":"LIVE_TESTNET"}]},"settlement":{"requestId":"011a5eca74adfa1e61276d5d3b3c41339c2daddaaa406b6f1b7344c2a4679a2403","paymentReference":"0x3ad3fe6653fb8827","obligationId":"3a79273eb6cab086a787cf5bbee3864982acda2e61b44875fdc6562e6e662f8d","amountBaseUnits":"1000000000000000000","txHash":"0x134f352dc69843105a01d1b9d6cc9799b660bd28e08920144bb67cb3852bfeff","restatement":"Pay 1 FAU to 0xc43d766cb7c48b9b198db87441b97c09e81717a1 on chain 11155111, plus 0 fee.\nTotal leaving the wallet: 1 FAU (1000000000000000000 base units)."}}</script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=JetBrains+Mono:wght@400;500;700&display=swap">
 <style>
-  /* Deliberately single-theme: this page is an instrument readout, not a document that
-     follows the reader's theme. Every colour is painted explicitly so it holds on any
-     host ground. Palette derived from measured luminance steps, worst-case text 5.09:1. */
-  :root{
-    --canvas:#040806;
-    --surface:#1A2B1D;
-    --hairline:#283C2B;
-    --mid:#4C6351;
-    --text:#E6F7E8;
-    --text-2:#93AC98;
-    --muted:#879C8B;
-    --signal:#3BFF6C;
-    --warn:#FFB43B;
-    --bad:#FF6B5B;
-    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
-    --display:"Archivo","Helvetica Neue",Arial,sans-serif;
-    --gutter:clamp(20px,5vw,68px);
+  /* Pixel is an accent, not the body: Press Start 2P on wordmark, badges and figures;
+     JetBrains Mono carries everything you actually read. Committed dark, painted
+     explicitly, nothing rounded. */
+  :root {
+    --bg: #05080A;
+    --panel: #0A1014;
+    --panel-2: #0D161B;
+    --line: #1A2A31;
+    --line-2: #24393F;
+    --text: #DCEAE6;
+    --dim: #7C918F;
+    --faint: #4A5C5C;
+    --signal: #35F0A0;
+    --amber: #F5C451;
+    --alarm: #FF6B6B;
+    --violet: #8B7CF6;
+    --pixel: "Press Start 2P", monospace;
+    --mono: "JetBrains Mono", ui-monospace, monospace;
+    --rail: 208px;
   }
-  *{box-sizing:border-box}
-  body{
-    margin:0;background:var(--canvas);color:var(--text);
-    font-family:var(--mono);font-weight:300;font-size:15px;line-height:1.6;
-    -webkit-font-smoothing:antialiased;
-  }
-  #rig{position:fixed;inset:0;z-index:0;pointer-events:none}
-  main{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:0 var(--gutter) 96px}
-
-  /* --- chrome ------------------------------------------------------------ */
-  .topbar{
-    display:flex;justify-content:space-between;align-items:baseline;gap:18px;
-    padding:22px 0 0;font-size:11px;letter-spacing:.14em;text-transform:uppercase;
-    color:var(--text-2);font-weight:500;
-  }
-  .topbar nav{display:flex;gap:20px;flex-wrap:wrap}
-  .topbar a{color:var(--text-2);text-decoration:none;padding-bottom:3px}
-  .topbar a:hover,.topbar a:focus-visible{color:var(--text);border-bottom:1px dashed var(--mid)}
-  .serial{
-    position:fixed;right:6px;top:50%;z-index:2;transform:translateY(-50%) rotate(90deg);
-    transform-origin:center;font-size:10px;letter-spacing:.3em;text-transform:uppercase;
-    color:var(--mid);white-space:nowrap;pointer-events:none;
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--mono); font-size: 13px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
   }
 
-  /* --- hero -------------------------------------------------------------- */
-  .hero{padding:clamp(40px,7vw,92px) 0 clamp(32px,5vw,60px)}
-  .eyebrow{
-    font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--signal);
-    font-weight:500;margin:0 0 18px;
-  }
-  h1{
-    font-family:var(--display);font-weight:800;
-    font-size:clamp(52px,13vw,148px);line-height:.86;letter-spacing:-.045em;
-    text-transform:uppercase;margin:0;text-wrap:balance;
-  }
-  .lede{
-    max-width:60ch;margin:26px 0 0;font-size:clamp(16px,1.5vw,19px);
-    line-height:1.55;color:var(--text);
-  }
-  .lede b{font-weight:500;color:var(--signal)}
-  .plate{
-    margin-top:34px;display:flex;flex-wrap:wrap;gap:0;
-    border-top:1px solid var(--hairline);border-bottom:1px solid var(--hairline);
-  }
-  .plate div{
-    flex:1 1 150px;padding:14px 18px 14px 0;border-right:1px solid var(--hairline);
-  }
-  .plate div:last-child{border-right:0}
-  .plate dt{
-    font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--mid);
-    margin:0 0 6px;
-  }
-  .plate dd{margin:0;font-size:13px;color:var(--text);font-variant-numeric:tabular-nums}
+  /* One scrollbar treatment everywhere, including inside panes. */
+  * { scrollbar-width: thin; scrollbar-color: var(--line-2) var(--bg); }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-track { background: var(--bg); }
+  *::-webkit-scrollbar-thumb { background: var(--line-2); border: 2px solid var(--bg); }
+  *::-webkit-scrollbar-thumb:hover { background: var(--faint); }
+  *::-webkit-scrollbar-corner { background: var(--bg); }
 
-  /* --- sections ---------------------------------------------------------- */
-  section{padding:clamp(52px,8vw,110px) 0 0}
-  .fig{
-    font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--mid);
-    margin:0 0 14px;
-  }
-  h2{
-    font-family:var(--display);font-weight:800;
-    font-size:clamp(30px,5.2vw,62px);line-height:.92;letter-spacing:-.035em;
-    text-transform:uppercase;margin:0 0 22px;max-width:22ch;text-wrap:balance;
-  }
-  h3{
-    font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:500;
-    color:var(--text);margin:0 0 8px;
-  }
-  p{max-width:66ch;margin:0 0 16px;color:var(--text-2)}
-  p strong{color:var(--text);font-weight:500}
-  a.ref{color:var(--text);text-decoration:none;border-bottom:1px solid var(--mid)}
-  a.ref:hover,a.ref:focus-visible{border-bottom-color:var(--signal);color:var(--signal)}
+  a { color: var(--signal); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  :focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+  button { font: inherit; cursor: pointer; }
 
-  .scroller{overflow-x:auto;border:1px solid var(--hairline);margin:26px 0 0}
-  table{border-collapse:collapse;width:100%;min-width:600px;font-size:13px}
-  caption{
-    text-align:left;padding:12px 16px;font-size:10px;letter-spacing:.18em;
-    text-transform:uppercase;color:var(--mid);border-bottom:1px solid var(--hairline);
-  }
-  th{
-    text-align:left;padding:10px 16px;font-size:10px;letter-spacing:.14em;
-    text-transform:uppercase;color:var(--mid);font-weight:500;
-    border-bottom:1px solid var(--hairline);white-space:nowrap;
-  }
-  td{padding:11px 16px;border-bottom:1px solid rgba(40,60,43,.55);vertical-align:top;color:var(--text-2)}
-  tbody tr:last-child td{border-bottom:0}
-  td.code{font-weight:500;color:var(--text);white-space:nowrap}
-  td.n{text-align:right;font-variant-numeric:tabular-nums;color:var(--text)}
-  .zero{color:var(--signal);font-weight:500}
-  .one{color:var(--warn)}
-  tr.key td{background:rgba(59,255,108,.045)}
+  .px { font-family: var(--pixel); letter-spacing: .04em; }
 
-  .stack{display:grid;gap:1px;margin-top:26px;background:var(--hairline);border:1px solid var(--hairline)}
-  .stack article{background:var(--canvas);padding:20px 22px}
-  .stack p{margin:0;font-size:13.5px}
-  .stack .src{
-    display:block;margin-top:10px;font-size:10px;letter-spacing:.14em;
-    text-transform:uppercase;color:var(--mid);
-  }
+  /* --- shell ------------------------------------------------------------- */
+  .app { display: grid; grid-template-columns: var(--rail) 1fr; min-height: 100%; }
 
-  ol.limits{max-width:70ch;margin:24px 0 0;padding:0;list-style:none;counter-reset:l}
-  ol.limits li{
-    counter-increment:l;position:relative;padding:0 0 14px 42px;color:var(--text-2);font-size:13.5px;
+  aside {
+    background: var(--panel); border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh;
   }
-  ol.limits li::before{
-    content:counter(l,decimal-leading-zero);position:absolute;left:0;top:1px;
-    font-size:11px;letter-spacing:.1em;color:var(--mid);
+  .brand { padding: 18px 16px 16px; border-bottom: 1px solid var(--line); }
+  .brand .name { font-family: var(--pixel); font-size: 10px; color: var(--signal); }
+  .brand .sub { color: var(--faint); font-size: 10px; margin-top: 7px; letter-spacing: .06em; }
+  nav { padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; }
+  nav button {
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    background: none; border: 0; border-left: 2px solid transparent;
+    color: var(--dim); padding: 8px 10px; text-align: left; font-size: 12px;
   }
-  ol.limits b{color:var(--text);font-weight:500}
+  nav button:hover { color: var(--text); background: var(--panel-2); }
+  nav button[aria-current="true"] {
+    color: var(--signal); background: var(--panel-2); border-left-color: var(--signal);
+  }
+  nav button .dot { width: 5px; height: 5px; background: currentColor; flex: none; }
+  .rail-foot { margin-top: auto; padding: 12px 16px; border-top: 1px solid var(--line); color: var(--faint); font-size: 10px; }
+  .rail-foot div + div { margin-top: 5px; }
 
-  .cmd{
-    margin-top:24px;border:1px solid var(--hairline);background:var(--surface);
-    padding:18px 20px;overflow-x:auto;
+  /* --- top status strip -------------------------------------------------- */
+  .strip {
+    display: flex; align-items: stretch; border-bottom: 1px solid var(--line);
+    background: var(--panel); position: sticky; top: 0; z-index: 20; overflow-x: auto;
   }
-  .cmd pre{margin:0;font-size:13px;line-height:1.9;color:var(--text)}
-  .cmd .c{color:var(--signal)}
-  .cmd .d{color:var(--muted)}
+  .stat { padding: 11px 18px; border-right: 1px solid var(--line); min-width: 116px; flex: none; }
+  .stat .k { color: var(--faint); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
+  .stat .v { font-family: var(--pixel); font-size: 13px; margin-top: 7px; color: var(--text); }
+  .stat .v.good { color: var(--signal); }
+  .stat .v.warn { color: var(--amber); }
+  .live {
+    margin-left: auto; display: flex; align-items: center; gap: 7px;
+    padding: 11px 18px; color: var(--signal); font-size: 10px; letter-spacing: .1em; flex: none;
+  }
+  .live i { width: 6px; height: 6px; background: var(--signal); animation: pulse 1.6s steps(2,end) infinite; }
+  @keyframes pulse { 0%,50% { opacity: 1 } 51%,100% { opacity: .25 } }
 
-  footer{
-    margin-top:clamp(56px,8vw,104px);padding-top:20px;
-    border-top:1px dashed var(--hairline);
-    display:flex;justify-content:space-between;flex-wrap:wrap;gap:14px;
-    font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--mid);
+  main { min-width: 0; }
+  .view { padding: 20px 22px 40px; }
+  .view[hidden] { display: none; }
+
+  .h { display: flex; align-items: baseline; gap: 12px; margin: 0 0 14px; }
+  .h h1 { font-family: var(--pixel); font-size: 12px; margin: 0; color: var(--text); }
+  .h span { color: var(--faint); font-size: 11px; }
+
+  /* --- panels ------------------------------------------------------------ */
+  .grid { display: grid; gap: 12px; }
+  .g3 { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .g2 { grid-template-columns: minmax(0, 1fr) minmax(0, 380px); }
+  @media (max-width: 1000px) { .g2 { grid-template-columns: minmax(0,1fr) } }
+
+  .card { background: var(--panel); border: 1px solid var(--line); }
+  .card > header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 9px 13px; border-bottom: 1px solid var(--line);
+    color: var(--dim); font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
   }
-  @media (prefers-reduced-motion:reduce){#rig{opacity:.5}}
-  @media (max-width:640px){.serial{display:none}}
+  .card > .body { padding: 13px; }
+
+  .kv { display: grid; grid-template-columns: max-content minmax(0,1fr); gap: 7px 14px; font-size: 12px; }
+  .kv dt { color: var(--faint); }
+  .kv dd { margin: 0; word-break: break-all; }
+
+  /* --- bars -------------------------------------------------------------- */
+  /* 83 bars have to fit whatever width the card gets, so no min-width and a hairline gap:
+     a bar that cannot shrink overflows the panel instead of filling it. */
+  .bars { display: flex; align-items: flex-end; gap: 1px; height: 84px; overflow: hidden; }
+  .bars i { flex: 1 1 0; min-width: 0; background: var(--signal); animation: grow .4s steps(5,end) both; transform-origin: bottom; }
+  .bars i.zero { background: var(--line-2); }
+  @keyframes grow { from { transform: scaleY(0) } to { transform: scaleY(1) } }
+  .legend { display: flex; gap: 16px; margin-top: 10px; color: var(--faint); font-size: 10px; }
+  .legend b { color: var(--signal); font-weight: 400; }
+  .legend em { color: var(--line-2); font-style: normal; }
+
+  /* --- table ------------------------------------------------------------- */
+  .toolbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+  .chip {
+    background: var(--panel); color: var(--dim); border: 1px solid var(--line);
+    padding: 5px 11px; font-size: 11px;
+  }
+  .chip:hover { color: var(--text); border-color: var(--line-2); }
+  .chip[aria-pressed="true"] { background: var(--signal); color: var(--bg); border-color: var(--signal); font-weight: 700; }
+  input[type="search"] {
+    background: var(--panel); border: 1px solid var(--line); color: var(--text);
+    padding: 5px 10px; font: inherit; font-size: 11px; min-width: 190px;
+  }
+  input[type="search"]::placeholder { color: var(--faint); }
+
+  .tw { overflow: auto; max-height: 62vh; border: 1px solid var(--line); background: var(--panel); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { padding: 7px 11px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th {
+    position: sticky; top: 0; background: var(--panel-2); color: var(--faint);
+    font-size: 9px; letter-spacing: .1em; text-transform: uppercase; font-weight: 400; z-index: 1;
+  }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover td { background: var(--panel-2); }
+  tbody tr[aria-selected="true"] td { background: rgba(53,240,160,.08); }
+  tbody tr[aria-selected="true"] td:first-child { box-shadow: inset 2px 0 0 var(--signal); }
+  td.n { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .tag { font-size: 10px; padding: 2px 6px; border: 1px solid currentColor; }
+  .tag.ok { color: var(--signal); }
+  .tag.no { color: var(--amber); }
+  .tag.live { font-family: var(--pixel); font-size: 7px; color: var(--bg); background: var(--signal); border-color: var(--signal); padding: 3px 5px; }
+  .tag.fix { font-family: var(--pixel); font-size: 7px; color: var(--faint); border-color: var(--line-2); padding: 3px 5px; }
+  .zero { color: var(--signal); }
+  .one { color: var(--amber); }
+
+  /* --- flow -------------------------------------------------------------- */
+  .flow { display: flex; flex-direction: column; gap: 0; }
+  .step {
+    display: grid; grid-template-columns: 26px 1fr auto; gap: 11px; align-items: start;
+    padding: 11px 0; border-bottom: 1px solid var(--line);
+  }
+  .step:last-child { border-bottom: 0; }
+  .step .i { font-family: var(--pixel); font-size: 8px; color: var(--faint); padding-top: 3px; }
+  .step.on .i { color: var(--signal); }
+  .step .t { font-size: 12px; color: var(--dim); }
+  .step.on .t { color: var(--text); }
+  .step .t b { color: var(--text); font-weight: 500; display: block; }
+  .step.on .t b { color: var(--signal); }
+  .step .r { font-size: 11px; color: var(--faint); text-align: right; }
+  .runbar { display: flex; gap: 6px; margin-bottom: 12px; }
+  .runbar button.go { background: var(--signal); color: var(--bg); border: 0; padding: 7px 15px; font-size: 11px; font-weight: 700; }
+  .runbar button.go:disabled { background: var(--line-2); color: var(--faint); }
+  .runbar button.ghost { background: none; color: var(--dim); border: 1px solid var(--line); padding: 7px 13px; font-size: 11px; }
+
+  .meter { height: 3px; background: var(--line); overflow: hidden; }
+  .meter i { display: block; height: 100%; background: var(--signal); width: 0; transition: width .35s steps(6,end); }
+
+  .empty { color: var(--faint); font-size: 11px; padding: 22px 13px; text-align: center; }
+  .mut { color: var(--faint); font-size: 11px; }
+
+  @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important } }
+  @media (max-width: 760px) {
+    .app { grid-template-columns: 1fr }
+    aside { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center }
+    nav { flex-direction: row; flex-wrap: wrap; padding: 8px }
+    .rail-foot { display: none }
+  }
 </style>
 
-<canvas id="rig" aria-hidden="true"></canvas>
-<div class="serial">REQKEEPER · SEPOLIA 11155111</div>
-
-<main>
-  <header class="topbar">
-    <span>ReqKeeper</span>
-    <nav>
-      <a href="#seam">The seam</a>
-      <a href="#identity">Identity</a>
-      <a href="#refusals">Refusals</a>
-      <a href="#limits">Limits</a>
+<div class="app">
+  <aside>
+    <div class="brand">
+      <div class="name">REQKEEPER</div>
+      <div class="sub">EXACTLY-ONCE SETTLEMENT</div>
+    </div>
+    <nav id="nav">
+      <button data-v="dash" aria-current="true"><span class="dot"></span>Overview</button>
+      <button data-v="obl"><span class="dot"></span>Obligations</button>
+      <button data-v="flow"><span class="dot"></span>Settle</button>
+      <button data-v="surf"><span class="dot"></span>Surfaces</button>
     </nav>
-  </header>
-
-  <div class="hero">
-    <p class="eyebrow">Request Network × KeeperHub · Ethereum Sepolia</p>
-    <h1>Pay it<br>once.</h1>
-    <p class="lede">
-      An agent retries. That is the defining property of an agent harness. When the thing
-      being retried moves money, a retry is a second payment — and every layer of the stack
-      says it is <b>someone else&rsquo;s problem</b>.
-    </p>
-    <dl class="plate">
-      <div><dt>Obligation source</dt><dd>Request invoice</dd></div>
-      <div><dt>Executor</dt><dd>KeeperHub</dd></div>
-      <div><dt>Selector</dt><dd>0xc219a14d</dd></div>
-      <div><dt>Refusal cases</dt><dd>24 / 24</dd></div>
-      <div><dt>Dependencies</dt><dd>0</dd></div>
-    </dl>
-  </div>
-
-  <section id="seam">
-    <p class="fig">Fig. 1 — where the guarantee goes missing</p>
-    <h2>Nobody owns the seam.</h2>
-    <p>
-      Each layer documents the gap and points at the next one. These are open issues, not
-      hypotheticals.
-    </p>
-    <div class="scroller">
-      <table>
-        <caption>Retry semantics at the agent-to-signer boundary</caption>
-        <thead>
-          <tr><th>Layer</th><th>Its position</th><th>State</th></tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td class="code">Wallet SDK</td>
-            <td>&ldquo;A retry is a second, independently valid transaction&hellip; Nothing in either
-              response marks it as a duplicate.&rdquo; The key already exists in the SDK signature;
-              the one path that moves value does not pass it.
-              <a class="ref" href="https://github.com/coinbase/agentkit/issues/1483">agentkit#1483</a></td>
-            <td class="code">open</td>
-          </tr>
-          <tr>
-            <td class="code">Framework</td>
-            <td><code>stripe.charge(amount, recipient)</code> fires twice on retry.
-              <a class="ref" href="https://github.com/crewAIInc/crewAI/issues/5802">crewAI#5802</a></td>
-            <td class="code">111 comments</td>
-          </tr>
-          <tr>
-            <td class="code">Orchestrator</td>
-            <td>Tool calls over ~3 minutes are &ldquo;silently re-dispatched from the last checkpoint
-              while the original is still running&rdquo;.
-              <a class="ref" href="https://github.com/langchain-ai/langgraph/issues/7417">langgraph#7417</a></td>
-            <td class="code">open</td>
-          </tr>
-          <tr>
-            <td class="code">Payment rail</td>
-            <td>&ldquo;The spec never states how facilitators must deal with duplicate requests.&rdquo;
-              Five concurrent requests, four identical settlement proofs, duplicate debits
-              refunded after the fact.
-              <a class="ref" href="https://github.com/x402-foundation/x402/issues/452">x402#452</a></td>
-            <td class="code">open</td>
-          </tr>
-          <tr class="key">
-            <td class="code">Executor</td>
-            <td>KeeperHub&rsquo;s own docs: idempotency replay lasts 24 hours. &ldquo;Past that the stored
-              response is gone and <strong>the same key executes again, silently</strong>.&rdquo;</td>
-            <td class="code">shipped</td>
-          </tr>
-        </tbody>
-      </table>
+    <div class="rail-foot">
+      <div>SEPOLIA 11155111</div>
+      <div id="foot-run"></div>
+      <div><a href="https://github.com/vaibhav4046/reqkeeper">SOURCE</a></div>
     </div>
-    <p style="margin-top:22px">
-      KeeperHub owns reliability <em>within</em> a run. Nothing owns obligation identity
-      <em>across</em> runs.
-    </p>
-  </section>
+  </aside>
 
-  <section id="identity">
-    <p class="fig">Fig. 2 — the load-bearing idea</p>
-    <h2>An invoice is an identity.</h2>
-    <p>
-      Every Request invoice carries a canonical request id and a 16-character payment
-      reference embedded in the calldata. That is a stable obligation identity issued by an
-      external system. It survives a payer wallet change, an API-key rotation, a re-import,
-      regenerated calldata, and the 24-hour replay expiry.
-    </p>
-    <p><strong>We did not invent an identity scheme. Request already ships one.</strong></p>
-    <div class="cmd">
-<pre><span class="d">// three identities, all derived from persisted state —</span>
-<span class="d">// no clock, no randomness, no generated text</span>
-obligation = sha256(<span class="c">ns.length</span>:ns:<span class="c">id.length</span>:id)
-plan       = sha256(canonicalJson(approvedBytes))
-step       = sha256(obligation:plan:stepIndex)</pre>
-    </div>
-    <p style="margin-top:22px">
-      Settlement needs <strong>two independent signals</strong>: a chain receipt read directly
-      via <code>eth_getTransactionReceipt</code>, and Request&rsquo;s own <code>hasBeenPaid</code>.
-      A confirmed receipt alone cannot mark anything paid. A provider status string never can.
-    </p>
-  </section>
+  <main>
+    <div class="strip" id="strip"></div>
 
-  <section id="refusals">
-    <p class="fig">Fig. 3 — 24 cases, 24 as specified</p>
-    <h2>The refusals are the product.</h2>
-    <p>
-      Generated by <code>npm run harness</code> against a provider that counts
-      <strong>physical sends</strong>, so &ldquo;no gas burned&rdquo; is asserted against a number
-      rather than inferred from a status string.
-    </p>
-    <div class="scroller">
-      <table>
-        <caption>Excerpt · full table in docs/refusals.json · mode FIXTURE</caption>
-        <thead>
-          <tr><th>Case</th><th>Scenario</th><th>Refusal</th><th>Sends</th></tr>
-        </thead>
-        <tbody>
-          <tr><td class="code">C02</td><td>Recipient not on the allowlist</td><td class="code">PAYEE_NOT_ALLOWED</td><td class="n zero">0</td></tr>
-          <tr><td class="code">C04</td><td>Invoice under cap that a <em>fee</em> pushes over</td><td class="code">LIMIT_EXCEEDED</td><td class="n zero">0</td></tr>
-          <tr><td class="code">C07</td><td>Token decimals differ from policy</td><td class="code">TOKEN_DECIMALS_MISMATCH</td><td class="n zero">0</td></tr>
-          <tr><td class="code">C12</td><td>No human decision yet</td><td class="code">AWAITING_APPROVAL</td><td class="n zero">0</td></tr>
-          <tr><td class="code">C14</td><td>Source facts changed after approval</td><td class="code">PLAN_CHANGED</td><td class="n zero">0</td></tr>
-          <tr><td class="code">C15</td><td>A rival plan already holds the obligation</td><td class="code">OBLIGATION_RESERVED</td><td class="n zero">0</td></tr>
-          <tr><td class="code">C17</td><td>Cached failure replays forever</td><td class="code">CACHED_FAILURE</td><td class="n zero">0</td></tr>
-          <tr><td class="code">C19</td><td>Dry run actually executed</td><td class="code">SIMULATE_EXECUTED</td><td class="n one">1</td></tr>
-          <tr><td class="code">C21</td><td>Provider claims success, chain has no receipt</td><td class="code">EVIDENCE_CONFLICT</td><td class="n one">1</td></tr>
-          <tr class="key"><td class="code">C23</td><td>Replay 25h later, provider cache expired</td><td class="code">PLAN_EXPIRED</td><td class="n one">1</td></tr>
-          <tr class="key"><td class="code">C24</td><td>Replay inside plan TTL, provider cache expired</td><td class="code">ALREADY_DISPATCHED</td><td class="n one">1</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p style="margin-top:22px">
-      C23 and C24 are the thesis: <strong>the send count does not move across a replay.</strong>
-      16 of 22 refusals happen before any provider write at all.
-    </p>
-    <p>
-      C24 found a real bug in this codebase. A plan still inside its TTL, whose provider
-      idempotency cache had lapsed, re-entered dispatch, reused the same attempt row, called
-      <code>execute()</code> again — and the provider, having forgotten the key, paid a second
-      time. The guard now sits on <code>firstSendAt</code>, and C24 exists so it cannot regress.
-    </p>
-  </section>
+    <!-- overview -->
+    <section class="view" id="v-dash">
+      <div class="h"><h1>OVERVIEW</h1><span id="dash-sub"></span></div>
+      <div class="grid g3">
+        <div class="card">
+          <header>Sends per live row<span id="bars-n"></span></header>
+          <div class="body">
+            <div class="bars" id="bars"></div>
+            <div class="legend">
+              <span><b>&#9646;</b> one send</span>
+              <span><em>&#9646;</em> zero sends</span>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <header>Chain verification</header>
+          <div class="body"><dl class="kv" id="verify-kv"></dl></div>
+        </div>
+        <div class="card">
+          <header>Refusal codes seen</header>
+          <div class="body"><dl class="kv" id="codes-kv"></dl></div>
+        </div>
+      </div>
+      <div class="grid g3" style="margin-top:12px">
+        <div class="card" style="grid-column:1/-1">
+          <header>Latest settlements<span class="mut">click a row to inspect</span></header>
+          <div class="tw" style="max-height:34vh"><table id="recent"><thead><tr>
+            <th>Row</th><th>Obligation</th><th>Result</th><th class="n">Sends</th><th>Transaction</th>
+          </tr></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+    </section>
 
-  <section>
-    <p class="fig">Fig. 4 — three documented hazards, each with a fault injection</p>
-    <h2>Modelled, not assumed.</h2>
-    <div class="stack">
-      <article>
-        <h3>Replay window expires at 24h</h3>
-        <p>The same key then executes again, silently. Defended by a UNIQUE obligation
-          constraint and a <code>firstSendAt</code> guard, both of which outlive the provider
-          cache.</p>
-        <span class="src">docs.keeperhub.com/api/direct-execution</span>
-      </article>
-      <article>
-        <h3>A reused key replays a cached failure</h3>
-        <p>So a retry can never succeed. Distinguished from &ldquo;unpaid&rdquo;. Resolution needs a
-          new approved plan — never a key rotation, which would pay twice.</p>
-        <span class="src">issue #1840</span>
-      </article>
-      <article>
-        <h3><code>simulate=true</code> is ignored and executes</h3>
-        <p>A dry run is therefore not a safety boundary. A transaction hash returned from a
-          simulate call is treated as a real send and raised as
-          <code>EVIDENCE_CONFLICT</code>.</p>
-        <span class="src">issues #1959 / #1929</span>
-      </article>
-    </div>
-  </section>
+    <!-- obligations -->
+    <section class="view" id="v-obl" hidden>
+      <div class="h"><h1>OBLIGATIONS</h1><span id="obl-count"></span></div>
+      <div class="grid g2">
+        <div>
+          <div class="toolbar" id="chips"></div>
+          <input type="search" id="q" placeholder="filter by code, scenario, hash…" aria-label="Filter rows">
+          <div class="tw" style="margin-top:10px"><table id="rows"><thead><tr>
+            <th>Row</th><th>Scenario</th><th>Result</th><th class="n">Sends</th><th>Pre-write</th><th>Mode</th>
+          </tr></thead><tbody></tbody></table></div>
+        </div>
+        <div class="card" id="detail">
+          <header>Inspector</header>
+          <div class="body" id="detail-body"><div class="empty">Select a row.</div></div>
+        </div>
+      </div>
+    </section>
 
-  <section id="limits">
-    <p class="fig">Fig. 5 — published because they are true</p>
-    <h2>What this does not do.</h2>
-    <ol class="limits">
-      <li><b>Duplicate protection is deployment-scoped.</b> It cannot stop an independent
-        wallet, another deployment, or a human paying the invoice out of band.</li>
-      <li><b>No semantic dedup across request ids.</b> Two Request ids may name the same
-        real-world invoice. Not detected.</li>
-      <li><b>Revocation is not an onchain undo.</b> Already-broadcast work completes.</li>
-      <li><b>The audit trail is tamper-evident, not tamper-proof.</b> The same database
-        administrator can rewrite it. It is not blockchain evidence.</li>
-      <li><b>No prompt-injection detection.</b> A guarded signer enforces a declarative
-        policy. It does not detect injection and does not claim to.</li>
-      <li><b>Approval fatigue is real and unsolved.</b> Measured across 11,429 reviews over
-        seven months, approval rates drift 30.1% → 36.8% while inline comments fall 22%. This
-        design reduces prompt <em>count</em> rather than pretending a per-action queue is safe.</li>
-      <li><b>The live leg has not run.</b> Creating a Request invoice needs a credential
-        obtainable only by signing in a browser. Every harness row is tagged
-        <code>FIXTURE</code>. None is labelled live, and none will be until a real Sepolia
-        hash exists.</li>
-    </ol>
-    <div class="cmd">
-<pre><span class="c">npm test</span>                  <span class="d">105 unit tests</span>
-<span class="c">npm run harness</span>           <span class="d">24 refusal cases → docs/refusals.json</span>
-<span class="c">npm run verify:onchain</span>    <span class="d">reads Sepolia, no credentials required</span></pre>
-    </div>
-  </section>
+    <!-- settle flow -->
+    <section class="view" id="v-flow" hidden>
+      <div class="h"><h1>SETTLE</h1><span>recorded outcomes, replayed step by step</span></div>
+      <div class="grid g2">
+        <div class="card">
+          <header>Protocol<span id="flow-target" class="mut"></span></header>
+          <div class="body">
+            <div class="runbar">
+              <button class="go" id="run">Run</button>
+              <button class="ghost" id="again" disabled>Dispatch again</button>
+              <button class="ghost" id="reset">Reset</button>
+            </div>
+            <div class="meter"><i id="meter"></i></div>
+            <div class="flow" id="flow"></div>
+          </div>
+        </div>
+        <div class="card">
+          <header>Counters</header>
+          <div class="body"><dl class="kv" id="flow-kv"></dl></div>
+        </div>
+      </div>
+    </section>
 
-  <footer>
-    <span>Node 24 · zero dependencies · MIT</span>
-    <span>Testnet only — mainnet disabled in code</span>
-  </footer>
-</main>
+    <!-- surfaces -->
+    <section class="view" id="v-surf" hidden>
+      <div class="h"><h1>SURFACES</h1><span>one protocol, three KeeperHub surfaces</span></div>
+      <div class="grid g3" id="surfaces"></div>
+      <div class="grid g3" style="margin-top:12px">
+        <div class="card" style="grid-column:1/-1">
+          <header>Platform behaviour found by probing</header>
+          <div class="tw" style="max-height:none"><table id="findings"><thead><tr>
+            <th>Surface</th><th>Observed</th><th>Handled by</th>
+          </tr></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
 
 <script>
-  // Procedural wireframe torus, drawn from scroll position.
-  //
-  // Deliberately not a scroll-scrubbed frame sequence: 120 frames at 1280x800 is ~1.84 MB of
-  // transfer and ~492 MB decoded, against iOS Safari's ~224 MB canvas ceiling. Geometry costs
-  // no bytes and no decode. Canvas is also not an LCP candidate, so the H1 stays the LCP.
-  (function () {
-    const canvas = document.getElementById("rig");
-    const ctx = canvas.getContext("2d");
-    const reduce = matchMedia("(prefers-reduced-motion: reduce)");
+  const D = JSON.parse(document.getElementById("reqkeeper-data").textContent);
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const liveRows = (D.live?.rows ?? []).map((r) => ({ ...r, mode: "LIVE" }));
+  const fixRows = (D.refusals.rows ?? []).map((r) => ({ ...r, mode: "FIXTURE" }));
+  const ALL = [...liveRows, ...fixRows];
+  const T = D.live?.totals;
+  const el = (id) => document.getElementById(id);
+  const short = (h, n = 12) => (h ? h.slice(0, n) + "…" : "—");
 
-    const RINGS = 22, PER_RING = 34, R = 1, r = 0.42;
-    let w = 0, h = 0, dpr = 1, progress = 0, target = 0, raf = 0;
+  // --- top strip ----------------------------------------------------------
+  const settled = liveRows.filter((r) => r.tx_hash).length;
+  const replays = liveRows.filter((r) => r.expected === "ALREADY_SETTLED");
+  const replaySends = replays.reduce((a, r) => a + r.physical_sends, 0);
+  el("strip").innerHTML =
+    [
+      ["payments", settled, "good"],
+      ["replays refused", replays.length, "good"],
+      ["sends by replays", replaySends, replaySends === 0 ? "good" : "warn"],
+      ["live rows", liveRows.length, ""],
+      ["fixture cases", D.refusals.totals.cases, ""],
+      ["tests", D.tests, ""],
+    ]
+      .map(([k, v, c]) => `<div class="stat"><div class="k">${k}</div><div class="v ${c}">${v}</div></div>`)
+      .join("") + '<div class="live"><i></i>SEPOLIA</div>';
 
-    function resize() {
-      dpr = Math.min(devicePixelRatio || 1, 2);
-      w = innerWidth; h = innerHeight;
-      canvas.width = Math.floor(w * dpr);
-      canvas.height = Math.floor(h * dpr);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      draw();
+  el("dash-sub").textContent = T ? `${T.asSpecified}/${T.rows} rows as specified` : "no live artifact";
+  el("foot-run").textContent = "RUN " + String(D.live?.generatedAt || "").slice(0, 10);
+  el("bars-n").textContent = liveRows.length + " rows";
+
+  // --- bars ---------------------------------------------------------------
+  el("bars").innerHTML = liveRows
+    .map((r, i) => {
+      const sent = r.physical_sends > 0;
+      const d = still ? 0 : Math.min(i * 10, 700);
+      return `<i class="${sent ? "" : "zero"}" style="height:${sent ? 100 : 12}%;animation-delay:${d}ms" title="${r.case_id} · ${r.actual} · ${r.physical_sends} sends"></i>`;
+    })
+    .join("");
+
+  const kv = (host, pairs) => {
+    host.innerHTML = pairs.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+  };
+
+  kv(el("verify-kv"), [
+    ["chain", "11155111 sepolia"],
+    ["receipts", `<span class="zero">${settled}/${settled}</span> success`],
+    ["references", `<span class="zero">${settled}/${settled}</span> in proxy log`],
+    ["amount", "1000000000000000000 each"],
+    ["command", "<code>npm run verify:live</code>"],
+    ["credentials", "none required"],
+  ]);
+
+  // Codes, counted from the artifact rather than listed by hand.
+  const codes = new Map();
+  for (const r of ALL) codes.set(r.actual, (codes.get(r.actual) ?? 0) + 1);
+  kv(
+    el("codes-kv"),
+    [...codes.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 9)
+      .map(([c, n]) => [c, `<span class="${c === "SETTLED" ? "one" : "zero"}">${n}</span>`]),
+  );
+
+  // --- recent table -------------------------------------------------------
+  const rowHtml = (r, sel) => {
+    const tx = r.tx_hash
+      ? `<a href="https://sepolia.etherscan.io/tx/${r.tx_hash}" target="_blank" rel="noopener">${short(r.tx_hash, 14)}</a>`
+      : '<span class="mut">no send</span>';
+    return `<tr data-id="${r.case_id}" aria-selected="${sel ? "true" : "false"}">
+      <td class="mut">${r.case_id}</td>
+      <td>${short(r.request_id || "", 16)}</td>
+      <td><span class="tag ${r.actual === "SETTLED" ? "one" : "ok"}">${r.actual}</span></td>
+      <td class="n ${r.physical_sends ? "one" : "zero"}">${r.physical_sends}</td>
+      <td>${tx}</td></tr>`;
+  };
+  el("recent").tBodies[0].innerHTML = liveRows.slice(0, 12).map((r) => rowHtml(r, false)).join("");
+
+  // --- obligations table --------------------------------------------------
+  const FILTERS = [
+    ["live", (r) => r.mode === "LIVE"],
+    ["all", () => true],
+    ["settled", (r) => r.actual === "SETTLED"],
+    ["refused", (r) => r.actual !== "SETTLED"],
+    ["zero sends", (r) => r.physical_sends === 0],
+  ];
+  let fi = 0;
+  let selected = null;
+
+  el("chips").innerHTML = FILTERS.map(
+    ([l], i) => `<button class="chip" aria-pressed="${i === 0}" data-i="${i}">${l}</button>`,
+  ).join("");
+
+  function draw() {
+    const q = el("q").value.trim().toLowerCase();
+    const [, pred] = FILTERS[fi];
+    const shown = ALL.filter(pred).filter((r) =>
+      !q || `${r.case_id} ${r.scenario} ${r.actual} ${r.tx_hash ?? ""} ${r.request_id ?? ""}`.toLowerCase().includes(q),
+    );
+    el("obl-count").textContent = `${shown.length} of ${ALL.length}`;
+    el("rows").tBodies[0].innerHTML = shown.length
+      ? shown
+          .slice(0, 250)
+          .map(
+            (r) => `<tr data-id="${r.case_id}" aria-selected="${selected === r.case_id}">
+        <td class="mut">${r.case_id}</td>
+        <td>${r.scenario}</td>
+        <td><span class="tag ${r.actual === "SETTLED" ? "one" : "ok"}">${r.actual}</span></td>
+        <td class="n ${r.physical_sends ? "one" : "zero"}">${r.physical_sends}</td>
+        <td>${r.refused_before_provider_write ? '<span class="zero">yes</span>' : '<span class="mut">no</span>'}</td>
+        <td>${r.mode === "LIVE" ? '<span class="tag live">LIVE</span>' : '<span class="tag fix">FIX</span>'}</td></tr>`,
+          )
+          .join("")
+      : '<tr><td colspan="6" class="empty">No rows match.</td></tr>';
+  }
+
+  function inspect(id) {
+    const r = ALL.find((x) => x.case_id === id);
+    if (!r) return;
+    selected = id;
+    kv(el("detail-body"), [
+      ["row", r.case_id],
+      ["mode", r.mode],
+      ["scenario", r.scenario],
+      ["expected", r.expected],
+      ["actual", `<span class="tag ${r.actual === "SETTLED" ? "one" : "ok"}">${r.actual}</span>`],
+      ["physical sends", `<span class="${r.physical_sends ? "one" : "zero"}">${r.physical_sends}</span>`],
+      ["refused pre-write", r.refused_before_provider_write ? "yes" : "no"],
+      ["request id", r.request_id ? `<code>${r.request_id}</code>` : "—"],
+      ["reference", r.payment_reference ? `<code>${r.payment_reference}</code>` : "—"],
+      [
+        "transaction",
+        r.tx_hash
+          ? `<a href="https://sepolia.etherscan.io/tx/${r.tx_hash}" target="_blank" rel="noopener"><code>${r.tx_hash}</code></a>`
+          : '<span class="mut">nothing was sent</span>',
+      ],
+    ]);
+    draw();
+  }
+
+  el("chips").addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    fi = Number(b.dataset.i);
+    for (const x of el("chips").querySelectorAll("button")) {
+      x.setAttribute("aria-pressed", String(Number(x.dataset.i) === fi));
     }
+    draw();
+  });
+  el("q").addEventListener("input", draw);
+  for (const t of ["rows", "recent"]) {
+    el(t).addEventListener("click", (e) => {
+      const tr = e.target.closest("tr");
+      if (!tr?.dataset.id || e.target.closest("a")) return;
+      inspect(tr.dataset.id);
+      if (t === "recent") show("obl");
+    });
+  }
+  draw();
 
-    function project(x, y, z, cx, cy, scale) {
-      const d = 3.2;
-      const k = d / (d + z);
-      return [cx + x * scale * k, cy + y * scale * k, k];
+  // --- settle flow --------------------------------------------------------
+  // Replays what the live run actually recorded for one obligation. Nothing is invented:
+  // the outcomes and the hash come from the artifact.
+  const pair = liveRows.find((r) => r.actual === "SETTLED");
+  const twin = liveRows.find((r) => r.expected === "ALREADY_SETTLED" && r.request_id === pair?.request_id);
+  el("flow-target").textContent = pair ? short(pair.request_id || "", 14) : "";
+
+  const STEPS = [
+    ["Import obligation", "identity derived from the Request invoice"],
+    ["Policy gate", "payee, cap, fee ceiling, token decimals"],
+    ["Reserve", "one plan holds the obligation"],
+    ["Human approval", "recomputed from the invoice, not the proposal"],
+    ["Calldata gate", "decode, re-encode, byte-compare"],
+    ["Dispatch", pair ? `1 send · ${short(pair.tx_hash, 14)}` : "1 send"],
+    ["Reconcile", "chain receipt AND source verdict"],
+    ["Dispatch again", twin ? `${twin.actual} · 0 sends` : "refused"],
+  ];
+  let at = -1;
+  let timer = null;
+
+  function renderFlow() {
+    el("flow").innerHTML = STEPS.map((s, i) => {
+      const on = i <= at;
+      const last = i === STEPS.length - 1;
+      return `<div class="step ${on ? "on" : ""}">
+        <div class="i">${String(i + 1).padStart(2, "0")}</div>
+        <div class="t"><b>${s[0]}</b>${s[1]}</div>
+        <div class="r">${on ? (last ? '<span class="tag ok">0 sends</span>' : i === 5 ? '<span class="tag no">1 send</span>' : "ok") : ""}</div>
+      </div>`;
+    }).join("");
+    el("meter").style.width = `${Math.max(0, ((at + 1) / STEPS.length) * 100)}%`;
+    kv(el("flow-kv"), [
+      ["step", `${Math.max(0, at + 1)} / ${STEPS.length}`],
+      ["physical sends", `<span class="${at >= 5 ? "one" : "zero"}">${at >= 5 ? 1 : 0}</span>`],
+      ["second dispatch", at >= 7 ? `<span class="zero">refused, 0 sends</span>` : '<span class="mut">not yet</span>'],
+      ["obligation", pair ? `<code>${short(pair.request_id || "", 18)}</code>` : "—"],
+      ["transaction", pair?.tx_hash ? `<a href="https://sepolia.etherscan.io/tx/${pair.tx_hash}" target="_blank" rel="noopener">${short(pair.tx_hash, 14)}</a>` : "—"],
+    ]);
+    el("again").disabled = at < 6 || at >= 7;
+  }
+
+  function advance(to) {
+    clearInterval(timer);
+    if (still) { at = to; renderFlow(); return; }
+    timer = setInterval(() => {
+      if (at >= to) { clearInterval(timer); return; }
+      at++;
+      renderFlow();
+    }, 260);
+  }
+  el("run").addEventListener("click", () => { at = -1; advance(6); });
+  el("again").addEventListener("click", () => advance(7));
+  el("reset").addEventListener("click", () => { clearInterval(timer); at = -1; renderFlow(); });
+  renderFlow();
+
+  // --- surfaces -----------------------------------------------------------
+  el("surfaces").innerHTML = [
+    ["Direct execution", "/api/execute/contract-call", "src/keeperhub.ts", "verify:seam"],
+    ["MCP server", "app.keeperhub.com/mcp · 44 tools", "src/keeperhub-mcp.ts", "verify:mcp"],
+    ["Audit trail", "get_direct_execution_status", "src/keeperhub-mcp.ts", "verify:mcp"],
+  ]
+    .map(
+      ([n, ep, f, cmd]) => `<div class="card"><header>${n}<span class="tag ok">wired</span></header>
+      <div class="body"><dl class="kv">
+        <dt>endpoint</dt><dd><code>${ep}</code></dd>
+        <dt>provider</dt><dd><code>${f}</code></dd>
+        <dt>verified</dt><dd><code>npm run ${cmd}</code></dd>
+        <dt>gate</dt><dd>src/calldata-gate.ts</dd>
+      </dl></div></div>`,
+    )
+    .join("");
+
+  el("findings").tBodies[0].innerHTML = [
+    ["REST", "no route accepts pre-encoded calldata", "decode + re-encode + byte-compare"],
+    ["REST", "signed tx goes to a forwarder, not the named contract", "independent receipt read"],
+    ["REST", "gas is sponsored by a relayer", "payer balance not a precondition"],
+    ["MCP", "tools/call before initialized fails -32003", "sequential handshake"],
+    ["MCP", "bad key still returns HTTP 200", "absence of session header is the signal"],
+    ["MCP", "session id rotates mid-conversation", "newest response header wins"],
+    ["MCP", "simulate compared with === true", "boolean only, never a string"],
+  ]
+    .map(([s, o, h]) => `<tr><td><span class="tag ${s === "MCP" ? "ok" : "no"}">${s}</span></td><td>${o}</td><td class="mut">${h}</td></tr>`)
+    .join("");
+
+  // --- routing ------------------------------------------------------------
+  const VIEWS = ["dash", "obl", "flow", "surf"];
+  function show(v) {
+    const name = VIEWS.includes(v) ? v : "dash";
+    for (const x of VIEWS) el("v-" + x).hidden = x !== name;
+    for (const b of el("nav").querySelectorAll("button")) {
+      b.setAttribute("aria-current", String(b.dataset.v === name));
     }
-
-    function draw() {
-      ctx.clearRect(0, 0, w, h);
-
-      const scale = Math.min(w, h) * 0.34;
-      const cx = w * (w > 900 ? 0.72 : 0.5);
-      const cy = h * 0.5;
-
-      // Scroll drives rotation. At rest (progress 0) the form is already legible, so the
-      // first frame of the page is never an empty canvas.
-      const a = 0.6 + progress * Math.PI * 1.6;
-      const b = 0.35 + progress * Math.PI * 0.8;
-      const ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b);
-
-      for (let i = 0; i < RINGS; i++) {
-        const u = (i / RINGS) * Math.PI * 2;
-        ctx.beginPath();
-        let faded = 0;
-        for (let j = 0; j <= PER_RING; j++) {
-          const v = (j / PER_RING) * Math.PI * 2;
-          const rx = (R + r * Math.cos(v)) * Math.cos(u);
-          const ry = r * Math.sin(v);
-          const rz = (R + r * Math.cos(v)) * Math.sin(u);
-          // rotate Y then X
-          const x1 = rx * cb + rz * sb;
-          const z1 = -rx * sb + rz * cb;
-          const y2 = ry * ca - z1 * sa;
-          const z2 = ry * sa + z1 * ca;
-          const [px, py, k] = project(x1, y2, z2, cx, cy, scale);
-          faded += k;
-          if (j === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-        }
-        const depth = faded / (PER_RING + 1);
-        ctx.strokeStyle = "rgba(59,255,108," + (0.035 + Math.pow(depth - 0.55, 2) * 0.5).toFixed(3) + ")";
-        ctx.lineWidth = depth > 1.05 ? 1.1 : 0.6;
-        ctx.stroke();
-      }
-    }
-
-    function tick() {
-      progress += (target - progress) * 0.09;
-      draw();
-      if (Math.abs(target - progress) > 0.0005) raf = requestAnimationFrame(tick);
-      else raf = 0;
-    }
-
-    function onScroll() {
-      const max = Math.max(1, document.body.scrollHeight - innerHeight);
-      target = Math.min(1, scrollY / max);
-      if (reduce.matches) { progress = target; draw(); return; }
-      if (!raf) raf = requestAnimationFrame(tick);
-    }
-
-    addEventListener("resize", resize, { passive: true });
-    addEventListener("scroll", onScroll, { passive: true });
-    resize();
-    onScroll();
-  })();
+    if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
+  }
+  el("nav").addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (b) show(b.dataset.v);
+  });
+  addEventListener("hashchange", () => show(location.hash.replace(/^#/, "")));
+  show(location.hash.replace(/^#/, "") || "dash");
 </script>

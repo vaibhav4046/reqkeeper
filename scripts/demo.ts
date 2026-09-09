@@ -264,7 +264,7 @@ say("  Including two that found real bugs in this codebase, both now regression-
 
 say();
 say(`${"─".repeat(74)}`);
-say("  npm test          146 tests");
+say("  npm test          152 tests");
 say("  npm run harness   26 refusal cases");
 say("  npm run verify:seam / verify:onchain / settle:live");
 say("");

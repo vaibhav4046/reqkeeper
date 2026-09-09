@@ -228,8 +228,16 @@ test("a settled obligation is never re-entered, and its state never regresses", 
     decision: "APPROVED",
     restatement: proposal.json.approvalSentence,
   });
-  // Make the chain agree so the first settle reaches SETTLED rather than stopping earlier.
-  const paid: McpContext = { ...c, findPayment: async () => ({ found: true }) };
+  // The chain must agree about THIS transaction and THIS amount, not merely that the
+  // reference appears somewhere. FixtureProvider's first send is 0x…01.
+  const paid: McpContext = {
+    ...c,
+    findPayment: async () => ({
+      found: true,
+      txHash: `0x${"0".repeat(63)}1`,
+      amount: ONE,
+    }),
+  };
   const first = await call(paid, "settle_obligation", INVOICE);
   assert.equal(first.json.state, "SETTLED");
 

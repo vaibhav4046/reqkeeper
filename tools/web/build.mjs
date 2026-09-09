@@ -80,10 +80,10 @@ if (!template.includes("__DATA__")) throw new Error("template lost its __DATA__ 
 
 // The payload sits in a JSON script tag, so it must not be able to close that tag early.
 const payload = JSON.stringify(data).replace(/</g, "\\u003c");
-writeFileSync(path("web/console.html"), template.replace("__DATA__", payload), "utf8");
+writeFileSync(path("web/index.html"), template.replace("__DATA__", payload), "utf8");
 
 console.log(
-  `web/console.html written — ${refusals.rows.length} fixture rows, ` +
+  `web/index.html written — ${refusals.rows.length} fixture rows, ` +
     `${live ? `${live.rows.length} live rows, ${live.totals.payments} real payments, ` : "no live artifact, "}` +
     `${tests} tests`,
 );
