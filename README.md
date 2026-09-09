@@ -85,6 +85,38 @@ was supposed to be the safety net. Its correctness is not self-asserted: `npm te
 against **KeeperHub's own encoder output**, captured byte-for-byte from a live simulate's
 revert payload. Two independent implementations, same 260 bytes.
 
+### And the `to` address is not the contract you named either
+
+Reading a real executed transaction back off the chain shows a second layer of the same thing.
+Asking KeeperHub to call `mint` on FAU produced tx
+[`0x5b722787…`](https://sepolia.etherscan.io/tx/0x5b722787ce6523d7d0d7094a4d82159809c06a395bf990bce90b107712040a74)
+(Sepolia block 11664587), and what actually got signed was:
+
+| Field | Value | What was approved |
+|---|---|---|
+| `tx.from` | `0x809d8252…` | — a KeeperHub relayer, not the payer |
+| `tx.to` | `0x5af5194b…` (3963-byte contract) | FAU, `0x370DE27f…` |
+| selector | `0x9aefaff8` on the forwarder | `0x40c10f19` — `mint(address,uint256)` |
+| gas payer | the relayer, 0.000119 ETH | — |
+
+The named call survives, but as an *inner payload*: a 65-byte ECDSA signature (v=`0x1c`)
+followed by `0x40c10f19` and its arguments, submitted to a forwarder by a relayer that pays
+the gas. So `(to, data)` as approved never appears in a transaction anywhere. Only the
+resulting `Transfer(0x0 → payer, 100e18)` log proves the intended call happened.
+
+Two consequences worth stating plainly:
+
+- **Gas is sponsored.** The payer's balance is untouched by an execution. A funded payer
+  wallet is not a precondition for a contract call, contrary to what this project assumed
+  before measuring it.
+- **`msg.sender` is still the payer.** This mattered enough to test before relying on it:
+  after an `approve` through KeeperHub, `allowance(payer → ERC20FeeProxy)` reads `100e18`
+  on-chain while `allowance(forwarder → proxy)` stays `0`. Had it been the other way, a
+  Request payment could never settle through this route at all.
+
+This is why `SETTLED` requires an independent `eth_getTransactionReceipt` and Request's own
+`hasBeenPaid`. There is no point at which a returned status string is the evidence.
+
 ---
 
 ## What another team should look at first
@@ -126,6 +158,19 @@ chain id: 11155111
 Worth running before anything else: a widely repeated answer online gives Request's
 ERC20FeeProxy as `0x370DE27f…`, which is actually the FAU **token**. Both are deployed. They
 are different contracts. This script tells you so.
+
+## Live on Sepolia
+
+Not a fixture. These executed through `POST /api/execute/contract-call` and were verified by
+reading the chain back, not by trusting the response:
+
+| What | Transaction | Verified by |
+|---|---|---|
+| mint 100 FAU to the payer | [`0x5b722787…`](https://sepolia.etherscan.io/tx/0x5b722787ce6523d7d0d7094a4d82159809c06a395bf990bce90b107712040a74) | `Transfer(0x0 → payer, 100e18)` log, block 11664587 |
+| approve ERC20FeeProxy | [`0x0e6b631a…`](https://sepolia.etherscan.io/tx/0x0e6b631ad0071e33c1d94601cbbafa4f0f0ac5d64926f84043c71bf148b88d61) | `allowance(payer → proxy)` reads `100e18` |
+
+Payer: [`0x027D54A6…`](https://sepolia.etherscan.io/address/0x027D54A692e0e80173141777BdB847c1726FA1F3)
+— KeeperHub's own Turnkey wallet, not a browser wallet. The remaining leg is the invoice.
 
 ## The refusal table
 
@@ -219,19 +264,19 @@ These are published because they are true, and because vague claims poison the c
 
 Stated plainly rather than left for a reviewer to discover.
 
-- **The live leg of Gate A has not run.** Creating a Request invoice needs a Client ID, which
-  is only obtainable by signing a SIWE message in the dashboard. Every row in
-  `docs/refusals.json` is therefore tagged `FIXTURE`. No row is labelled live, and none will
-  be until a real Sepolia hash exists.
-- **The live provider's executed path is unverified.** [`src/keeperhub.ts`](src/keeperhub.ts) is
-  written and its *simulated* path is confirmed against the real API — the calldata gate, the
-  argument encoding, and the chain round-trip all run in `npm run verify:seam`. But no call has
-  ever returned an execution response, because the payer wallet holds no gas, so
-  `#toExecuteResult` maps a shape nobody has observed. It is written to fail closed: an
-  unrecognised status becomes `pending`, never `completed`.
+- **Gate A is partly run.** Steps 1, 2, 6 and 7 are live: real executions land on Sepolia and
+  their receipts are read back independently. Steps 4, 5 and 8 need a Request Client ID, which
+  is only obtainable from a payment destination's settings in the dashboard after a SIWE
+  sign-in. Until that exists there is no invoice to pay, so no harness row is labelled live.
 - **`Idempotency-Key` is accepted by KeeperHub but its behaviour is unconfirmed.** The header is
-  sent and the API does not reject it. Whether it actually deduplicates cannot be tested without
-  spending gas twice, so no claim is made about it here.
+  sent on every execution and the API does not reject it. Whether it actually deduplicates
+  cannot be tested without deliberately paying twice, so no claim is made about it here — which
+  is the entire reason duplicate protection lives in this codebase's `UNIQUE(obligation_id)` and
+  `firstSendAt` guard rather than depending on the provider's.
+- **Two of the three settlement legs are live; the invoice leg is not.** Executions land
+  (`mint`, `approve` — real Sepolia hashes below) and receipts are read independently. Creating
+  the Request invoice still needs a Client ID, so no end-to-end `SETTLED` has occurred and every
+  row in `docs/refusals.json` remains tagged `FIXTURE`.
 - No frontend yet. No demo video yet.
 - The bounty PR for #1959/#1929 is not opened.
 

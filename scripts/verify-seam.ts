@@ -140,8 +140,16 @@ for (const [label, data] of tampered) {
 if (KH_KEY) {
   try {
     const sim = await provider.simulate({ to: PROXY, data: APPROVED_CALLDATA, value: "0" });
-    if (sim.transactionHash) bad("canonical calldata simulate", `dry run returned a hash: ${sim.transactionHash}`);
-    else ok("canonical calldata passes the gate and reaches the chain", `wouldRevert=${sim.wouldRevert} (no balance yet), no hash returned`);
+    if (sim.transactionHash) {
+      bad("canonical calldata simulate", `dry run returned a hash: ${sim.transactionHash}`);
+    } else {
+      // wouldRevert flips to false once the payer holds FAU and has approved the proxy, so
+      // report the flag rather than asserting either value — both are legitimate states.
+      ok(
+        "canonical calldata passes the gate and reaches the chain",
+        `wouldRevert=${sim.wouldRevert}${sim.wouldRevert ? " (payer lacks balance or allowance)" : " (payment would succeed)"}, no hash returned`,
+      );
+    }
   } catch (e) {
     bad("canonical calldata simulate", String(e));
   }

@@ -234,12 +234,17 @@ export class KeeperHubProvider implements ExecutionProvider {
   }
 
   /**
-   * Mapping of the executed-path response.
+   * Mapping of the executed-path response, observed against two real Sepolia executions
+   * (`mint` and `approve`, 2026-09-09). KeeperHub answers HTTP 202 with:
    *
-   * Honest limitation: this shape has NOT been observed against a real execution, because
-   * the payer wallet holds no gas. Only the simulated path is verified. It is written to be
-   * conservative — an unrecognised status becomes "pending", never "completed", so an
-   * unknown answer can never be mistaken for a settled payment.
+   *   {"executionId":"...","status":"completed","transactionHash":"0x...","transactionLink":"..."}
+   *
+   * Note the mismatch worth being careful about: the HTTP status is 202 Accepted while the
+   * body claims "completed". The body is not taken as proof of anything — settle.ts still
+   * requires an independent receipt read before it will call a payment settled.
+   *
+   * Unrecognised statuses become "pending", never "completed", so a shape this code has not
+   * seen can never be mistaken for a finished payment.
    */
   #toExecuteResult(res: KeeperHubResponse): ExecuteResult {
     const hash = res.transactionHash ?? res.txHash ?? res.hash;
