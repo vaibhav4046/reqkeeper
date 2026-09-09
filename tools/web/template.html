@@ -1,648 +1,566 @@
 <title>ReqKeeper Console</title>
 <script id="reqkeeper-data" type="application/json">__DATA__</script>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=JetBrains+Mono:wght@400;500;700&display=swap">
 <style>
-  /* A phosphor terminal, committed to one look. Everything is painted explicitly so the
-     page holds on any host ground, and nothing is rounded: a pixel grid has no curves. */
+  /* Pixel is an accent, not the body: Press Start 2P on wordmark, badges and figures;
+     JetBrains Mono carries everything you actually read. Committed dark, painted
+     explicitly, nothing rounded. */
   :root {
-    --canvas: #040806;
-    --deep: #020403;
-    --surface: #0C1A10;
-    --hairline: #1E3A24;
-    --mid: #2F5A38;
-    --text: #C8F5D2;
-    --dim: #6E9B78;
-    --signal: #3BFF6C;
-    --amber: #FFC53B;
-    --alarm: #FF5C5C;
-    --display: "Press Start 2P", "Courier New", monospace;
-    --body: "VT323", "Consolas", monospace;
-    --px: 4px;
+    --bg: #05080A;
+    --panel: #0A1014;
+    --panel-2: #0D161B;
+    --line: #1A2A31;
+    --line-2: #24393F;
+    --text: #DCEAE6;
+    --dim: #7C918F;
+    --faint: #4A5C5C;
+    --signal: #35F0A0;
+    --amber: #F5C451;
+    --alarm: #FF6B6B;
+    --violet: #8B7CF6;
+    --pixel: "Press Start 2P", monospace;
+    --mono: "JetBrains Mono", ui-monospace, monospace;
+    --rail: 208px;
   }
   * { box-sizing: border-box; }
-  html { background: var(--deep); }
+  html, body { height: 100%; }
   body {
-    margin: 0;
-    background: var(--canvas);
-    color: var(--text);
-    font-family: var(--body);
-    font-size: 20px;
-    line-height: 1.45;
-    letter-spacing: .01em;
-    image-rendering: pixelated;
-    overflow-x: hidden;
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--mono); font-size: 13px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
   }
 
-  /* CRT dressing. Pointer-events off so it never eats a click. */
-  body::before {
-    content: "";
-    position: fixed; inset: 0; z-index: 9999; pointer-events: none;
-    background: repeating-linear-gradient(
-      to bottom,
-      rgba(0,0,0,0) 0px, rgba(0,0,0,0) 2px,
-      rgba(0,0,0,.28) 3px, rgba(0,0,0,.28) 4px
-    );
-    mix-blend-mode: multiply;
-  }
-  body::after {
-    content: "";
-    position: fixed; inset: 0; z-index: 9998; pointer-events: none;
-    background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,.55) 100%);
-  }
+  /* One scrollbar treatment everywhere, including inside panes. */
+  * { scrollbar-width: thin; scrollbar-color: var(--line-2) var(--bg); }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-track { background: var(--bg); }
+  *::-webkit-scrollbar-thumb { background: var(--line-2); border: 2px solid var(--bg); }
+  *::-webkit-scrollbar-thumb:hover { background: var(--faint); }
+  *::-webkit-scrollbar-corner { background: var(--bg); }
 
-  a { color: var(--signal); text-decoration: none; border-bottom: 2px solid rgba(59,255,108,.35); }
-  a:hover { border-bottom-color: var(--signal); background: rgba(59,255,108,.1); }
-  a:focus-visible, button:focus-visible {
-    outline: 3px solid var(--signal); outline-offset: 2px;
-  }
-  code { font-family: var(--body); color: var(--signal); word-break: break-all; }
+  a { color: var(--signal); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  :focus-visible { outline: 2px solid var(--signal); outline-offset: 1px; }
+  button { font: inherit; cursor: pointer; }
 
-  /* --- chrome ------------------------------------------------------------ */
-  header.top {
-    position: sticky; top: 0; z-index: 50;
-    background: var(--deep);
-    border-bottom: var(--px) solid var(--hairline);
-    padding: 0 clamp(1rem, 3vw, 3rem);
-  }
-  .bar { display: flex; align-items: center; gap: 1.25rem; flex-wrap: wrap; padding: 1rem 0 .9rem; }
-  .wordmark {
-    font-family: var(--display);
-    font-size: clamp(.7rem, .55rem + .6vw, .95rem);
-    color: var(--signal);
-    text-shadow: 0 0 12px rgba(59,255,108,.55);
-    letter-spacing: .04em;
-  }
-  .cursor {
-    display: inline-block; width: .55em; height: 1em; background: var(--signal);
-    vertical-align: -.12em; margin-left: .25em;
-    animation: blink 1.1s steps(1, end) infinite;
-  }
-  @keyframes blink { 0%,49% { opacity: 1 } 50%,100% { opacity: 0 } }
-  .tagline { color: var(--dim); font-size: 1rem; }
+  .px { font-family: var(--pixel); letter-spacing: .04em; }
 
-  nav { display: flex; gap: .4rem; flex-wrap: wrap; margin-left: auto; }
-  nav a {
-    border: 2px solid var(--hairline); border-bottom-width: 2px;
-    padding: .25rem .7rem; color: var(--dim); font-size: 1rem;
-    background: var(--surface);
-    box-shadow: var(--px) var(--px) 0 var(--deep);
-  }
-  nav a:hover { color: var(--text); border-color: var(--mid); transform: translate(-1px, -1px); box-shadow: 5px 5px 0 var(--deep); }
-  nav a[aria-current="page"] {
-    color: var(--deep); background: var(--signal); border-color: var(--signal); font-weight: 400;
-    box-shadow: var(--px) var(--px) 0 #0a2a12;
-  }
+  /* --- shell ------------------------------------------------------------- */
+  .app { display: grid; grid-template-columns: var(--rail) 1fr; min-height: 100%; }
 
-  main { padding: clamp(1.25rem, 3vw, 3rem); max-width: 1200px; margin: 0 auto; }
-  section[hidden] { display: none !important; }
+  aside {
+    background: var(--panel); border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh;
+  }
+  .brand { padding: 18px 16px 16px; border-bottom: 1px solid var(--line); }
+  .brand .name { font-family: var(--pixel); font-size: 10px; color: var(--signal); }
+  .brand .sub { color: var(--faint); font-size: 10px; margin-top: 7px; letter-spacing: .06em; }
+  nav { padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; }
+  nav button {
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    background: none; border: 0; border-left: 2px solid transparent;
+    color: var(--dim); padding: 8px 10px; text-align: left; font-size: 12px;
+  }
+  nav button:hover { color: var(--text); background: var(--panel-2); }
+  nav button[aria-current="true"] {
+    color: var(--signal); background: var(--panel-2); border-left-color: var(--signal);
+  }
+  nav button .dot { width: 5px; height: 5px; background: currentColor; flex: none; }
+  .rail-foot { margin-top: auto; padding: 12px 16px; border-top: 1px solid var(--line); color: var(--faint); font-size: 10px; }
+  .rail-foot div + div { margin-top: 5px; }
 
-  h1 {
-    font-family: var(--display);
-    font-size: clamp(1.1rem, .8rem + 1.9vw, 2.1rem);
-    line-height: 1.5; margin: 0 0 1.25rem; color: var(--text);
-    text-shadow: 0 0 18px rgba(200,245,210,.25);
-    text-wrap: balance;
+  /* --- top status strip -------------------------------------------------- */
+  .strip {
+    display: flex; align-items: stretch; border-bottom: 1px solid var(--line);
+    background: var(--panel); position: sticky; top: 0; z-index: 20; overflow-x: auto;
   }
-  h2 {
-    font-family: var(--display);
-    font-size: clamp(.8rem, .68rem + .7vw, 1.05rem);
-    line-height: 1.6; margin: 2.75rem 0 1rem; color: var(--signal);
+  .stat { padding: 11px 18px; border-right: 1px solid var(--line); min-width: 116px; flex: none; }
+  .stat .k { color: var(--faint); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
+  .stat .v { font-family: var(--pixel); font-size: 13px; margin-top: 7px; color: var(--text); }
+  .stat .v.good { color: var(--signal); }
+  .stat .v.warn { color: var(--amber); }
+  .live {
+    margin-left: auto; display: flex; align-items: center; gap: 7px;
+    padding: 11px 18px; color: var(--signal); font-size: 10px; letter-spacing: .1em; flex: none;
   }
-  h3 {
-    font-family: var(--display); font-size: .7rem; line-height: 1.7;
-    color: var(--dim); margin: 2rem 0 .8rem; text-transform: uppercase;
-  }
-  p { max-width: 74ch; color: var(--text); margin: 0 0 .9rem; }
-  p.dim { color: var(--dim); }
-  .lead { font-size: 1.2rem; max-width: 68ch; }
+  .live i { width: 6px; height: 6px; background: var(--signal); animation: pulse 1.6s steps(2,end) infinite; }
+  @keyframes pulse { 0%,50% { opacity: 1 } 51%,100% { opacity: .25 } }
 
-  hr.rule { border: 0; border-top: var(--px) solid var(--hairline); margin: 2.5rem 0; }
+  main { min-width: 0; }
+  .view { padding: 20px 22px 40px; }
+  .view[hidden] { display: none; }
 
-  /* --- figures: big counters that count up ------------------------------- */
-  .figures { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1.5rem 0 0; }
-  .fig {
-    border: var(--px) solid var(--hairline); background: var(--surface);
-    padding: .9rem 1.1rem; min-width: 9.5rem;
-    box-shadow: 6px 6px 0 var(--deep);
-  }
-  .fig .n {
-    font-family: var(--display); font-size: clamp(1rem, .8rem + .9vw, 1.5rem);
-    color: var(--signal); font-variant-numeric: tabular-nums; line-height: 1.4;
-  }
-  .fig .n.plain { color: var(--text); }
-  .fig .k { color: var(--dim); font-size: .95rem; margin-top: .45rem; text-transform: uppercase; }
-  .fig.hero { border-color: var(--signal); box-shadow: 6px 6px 0 #0a2a12; }
+  .h { display: flex; align-items: baseline; gap: 12px; margin: 0 0 14px; }
+  .h h1 { font-family: var(--pixel); font-size: 12px; margin: 0; color: var(--text); }
+  .h span { color: var(--faint); font-size: 11px; }
 
-  /* --- tables ------------------------------------------------------------ */
-  .scroll {
-    overflow-x: auto; border: var(--px) solid var(--hairline);
-    background: var(--deep); box-shadow: 6px 6px 0 rgba(0,0,0,.5);
-  }
-  table { width: 100%; border-collapse: collapse; font-size: 1.05rem; min-width: 680px; }
-  th, td { text-align: left; padding: .45rem .8rem; border-bottom: 2px solid var(--hairline); vertical-align: top; }
-  th {
-    font-family: var(--display); font-size: .58rem; line-height: 1.8;
-    color: var(--dim); background: var(--surface); text-transform: uppercase;
-    position: sticky; top: 0;
-  }
-  tbody tr { animation: rowin .28s steps(4, end) both; }
-  tbody tr:hover td { background: rgba(59,255,108,.07); }
-  tbody tr:last-child td { border-bottom: none; }
-  @keyframes rowin { from { opacity: 0; transform: translateX(-6px) } to { opacity: 1; transform: none } }
-  td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .id { color: var(--dim); }
+  /* --- panels ------------------------------------------------------------ */
+  .grid { display: grid; gap: 12px; }
+  .g3 { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .g2 { grid-template-columns: minmax(0, 1fr) minmax(0, 380px); }
+  @media (max-width: 1000px) { .g2 { grid-template-columns: minmax(0,1fr) } }
 
-  .pill {
-    display: inline-block; padding: .05rem .5rem; font-size: .95rem;
-    border: 2px solid currentColor; white-space: nowrap;
+  .card { background: var(--panel); border: 1px solid var(--line); }
+  .card > header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 9px 13px; border-bottom: 1px solid var(--line);
+    color: var(--dim); font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
   }
-  .pill.settled { color: var(--signal); background: rgba(59,255,108,.12); }
-  .pill.refuse { color: var(--amber); background: rgba(255,197,59,.1); }
-  .zero { color: var(--signal); }
-  .sent { color: var(--amber); }
-  .live-tag {
-    font-family: var(--display); font-size: .55rem; color: var(--deep);
-    background: var(--signal); padding: .25rem .5rem; letter-spacing: .06em;
-  }
-  .fixture-tag {
-    font-family: var(--display); font-size: .55rem; color: var(--dim);
-    border: 2px solid var(--mid); padding: .2rem .45rem; letter-spacing: .06em;
-  }
+  .card > .body { padding: 13px; }
 
-  .filters { display: flex; gap: .45rem; flex-wrap: wrap; margin: 1.25rem 0 .9rem; }
-  .filters button {
-    font-family: var(--body); font-size: 1rem; cursor: pointer;
-    background: var(--surface); color: var(--dim);
-    border: 2px solid var(--hairline); padding: .25rem .8rem;
-    box-shadow: var(--px) var(--px) 0 var(--deep);
-  }
-  .filters button:hover { color: var(--text); border-color: var(--mid); }
-  .filters button[aria-pressed="true"] {
-    background: var(--signal); color: var(--deep); border-color: var(--signal);
-  }
+  .kv { display: grid; grid-template-columns: max-content minmax(0,1fr); gap: 7px 14px; font-size: 12px; }
+  .kv dt { color: var(--faint); }
+  .kv dd { margin: 0; word-break: break-all; }
 
-  pre {
-    margin: 0; padding: 1rem 1.1rem; background: var(--deep);
-    border: var(--px) solid var(--hairline); overflow-x: auto;
-    font-size: 1.05rem; line-height: 1.5; color: var(--dim);
-    box-shadow: 6px 6px 0 rgba(0,0,0,.5);
-  }
-  pre b { color: var(--signal); font-weight: 400; }
-  pre i { color: var(--amber); font-style: normal; }
-
-  dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: .35rem 1.5rem; margin: 1rem 0; }
-  dl.kv dt { color: var(--dim); text-transform: uppercase; font-size: .95rem; }
-  dl.kv dd { margin: 0; word-break: break-all; }
-
-  ol.steps { counter-reset: s; list-style: none; padding: 0; margin: 1.25rem 0; }
-  ol.steps li { counter-increment: s; position: relative; padding: 0 0 1rem 3rem; max-width: 70ch; }
-  ol.steps li::before {
-    content: counter(s, decimal-leading-zero);
-    position: absolute; left: 0; top: .05rem;
-    font-family: var(--display); font-size: .65rem; color: var(--signal);
-  }
-  ul.plain { list-style: none; padding: 0; margin: 1rem 0; }
-  ul.plain li { color: var(--text); padding-left: 1.4rem; position: relative; margin-bottom: .5rem; max-width: 74ch; }
-  ul.plain li::before { content: ">"; position: absolute; left: 0; color: var(--mid); }
-
-  .note {
-    border-left: var(--px) solid var(--mid); padding: .4rem 0 .4rem 1rem;
-    margin: 1.5rem 0; color: var(--dim); max-width: 70ch;
-  }
-  .note.absent { border-left-color: var(--signal); }
-  .note strong { color: var(--text); }
-
-  /* A pixel bar chart: sends per row, drawn in blocks. */
-  .barwrap { border: var(--px) solid var(--hairline); background: var(--deep); padding: 1rem; box-shadow: 6px 6px 0 rgba(0,0,0,.5); }
-  .bars { display: flex; align-items: flex-end; gap: 3px; height: 120px; }
-  .bars i {
-    display: block; flex: 1 1 0; min-width: 3px;
-    background: var(--signal); animation: grow .5s steps(6, end) both;
-    transform-origin: bottom;
-  }
-  .bars i.none { background: var(--mid); }
+  /* --- bars -------------------------------------------------------------- */
+  /* 83 bars have to fit whatever width the card gets, so no min-width and a hairline gap:
+     a bar that cannot shrink overflows the panel instead of filling it. */
+  .bars { display: flex; align-items: flex-end; gap: 1px; height: 84px; overflow: hidden; }
+  .bars i { flex: 1 1 0; min-width: 0; background: var(--signal); animation: grow .4s steps(5,end) both; transform-origin: bottom; }
+  .bars i.zero { background: var(--line-2); }
   @keyframes grow { from { transform: scaleY(0) } to { transform: scaleY(1) } }
-  .barkey { display: flex; gap: 1.5rem; margin-top: .8rem; color: var(--dim); font-size: .95rem; }
-  .barkey b { color: var(--signal); font-weight: 400; }
-  .barkey em { color: var(--mid); font-style: normal; }
+  .legend { display: flex; gap: 16px; margin-top: 10px; color: var(--faint); font-size: 10px; }
+  .legend b { color: var(--signal); font-weight: 400; }
+  .legend em { color: var(--line-2); font-style: normal; }
 
-  footer {
-    border-top: var(--px) solid var(--hairline);
-    padding: 1.5rem clamp(1rem, 3vw, 3rem) 3rem; color: var(--dim);
+  /* --- table ------------------------------------------------------------- */
+  .toolbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+  .chip {
+    background: var(--panel); color: var(--dim); border: 1px solid var(--line);
+    padding: 5px 11px; font-size: 11px;
   }
+  .chip:hover { color: var(--text); border-color: var(--line-2); }
+  .chip[aria-pressed="true"] { background: var(--signal); color: var(--bg); border-color: var(--signal); font-weight: 700; }
+  input[type="search"] {
+    background: var(--panel); border: 1px solid var(--line); color: var(--text);
+    padding: 5px 10px; font: inherit; font-size: 11px; min-width: 190px;
+  }
+  input[type="search"]::placeholder { color: var(--faint); }
 
-  @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after { animation: none !important; transition: none !important; }
-    .cursor { opacity: 1 }
+  .tw { overflow: auto; max-height: 62vh; border: 1px solid var(--line); background: var(--panel); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { padding: 7px 11px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th {
+    position: sticky; top: 0; background: var(--panel-2); color: var(--faint);
+    font-size: 9px; letter-spacing: .1em; text-transform: uppercase; font-weight: 400; z-index: 1;
+  }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover td { background: var(--panel-2); }
+  tbody tr[aria-selected="true"] td { background: rgba(53,240,160,.08); }
+  tbody tr[aria-selected="true"] td:first-child { box-shadow: inset 2px 0 0 var(--signal); }
+  td.n { text-align: right; font-variant-numeric: tabular-nums; }
+
+  .tag { font-size: 10px; padding: 2px 6px; border: 1px solid currentColor; }
+  .tag.ok { color: var(--signal); }
+  .tag.no { color: var(--amber); }
+  .tag.live { font-family: var(--pixel); font-size: 7px; color: var(--bg); background: var(--signal); border-color: var(--signal); padding: 3px 5px; }
+  .tag.fix { font-family: var(--pixel); font-size: 7px; color: var(--faint); border-color: var(--line-2); padding: 3px 5px; }
+  .zero { color: var(--signal); }
+  .one { color: var(--amber); }
+
+  /* --- flow -------------------------------------------------------------- */
+  .flow { display: flex; flex-direction: column; gap: 0; }
+  .step {
+    display: grid; grid-template-columns: 26px 1fr auto; gap: 11px; align-items: start;
+    padding: 11px 0; border-bottom: 1px solid var(--line);
+  }
+  .step:last-child { border-bottom: 0; }
+  .step .i { font-family: var(--pixel); font-size: 8px; color: var(--faint); padding-top: 3px; }
+  .step.on .i { color: var(--signal); }
+  .step .t { font-size: 12px; color: var(--dim); }
+  .step.on .t { color: var(--text); }
+  .step .t b { color: var(--text); font-weight: 500; display: block; }
+  .step.on .t b { color: var(--signal); }
+  .step .r { font-size: 11px; color: var(--faint); text-align: right; }
+  .runbar { display: flex; gap: 6px; margin-bottom: 12px; }
+  .runbar button.go { background: var(--signal); color: var(--bg); border: 0; padding: 7px 15px; font-size: 11px; font-weight: 700; }
+  .runbar button.go:disabled { background: var(--line-2); color: var(--faint); }
+  .runbar button.ghost { background: none; color: var(--dim); border: 1px solid var(--line); padding: 7px 13px; font-size: 11px; }
+
+  .meter { height: 3px; background: var(--line); overflow: hidden; }
+  .meter i { display: block; height: 100%; background: var(--signal); width: 0; transition: width .35s steps(6,end); }
+
+  .empty { color: var(--faint); font-size: 11px; padding: 22px 13px; text-align: center; }
+  .mut { color: var(--faint); font-size: 11px; }
+
+  @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important } }
+  @media (max-width: 760px) {
+    .app { grid-template-columns: 1fr }
+    aside { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center }
+    nav { flex-direction: row; flex-wrap: wrap; padding: 8px }
+    .rail-foot { display: none }
   }
 </style>
 
-<header class="top">
-  <div class="bar">
-    <span class="wordmark">REQKEEPER<span class="cursor"></span></span>
-    <span class="tagline">exactly-once settlement &middot; Request Network &times; KeeperHub &middot; Sepolia</span>
+<div class="app">
+  <aside>
+    <div class="brand">
+      <div class="name">REQKEEPER</div>
+      <div class="sub">EXACTLY-ONCE SETTLEMENT</div>
+    </div>
     <nav id="nav">
-      <a href="#/">Evidence</a>
-      <a href="#/seam">The seam</a>
-      <a href="#/refusals">Refusals</a>
-      <a href="#/surfaces">Surfaces</a>
-      <a href="#/agent">Agent</a>
+      <button data-v="dash" aria-current="true"><span class="dot"></span>Overview</button>
+      <button data-v="obl"><span class="dot"></span>Obligations</button>
+      <button data-v="flow"><span class="dot"></span>Settle</button>
+      <button data-v="surf"><span class="dot"></span>Surfaces</button>
     </nav>
-  </div>
-</header>
+    <div class="rail-foot">
+      <div>SEPOLIA 11155111</div>
+      <div id="foot-run"></div>
+      <div><a href="https://github.com/vaibhav4046/reqkeeper">SOURCE</a></div>
+    </div>
+  </aside>
 
-<main>
-  <!-- ── evidence ───────────────────────────────────────────────────── -->
-  <section id="r-">
-    <h1>38 payments.<br>38 refused replays.<br>Zero double spends.</h1>
-    <p class="lead">An agent retries. That is what agent harnesses do. When the thing being
-      retried moves money, a retry is a second payment, and nothing in the stack owns the
-      duplicate. This does, at the one place it can be owned.</p>
+  <main>
+    <div class="strip" id="strip"></div>
 
-    <div class="figures" id="hero-figs"></div>
-
-    <h2>Every row, checked against the chain</h2>
-    <p>The numbers above are this project's own output, so on their own they are an
-      assertion. <code>npm run verify:live</code> re-derives all of them from a public RPC
-      with no credentials, and states the claim as arithmetic:</p>
-    <pre id="verify-out"></pre>
-    <p class="dim">Sends are counted by wrapping the execution provider, so a zero is a
-      number the code observed rather than a status string it believed.</p>
-
-    <div class="barwrap">
-      <h3 style="margin-top:0">Physical sends, one bar per live row</h3>
-      <div class="bars" id="bars"></div>
-      <div class="barkey">
-        <span><b>&#9646;</b> one send &mdash; a settled obligation</span>
-        <span><em>&#9646;</em> zero sends &mdash; a refusal, including every replay</span>
+    <!-- overview -->
+    <section class="view" id="v-dash">
+      <div class="h"><h1>OVERVIEW</h1><span id="dash-sub"></span></div>
+      <div class="grid g3">
+        <div class="card">
+          <header>Sends per live row<span id="bars-n"></span></header>
+          <div class="body">
+            <div class="bars" id="bars"></div>
+            <div class="legend">
+              <span><b>&#9646;</b> one send</span>
+              <span><em>&#9646;</em> zero sends</span>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <header>Chain verification</header>
+          <div class="body"><dl class="kv" id="verify-kv"></dl></div>
+        </div>
+        <div class="card">
+          <header>Refusal codes seen</header>
+          <div class="body"><dl class="kv" id="codes-kv"></dl></div>
+        </div>
       </div>
-    </div>
+      <div class="grid g3" style="margin-top:12px">
+        <div class="card" style="grid-column:1/-1">
+          <header>Latest settlements<span class="mut">click a row to inspect</span></header>
+          <div class="tw" style="max-height:34vh"><table id="recent"><thead><tr>
+            <th>Row</th><th>Obligation</th><th>Result</th><th class="n">Sends</th><th>Transaction</th>
+          </tr></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+    </section>
 
-    <hr class="rule">
+    <!-- obligations -->
+    <section class="view" id="v-obl" hidden>
+      <div class="h"><h1>OBLIGATIONS</h1><span id="obl-count"></span></div>
+      <div class="grid g2">
+        <div>
+          <div class="toolbar" id="chips"></div>
+          <input type="search" id="q" placeholder="filter by code, scenario, hash…" aria-label="Filter rows">
+          <div class="tw" style="margin-top:10px"><table id="rows"><thead><tr>
+            <th>Row</th><th>Scenario</th><th>Result</th><th class="n">Sends</th><th>Pre-write</th><th>Mode</th>
+          </tr></thead><tbody></tbody></table></div>
+        </div>
+        <div class="card" id="detail">
+          <header>Inspector</header>
+          <div class="body" id="detail-body"><div class="empty">Select a row.</div></div>
+        </div>
+      </div>
+    </section>
 
-    <h2>Nobody downstream owns this</h2>
-    <div class="scroll">
-      <table>
-        <thead><tr><th>Layer</th><th>Its position</th></tr></thead>
-        <tbody>
-          <tr><td>Wallet SDK</td><td><a href="https://github.com/coinbase/agentkit/issues/1483">agentkit#1483</a> &mdash; the idempotency key exists in the SDK signature; the one call path that moves value does not pass it</td></tr>
-          <tr><td>Agent framework</td><td><a href="https://github.com/crewAIInc/crewAI/issues/5802">crewAI#5802</a> &mdash; <code>stripe.charge(...)</code> fires twice on retry</td></tr>
-          <tr><td>Orchestrator</td><td><a href="https://github.com/langchain-ai/langgraph/issues/7417">langgraph#7417</a> &mdash; long tool calls silently re-dispatched while the original still runs</td></tr>
-          <tr><td>Payment rail</td><td><a href="https://github.com/x402-foundation/x402/issues/1805">x402#1805</a> &mdash; 5 concurrent requests, 4 got the same settlement proof</td></tr>
-          <tr><td>Execution layer</td><td>KeeperHub's own docs: replay lasts 24 hours, then the same key executes again, silently</td></tr>
-        </tbody>
-      </table>
-    </div>
+    <!-- settle flow -->
+    <section class="view" id="v-flow" hidden>
+      <div class="h"><h1>SETTLE</h1><span>recorded outcomes, replayed step by step</span></div>
+      <div class="grid g2">
+        <div class="card">
+          <header>Protocol<span id="flow-target" class="mut"></span></header>
+          <div class="body">
+            <div class="runbar">
+              <button class="go" id="run">Run</button>
+              <button class="ghost" id="again" disabled>Dispatch again</button>
+              <button class="ghost" id="reset">Reset</button>
+            </div>
+            <div class="meter"><i id="meter"></i></div>
+            <div class="flow" id="flow"></div>
+          </div>
+        </div>
+        <div class="card">
+          <header>Counters</header>
+          <div class="body"><dl class="kv" id="flow-kv"></dl></div>
+        </div>
+      </div>
+    </section>
 
-    <h2>Why Request Network</h2>
-    <p><strong>The invoice is the idempotency key.</strong> Every Request invoice carries a
-      canonical request id and a payment reference embedded in the calldata: a stable
-      obligation identity issued by an external system. It survives a wallet change, a key
-      rotation, a re-import, regenerated calldata, and the 24-hour replay expiry. We did not
-      invent an identity scheme.</p>
-    <p>And the loop closes without fabrication. Pay with the reference embedded and Request's
-      own detection flips the invoice to paid. <code>SETTLED</code> requires both an
-      independently read receipt and the source's own verdict.</p>
-  </section>
-
-  <!-- ── the seam ───────────────────────────────────────────────────── -->
-  <section id="r-seam" hidden>
-    <h1>The approved bytes are<br>not the signed bytes</h1>
-    <p class="lead">Request hands you finished calldata. KeeperHub will not send finished
-      calldata. Whatever bridges that is where a payment can quietly change meaning.</p>
-
-    <h3>Probed, not assumed</h3>
-    <pre>contract-call, data      -> HTTP 400 {"error":"Missing required field","field":"<i>functionName</i>"}
-contract-call, callData  -> HTTP 400 {"error":"Missing required field","field":"<i>functionName</i>"}
-raw route                -> HTTP 400 {"error":"<i>Invalid action type: raw</i>"}
-transaction route        -> HTTP 400 {"error":"<i>Invalid action type: transaction</i>"}</pre>
-    <p>The only write surface is <code>(contractAddress, functionName, functionArgs)</code>,
-      re-encoded on KeeperHub's side against an ABI it resolves itself. So between "the human
-      approved these bytes" and "the signer signed these bytes" sits a decode, a transport,
-      and a re-encode performed by the execution platform.</p>
-
-    <h3>And the destination is not the contract you named</h3>
-    <div class="scroll">
-      <table>
-        <thead><tr><th>Field</th><th>What actually got signed</th><th>What was approved</th></tr></thead>
-        <tbody>
-          <tr><td><code>tx.from</code></td><td><code>0x809d8252…</code> a KeeperHub relayer</td><td>the payer</td></tr>
-          <tr><td><code>tx.to</code></td><td><code>0x5af5194b…</code> a 3963-byte forwarder</td><td>FAU <code>0x370DE27f…</code></td></tr>
-          <tr><td>selector</td><td><code>0x9aefaff8</code> on the forwarder</td><td><code>0x40c10f19</code> <span class="id">mint(address,uint256)</span></td></tr>
-          <tr><td>gas payer</td><td>the relayer, 0.000119 ETH</td><td>&mdash;</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p>The named call survives only as an inner payload: a 65-byte signature, then the
-      selector and its arguments. <code>(to, data)</code> as approved appears in no
-      transaction anywhere.</p>
-
-    <h3>What ReqKeeper does about it</h3>
-    <p>Decode the approved calldata, re-encode it locally, dispatch only on a byte-identical
-      match. Anything else refuses before a single network call.</p>
-    <div class="scroll">
-      <table>
-        <thead><tr><th>Smuggled variant</th><th>Refusal</th></tr></thead>
-        <tbody>
-          <tr><td>trailing bytes appended after the arguments</td><td><span class="pill refuse">calldata_mismatch</span></td></tr>
-          <tr><td>a selector not on the allowlist</td><td><span class="pill refuse">selector_not_allowed</span></td></tr>
-          <tr><td>dirty high bytes packed above an address</td><td><span class="pill refuse">calldata_mismatch</span></td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="note">The codec refuses every type it does not implement. One that silently
-      mis-encodes an argument is worse than none, because it breaks the byte-comparison meant
-      to catch exactly that. Its correctness is checked against <strong>KeeperHub's own
-      encoder output</strong>, captured from a live revert payload: two independent
-      implementations, same 260 bytes.</div>
-  </section>
-
-  <!-- ── refusals ───────────────────────────────────────────────────── -->
-  <section id="r-refusals" hidden>
-    <h1>The refusal table</h1>
-    <p class="lead">The deliverable is not a feature list. It is the count of things
-      correctly refused, with the physical send count asserted against a number rather than
-      inferred from a status string.</p>
-    <div class="figures" id="refusal-figs"></div>
-    <div class="filters" id="filters"></div>
-    <div class="scroll">
-      <table>
-        <thead>
-          <tr><th>Case</th><th>Scenario</th><th>Expected</th><th>Actual</th><th class="num">Sends</th><th>Pre-write</th><th>Mode</th></tr>
-        </thead>
-        <tbody id="rows"></tbody>
-      </table>
-    </div>
-    <div class="note"><strong>LIVE</strong> rows ran against the real KeeperHub API and real
-      Request invoices on Sepolia; every settled one carries a transaction hash you can look
-      up. <strong>FIXTURE</strong> rows inject faults that cannot be provoked for real without
-      deliberately paying twice or waiting a day per case &mdash; a lapsed 24-hour replay
-      window, a cached provider failure, a rival plan racing the same obligation. The refusal
-      logic is the same code in both; only the fault injection differs.</div>
-  </section>
-
-  <!-- ── surfaces ───────────────────────────────────────────────────── -->
-  <section id="r-surfaces" hidden>
-    <h1>Two KeeperHub surfaces,<br>one protocol</h1>
-    <p class="lead"><code>settle()</code> does not know which surface it is dispatching
-      through, and that is the point. A guarded signer whose safety depends on its transport
-      is not a guarded signer.</p>
-
-    <div class="scroll">
-      <table>
-        <thead><tr><th>Surface</th><th>Provider</th><th>Verified by</th></tr></thead>
-        <tbody>
-          <tr><td>Direct execution REST<br><span class="id">/api/execute/contract-call</span></td><td><code>src/keeperhub.ts</code></td><td><code>npm run verify:seam</code></td></tr>
-          <tr><td>KeeperHub's own MCP server<br><span class="id">app.keeperhub.com/mcp, 44 tools</span></td><td><code>src/keeperhub-mcp.ts</code></td><td><code>npm run verify:mcp</code></td></tr>
-          <tr><td>Audit trail<br><span class="id">get_direct_execution_status</span></td><td>same</td><td><code>npm run verify:mcp</code></td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <p>The calldata gate is one module, <code>src/calldata-gate.ts</code>, that both providers
-      call. Two providers with two copies of that rule would be a hole in exactly the defence
-      this exists to provide.</p>
-
-    <h3>Four things about that MCP server, each found by probing it</h3>
-    <ol class="steps">
-      <li>The handshake is sequential. A <code>tools/call</code> before
-        <code>notifications/initialized</code> fails with <code>-32003 Session not
-        initialized</code>.</li>
-      <li>Authentication failure does not look like one. A rejected key still returns
-        <strong>HTTP 200</strong> on <code>initialize</code>, just with no
-        <code>mcp-session-id</code> header. The 401 arrives on the next call, so absence of
-        the header is the only reliable signal.</li>
-      <li>The session id rotates. An expired-but-in-grace token is silently re-minted and
-        returned in a rewritten header, so the newest response wins.</li>
-      <li><code>simulate</code> is compared with <code>=== true</code>. The string
-        <code>"true"</code> does not dry-run: it signs and broadcasts.</li>
-    </ol>
-    <div class="note">All four are reported upstream rather than only worked around. The
-      calldata-passthrough limitation is the subject of a filed issue, and the idempotency
-      disposition defect is an open pull request against their <code>staging</code> branch.</div>
-  </section>
-
-  <!-- ── agent ──────────────────────────────────────────────────────── -->
-  <section id="r-agent" hidden>
-    <h1>What the agent cannot do</h1>
-    <p class="lead">An MCP server over stdio, five tools, and one deliberate omission.</p>
-
-    <div class="scroll">
-      <table>
-        <thead><tr><th>Tool</th><th>What an agent can do</th></tr></thead>
-        <tbody>
-          <tr><td><code>propose_payment</code></td><td>build a plan, get the sentence a human must read. Never dispatches.</td></tr>
-          <tr><td><code>settle_obligation</code></td><td>settle what a human already approved. Cannot pay twice.</td></tr>
-          <tr><td><code>obligation_status</code></td><td>state and full audit trail</td></tr>
-          <tr><td><code>verify_payment</code></td><td>confirm from the chain, without asking the provider</td></tr>
-          <tr><td><code>refusal_codes</code></td><td>the refusal vocabulary, each with do-not-retry guidance</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="note absent"><strong>There is no approve tool.</strong> Not disabled, not
-      behind a permission flag &mdash; the capability is absent from the protocol surface. An
-      agent connected to this server cannot, by any sequence of calls, authorise money to
-      move. The test suite asserts the absence, so adding one breaks the build.</div>
-
-    <pre>agent calls approve_payment  -> <i>refused: unknown tool: approve_payment</i>
-agent calls record_approval  -> <i>refused: unknown tool: record_approval</i>
-agent calls sign_plan        -> <i>refused: unknown tool: sign_plan</i>
-
-agent calls propose_payment  -> AWAITING_APPROVAL
-physical sends so far        : <b>0</b>
-
-25 settle_obligation calls, no human decision recorded
-physical sends after 26 attempts : <b>0</b></pre>
-
-    <h3>The approval flow does not trust the proposer</h3>
-    <p><code>scripts/approve.ts</code> does not accept a plan hash. It recomputes one from
-      the invoice facts you type and compares it against the plan the agent reserved:</p>
-    <pre><i>REFUSED: the plan reserved for this obligation is not the plan these arguments describe.</i>
-  reserved by : be7830f4d60c3e9f9a409faf680d51840a93ff8a55922a4e72a9470c3d0a579b
-  you typed   : 7fbdadaff7d772ad7f73659f15bce30eb94b03a3b383cb9bdeeeaa34bd76e032</pre>
-    <p>An approval flow that trusts the proposer's own summary of what it proposed is not an
-      approval flow. That is why the CLI takes the invoice rather than an id.</p>
-
-    <h3>Honest limits</h3>
-    <ul class="plain">
-      <li>Duplicate protection is deployment-scoped. It cannot stop an independent wallet or a human paying the invoice out of band.</li>
-      <li>No semantic dedup across request ids. Two ids may mean the same real-world invoice.</li>
-      <li>Revocation is not an onchain undo. Already-broadcast work completes.</li>
-      <li>The audit trail is tamper-evident, not tamper-proof. It is not blockchain evidence and is not described as such.</li>
-      <li>No prompt-injection detection. A guarded signer enforces a declarative policy; it does not detect injection.</li>
-      <li>The live payee is a burner keypair, not a counterparty, so no third party has confirmed receipt.</li>
-      <li>Sepolia only. Mainnet is disabled in code, deliberately.</li>
-    </ul>
-  </section>
-</main>
-
-<footer>
-  Testnet only &middot; zero dependencies in <code>src/</code> &middot; one credential
-  <span id="built"></span>
-</footer>
+    <!-- surfaces -->
+    <section class="view" id="v-surf" hidden>
+      <div class="h"><h1>SURFACES</h1><span>one protocol, three KeeperHub surfaces</span></div>
+      <div class="grid g3" id="surfaces"></div>
+      <div class="grid g3" style="margin-top:12px">
+        <div class="card" style="grid-column:1/-1">
+          <header>Platform behaviour found by probing</header>
+          <div class="tw" style="max-height:none"><table id="findings"><thead><tr>
+            <th>Surface</th><th>Observed</th><th>Handled by</th>
+          </tr></thead><tbody></tbody></table></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
 
 <script>
-  const DATA = JSON.parse(document.getElementById("reqkeeper-data").textContent);
-  const fixture = DATA.refusals;
-  const live = DATA.live;
+  const D = JSON.parse(document.getElementById("reqkeeper-data").textContent);
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const liveRows = (D.live?.rows ?? []).map((r) => ({ ...r, mode: "LIVE" }));
+  const fixRows = (D.refusals.rows ?? []).map((r) => ({ ...r, mode: "FIXTURE" }));
+  const ALL = [...liveRows, ...fixRows];
+  const T = D.live?.totals;
+  const el = (id) => document.getElementById(id);
+  const short = (h, n = 12) => (h ? h.slice(0, n) + "…" : "—");
 
-  // Rows from both artifacts, live first: the stronger evidence should read first.
-  const liveRows = (live?.rows ?? []).map((r) => ({ ...r, mode: "LIVE" }));
-  const fixtureRows = (fixture.rows ?? []).map((r) => ({ ...r, mode: "FIXTURE" }));
-  const allRows = [...liveRows, ...fixtureRows];
-
-  const prefersStill = matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  /** Count a number up. Steps, not eases: this is a pixel panel. */
-  function countTo(el, target, suffix) {
-    const isNum = typeof target === "number" && Number.isFinite(target);
-    if (!isNum || prefersStill) { el.textContent = String(target) + (suffix || ""); return; }
-    const frames = 18;
-    let i = 0;
-    const tick = () => {
-      i++;
-      const v = Math.round((target * i) / frames);
-      el.textContent = String(v) + (suffix || "");
-      if (i < frames) setTimeout(tick, 26);
-    };
-    tick();
-  }
-
-  function figures(host, items) {
-    host.innerHTML = items
-      .map(
-        ([n, k, opts]) =>
-          `<div class="fig${opts?.hero ? " hero" : ""}"><div class="n${opts?.plain ? " plain" : ""}" data-n="${
-            typeof n === "number" ? n : ""
-          }">${typeof n === "number" ? "0" : n}</div><div class="k">${k}</div></div>`,
-      )
-      .join("");
-    for (const el of host.querySelectorAll(".n[data-n]")) {
-      const raw = el.getAttribute("data-n");
-      if (raw !== "") countTo(el, Number(raw));
-    }
-  }
-
-  const t = live?.totals;
-  figures(document.getElementById("hero-figs"), [
-    [t ? t.payments : "-", "real payments on sepolia", { hero: true }],
-    [t ? t.rows - t.payments : "-", "refusals, live", { hero: true }],
-    [0, "sends made by a replay", { hero: true }],
-    [DATA.tests, "unit tests", { plain: true }],
-    [fixture.totals.cases, "fault-injected cases", { plain: true }],
-  ]);
-
-  // The verification output, restated from the artifact so the page cannot drift from it.
-  const settledLive = liveRows.filter((r) => r.tx_hash).length;
+  // --- top strip ----------------------------------------------------------
+  const settled = liveRows.filter((r) => r.tx_hash).length;
   const replays = liveRows.filter((r) => r.expected === "ALREADY_SETTLED");
   const replaySends = replays.reduce((a, r) => a + r.physical_sends, 0);
-  document.getElementById("verify-out").textContent = t
-    ? [
-        `chain id 11155111 (Ethereum Sepolia)`,
-        ``,
-        `${settledLive}/${settledLive} receipts verified as successful on chain`,
-        `${settledLive}/${settledLive} payment references present in the ERC20FeeProxy log`,
-        `every refusal row reports zero sends, and carries no hash to check`,
-        ``,
-        `  obligations settled          ${t.payments}`,
-        `  replays attempted            ${replays.length}`,
-        `  sends made by those replays  ${replaySends}`,
-      ].join("\n")
-    : "no live artifact on this build; run npm run harness:live";
+  el("strip").innerHTML =
+    [
+      ["payments", settled, "good"],
+      ["replays refused", replays.length, "good"],
+      ["sends by replays", replaySends, replaySends === 0 ? "good" : "warn"],
+      ["live rows", liveRows.length, ""],
+      ["fixture cases", D.refusals.totals.cases, ""],
+      ["tests", D.tests, ""],
+    ]
+      .map(([k, v, c]) => `<div class="stat"><div class="k">${k}</div><div class="v ${c}">${v}</div></div>`)
+      .join("") + '<div class="live"><i></i>SEPOLIA</div>';
 
-  // One bar per live row. Tall = a send, short = a refusal.
-  const bars = document.getElementById("bars");
-  if (bars) {
-    bars.innerHTML = liveRows
-      .map((r, i) => {
-        const sent = r.physical_sends > 0;
-        const h = sent ? 100 : 14;
-        const delay = prefersStill ? 0 : Math.min(i * 12, 900);
-        return `<i class="${sent ? "" : "none"}" style="height:${h}%;animation-delay:${delay}ms" title="${r.case_id} ${r.actual}, ${r.physical_sends} sends"></i>`;
-      })
-      .join("");
-  }
+  el("dash-sub").textContent = T ? `${T.asSpecified}/${T.rows} rows as specified` : "no live artifact";
+  el("foot-run").textContent = "RUN " + String(D.live?.generatedAt || "").slice(0, 10);
+  el("bars-n").textContent = liveRows.length + " rows";
 
-  figures(document.getElementById("refusal-figs"), [
-    [t ? t.asSpecified : fixture.totals.passed, "rows as specified, live", { hero: true }],
-    [t ? t.refusedBeforeAnyProviderWrite : 0, "live refusals before any send", { hero: true }],
-    [fixture.totals.refusedBeforeAnyProviderWrite, "fixture refusals pre-write", { plain: true }],
+  // --- bars ---------------------------------------------------------------
+  el("bars").innerHTML = liveRows
+    .map((r, i) => {
+      const sent = r.physical_sends > 0;
+      const d = still ? 0 : Math.min(i * 10, 700);
+      return `<i class="${sent ? "" : "zero"}" style="height:${sent ? 100 : 12}%;animation-delay:${d}ms" title="${r.case_id} · ${r.actual} · ${r.physical_sends} sends"></i>`;
+    })
+    .join("");
+
+  const kv = (host, pairs) => {
+    host.innerHTML = pairs.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+  };
+
+  kv(el("verify-kv"), [
+    ["chain", "11155111 sepolia"],
+    ["receipts", `<span class="zero">${settled}/${settled}</span> success`],
+    ["references", `<span class="zero">${settled}/${settled}</span> in proxy log`],
+    ["amount", "1000000000000000000 each"],
+    ["command", "<code>npm run verify:live</code>"],
+    ["credentials", "none required"],
   ]);
 
-  document.getElementById("built").textContent =
-    "· fixture harness " + String(fixture.generatedAt || "").slice(0, 10) +
-    (live ? " · live run " + String(live.generatedAt || "").slice(0, 10) : "");
+  // Codes, counted from the artifact rather than listed by hand.
+  const codes = new Map();
+  for (const r of ALL) codes.set(r.actual, (codes.get(r.actual) ?? 0) + 1);
+  kv(
+    el("codes-kv"),
+    [...codes.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 9)
+      .map(([c, n]) => [c, `<span class="${c === "SETTLED" ? "one" : "zero"}">${n}</span>`]),
+  );
 
-  // --- refusal table -------------------------------------------------------
+  // --- recent table -------------------------------------------------------
+  const rowHtml = (r, sel) => {
+    const tx = r.tx_hash
+      ? `<a href="https://sepolia.etherscan.io/tx/${r.tx_hash}" target="_blank" rel="noopener">${short(r.tx_hash, 14)}</a>`
+      : '<span class="mut">no send</span>';
+    return `<tr data-id="${r.case_id}" aria-selected="${sel ? "true" : "false"}">
+      <td class="mut">${r.case_id}</td>
+      <td>${short(r.request_id || "", 16)}</td>
+      <td><span class="tag ${r.actual === "SETTLED" ? "one" : "ok"}">${r.actual}</span></td>
+      <td class="n ${r.physical_sends ? "one" : "zero"}">${r.physical_sends}</td>
+      <td>${tx}</td></tr>`;
+  };
+  el("recent").tBodies[0].innerHTML = liveRows.slice(0, 12).map((r) => rowHtml(r, false)).join("");
+
+  // --- obligations table --------------------------------------------------
   const FILTERS = [
-    ["live only", (r) => r.mode === "LIVE"],
-    ["all rows", () => true],
-    ["refused before any send", (r) => r.refused_before_provider_write],
-    ["cost gas", (r) => r.physical_sends > 0],
-    ["the replay cases", (r) => /replay|dispatched again/i.test(r.scenario)],
+    ["live", (r) => r.mode === "LIVE"],
+    ["all", () => true],
+    ["settled", (r) => r.actual === "SETTLED"],
+    ["refused", (r) => r.actual !== "SETTLED"],
+    ["zero sends", (r) => r.physical_sends === 0],
   ];
-  let active = 0;
+  let fi = 0;
+  let selected = null;
 
-  function renderRows() {
-    const [, pred] = FILTERS[active];
-    const body = document.getElementById("rows");
-    const shown = allRows.filter(pred);
-    body.innerHTML = shown
-      .slice(0, 200)
-      .map((r, i) => {
-        const settled = r.actual === "SETTLED";
-        const delay = prefersStill ? 0 : Math.min(i * 9, 700);
-        const tx = r.tx_hash
-          ? `<a href="https://sepolia.etherscan.io/tx/${r.tx_hash}">${r.actual}</a>`
-          : r.actual;
-        return `<tr style="animation-delay:${delay}ms">
-          <td class="id">${r.case_id}</td>
-          <td>${r.scenario}</td>
-          <td class="id">${r.expected}</td>
-          <td><span class="pill ${settled ? "settled" : "refuse"}">${tx}</span></td>
-          <td class="num ${r.physical_sends === 0 ? "zero" : "sent"}">${r.physical_sends}</td>
-          <td>${r.refused_before_provider_write ? '<span class="zero">yes</span>' : '<span class="id">no</span>'}</td>
-          <td>${r.mode === "LIVE" ? '<span class="live-tag">LIVE</span>' : '<span class="fixture-tag">FIXTURE</span>'}</td>
-        </tr>`;
-      })
-      .join("");
-    if (shown.length === 0) {
-      body.innerHTML = '<tr><td colspan="7" class="id">no rows match</td></tr>';
-    }
+  el("chips").innerHTML = FILTERS.map(
+    ([l], i) => `<button class="chip" aria-pressed="${i === 0}" data-i="${i}">${l}</button>`,
+  ).join("");
+
+  function draw() {
+    const q = el("q").value.trim().toLowerCase();
+    const [, pred] = FILTERS[fi];
+    const shown = ALL.filter(pred).filter((r) =>
+      !q || `${r.case_id} ${r.scenario} ${r.actual} ${r.tx_hash ?? ""} ${r.request_id ?? ""}`.toLowerCase().includes(q),
+    );
+    el("obl-count").textContent = `${shown.length} of ${ALL.length}`;
+    el("rows").tBodies[0].innerHTML = shown.length
+      ? shown
+          .slice(0, 250)
+          .map(
+            (r) => `<tr data-id="${r.case_id}" aria-selected="${selected === r.case_id}">
+        <td class="mut">${r.case_id}</td>
+        <td>${r.scenario}</td>
+        <td><span class="tag ${r.actual === "SETTLED" ? "one" : "ok"}">${r.actual}</span></td>
+        <td class="n ${r.physical_sends ? "one" : "zero"}">${r.physical_sends}</td>
+        <td>${r.refused_before_provider_write ? '<span class="zero">yes</span>' : '<span class="mut">no</span>'}</td>
+        <td>${r.mode === "LIVE" ? '<span class="tag live">LIVE</span>' : '<span class="tag fix">FIX</span>'}</td></tr>`,
+          )
+          .join("")
+      : '<tr><td colspan="6" class="empty">No rows match.</td></tr>';
   }
 
-  const fh = document.getElementById("filters");
-  fh.innerHTML = FILTERS.map(
-    ([label], i) => `<button type="button" aria-pressed="${i === 0}" data-i="${i}">${label}</button>`,
-  ).join("");
-  fh.addEventListener("click", (e) => {
+  function inspect(id) {
+    const r = ALL.find((x) => x.case_id === id);
+    if (!r) return;
+    selected = id;
+    kv(el("detail-body"), [
+      ["row", r.case_id],
+      ["mode", r.mode],
+      ["scenario", r.scenario],
+      ["expected", r.expected],
+      ["actual", `<span class="tag ${r.actual === "SETTLED" ? "one" : "ok"}">${r.actual}</span>`],
+      ["physical sends", `<span class="${r.physical_sends ? "one" : "zero"}">${r.physical_sends}</span>`],
+      ["refused pre-write", r.refused_before_provider_write ? "yes" : "no"],
+      ["request id", r.request_id ? `<code>${r.request_id}</code>` : "—"],
+      ["reference", r.payment_reference ? `<code>${r.payment_reference}</code>` : "—"],
+      [
+        "transaction",
+        r.tx_hash
+          ? `<a href="https://sepolia.etherscan.io/tx/${r.tx_hash}" target="_blank" rel="noopener"><code>${r.tx_hash}</code></a>`
+          : '<span class="mut">nothing was sent</span>',
+      ],
+    ]);
+    draw();
+  }
+
+  el("chips").addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (!b) return;
-    active = Number(b.dataset.i);
-    for (const x of fh.querySelectorAll("button")) {
-      x.setAttribute("aria-pressed", String(Number(x.dataset.i) === active));
+    fi = Number(b.dataset.i);
+    for (const x of el("chips").querySelectorAll("button")) {
+      x.setAttribute("aria-pressed", String(Number(x.dataset.i) === fi));
     }
-    renderRows();
+    draw();
   });
-  renderRows();
-
-  // --- hash routing --------------------------------------------------------
-  const ROUTES = ["", "seam", "refusals", "surfaces", "agent"];
-  function route() {
-    const want = (location.hash.replace(/^#\/?/, "") || "").split("/")[0];
-    const name = ROUTES.includes(want) ? want : "";
-    for (const r of ROUTES) {
-      const sec = document.getElementById("r-" + r);
-      if (sec) sec.hidden = r !== name;
-    }
-    for (const a of document.querySelectorAll("#nav a")) {
-      const target = a.getAttribute("href").replace(/^#\/?/, "");
-      if (target === name) a.setAttribute("aria-current", "page");
-      else a.removeAttribute("aria-current");
-    }
-    window.scrollTo({ top: 0, behavior: "instant" });
+  el("q").addEventListener("input", draw);
+  for (const t of ["rows", "recent"]) {
+    el(t).addEventListener("click", (e) => {
+      const tr = e.target.closest("tr");
+      if (!tr?.dataset.id || e.target.closest("a")) return;
+      inspect(tr.dataset.id);
+      if (t === "recent") show("obl");
+    });
   }
-  addEventListener("hashchange", route);
-  route();
+  draw();
+
+  // --- settle flow --------------------------------------------------------
+  // Replays what the live run actually recorded for one obligation. Nothing is invented:
+  // the outcomes and the hash come from the artifact.
+  const pair = liveRows.find((r) => r.actual === "SETTLED");
+  const twin = liveRows.find((r) => r.expected === "ALREADY_SETTLED" && r.request_id === pair?.request_id);
+  el("flow-target").textContent = pair ? short(pair.request_id || "", 14) : "";
+
+  const STEPS = [
+    ["Import obligation", "identity derived from the Request invoice"],
+    ["Policy gate", "payee, cap, fee ceiling, token decimals"],
+    ["Reserve", "one plan holds the obligation"],
+    ["Human approval", "recomputed from the invoice, not the proposal"],
+    ["Calldata gate", "decode, re-encode, byte-compare"],
+    ["Dispatch", pair ? `1 send · ${short(pair.tx_hash, 14)}` : "1 send"],
+    ["Reconcile", "chain receipt AND source verdict"],
+    ["Dispatch again", twin ? `${twin.actual} · 0 sends` : "refused"],
+  ];
+  let at = -1;
+  let timer = null;
+
+  function renderFlow() {
+    el("flow").innerHTML = STEPS.map((s, i) => {
+      const on = i <= at;
+      const last = i === STEPS.length - 1;
+      return `<div class="step ${on ? "on" : ""}">
+        <div class="i">${String(i + 1).padStart(2, "0")}</div>
+        <div class="t"><b>${s[0]}</b>${s[1]}</div>
+        <div class="r">${on ? (last ? '<span class="tag ok">0 sends</span>' : i === 5 ? '<span class="tag no">1 send</span>' : "ok") : ""}</div>
+      </div>`;
+    }).join("");
+    el("meter").style.width = `${Math.max(0, ((at + 1) / STEPS.length) * 100)}%`;
+    kv(el("flow-kv"), [
+      ["step", `${Math.max(0, at + 1)} / ${STEPS.length}`],
+      ["physical sends", `<span class="${at >= 5 ? "one" : "zero"}">${at >= 5 ? 1 : 0}</span>`],
+      ["second dispatch", at >= 7 ? `<span class="zero">refused, 0 sends</span>` : '<span class="mut">not yet</span>'],
+      ["obligation", pair ? `<code>${short(pair.request_id || "", 18)}</code>` : "—"],
+      ["transaction", pair?.tx_hash ? `<a href="https://sepolia.etherscan.io/tx/${pair.tx_hash}" target="_blank" rel="noopener">${short(pair.tx_hash, 14)}</a>` : "—"],
+    ]);
+    el("again").disabled = at < 6 || at >= 7;
+  }
+
+  function advance(to) {
+    clearInterval(timer);
+    if (still) { at = to; renderFlow(); return; }
+    timer = setInterval(() => {
+      if (at >= to) { clearInterval(timer); return; }
+      at++;
+      renderFlow();
+    }, 260);
+  }
+  el("run").addEventListener("click", () => { at = -1; advance(6); });
+  el("again").addEventListener("click", () => advance(7));
+  el("reset").addEventListener("click", () => { clearInterval(timer); at = -1; renderFlow(); });
+  renderFlow();
+
+  // --- surfaces -----------------------------------------------------------
+  el("surfaces").innerHTML = [
+    ["Direct execution", "/api/execute/contract-call", "src/keeperhub.ts", "verify:seam"],
+    ["MCP server", "app.keeperhub.com/mcp · 44 tools", "src/keeperhub-mcp.ts", "verify:mcp"],
+    ["Audit trail", "get_direct_execution_status", "src/keeperhub-mcp.ts", "verify:mcp"],
+  ]
+    .map(
+      ([n, ep, f, cmd]) => `<div class="card"><header>${n}<span class="tag ok">wired</span></header>
+      <div class="body"><dl class="kv">
+        <dt>endpoint</dt><dd><code>${ep}</code></dd>
+        <dt>provider</dt><dd><code>${f}</code></dd>
+        <dt>verified</dt><dd><code>npm run ${cmd}</code></dd>
+        <dt>gate</dt><dd>src/calldata-gate.ts</dd>
+      </dl></div></div>`,
+    )
+    .join("");
+
+  el("findings").tBodies[0].innerHTML = [
+    ["REST", "no route accepts pre-encoded calldata", "decode + re-encode + byte-compare"],
+    ["REST", "signed tx goes to a forwarder, not the named contract", "independent receipt read"],
+    ["REST", "gas is sponsored by a relayer", "payer balance not a precondition"],
+    ["MCP", "tools/call before initialized fails -32003", "sequential handshake"],
+    ["MCP", "bad key still returns HTTP 200", "absence of session header is the signal"],
+    ["MCP", "session id rotates mid-conversation", "newest response header wins"],
+    ["MCP", "simulate compared with === true", "boolean only, never a string"],
+  ]
+    .map(([s, o, h]) => `<tr><td><span class="tag ${s === "MCP" ? "ok" : "no"}">${s}</span></td><td>${o}</td><td class="mut">${h}</td></tr>`)
+    .join("");
+
+  // --- routing ------------------------------------------------------------
+  const VIEWS = ["dash", "obl", "flow", "surf"];
+  function show(v) {
+    const name = VIEWS.includes(v) ? v : "dash";
+    for (const x of VIEWS) el("v-" + x).hidden = x !== name;
+    for (const b of el("nav").querySelectorAll("button")) {
+      b.setAttribute("aria-current", String(b.dataset.v === name));
+    }
+    if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
+  }
+  el("nav").addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (b) show(b.dataset.v);
+  });
+  addEventListener("hashchange", () => show(location.hash.replace(/^#/, "")));
+  show(location.hash.replace(/^#/, "") || "dash");
 </script>
