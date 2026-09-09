@@ -318,8 +318,10 @@ if (failed > 0) {
 }
 if (blocked > 0) {
   console.log(
-    "BLOCKED steps need a credential, not a code change. Nothing downstream is claimed until they pass,\n" +
-      "and no harness row may be tagged LIVE_TESTNET until step 7 produces a real hash.\n",
+    "BLOCKED steps are the hosted REST convenience API, which this project does not depend on:\n" +
+      "invoices are raised through the unauthenticated protocol gateway checked at step 3, and the\n" +
+      "payment calldata is encoded locally and proved byte-identical to KeeperHub's own encoder by\n" +
+      "`npm run verify:seam`. Nothing is claimed on their behalf.\n",
   );
   process.exit(2);
 }
