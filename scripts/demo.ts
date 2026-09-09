@@ -176,7 +176,59 @@ if (!REQUEST_ID || !REFERENCE) {
   say("  why SETTLED requires it and a receipt, and never a provider status string.");
 }
 
-heading("5", "What it refuses", "FIXTURE");
+heading("5", "The same protocol, 38 times, against real money", "LIVE");
+
+const LIVE = "docs/refusals-live.json";
+if (existsSync(LIVE)) {
+  const live = JSON.parse(readFileSync(LIVE, "utf8")) as {
+    totals: {
+      rows: number;
+      asSpecified: number;
+      payments: number;
+      physicalSends: number;
+      refusalRows: number;
+      refusedBeforeAnyProviderWrite: number;
+    };
+    rows: Array<{
+      case_id: string;
+      scenario: string;
+      expected: string;
+      actual: string;
+      physical_sends: number;
+      tx_hash: string | null;
+    }>;
+  };
+  const t = live.totals;
+
+  say("  Every invoice below is a real Request Network invoice on Sepolia, paid through");
+  say("  KeeperHub, then dispatched a second time through the same function.");
+  say("");
+  say(`  rows                          : ${t.rows}`);
+  say(`  behaved as specified          : ${t.asSpecified}/${t.rows}`);
+  say(`  real payments                 : ${t.payments}`);
+  say(`  physical sends, total         : ${t.physicalSends}`);
+  say(`  refusals before any send      : ${t.refusedBeforeAnyProviderWrite}/${t.refusalRows}`);
+  say("");
+  say(
+    t.payments === t.physicalSends
+      ? "  Sends equal settled obligations exactly. Not one replay moved money."
+      : "  MISMATCH between sends and settled obligations.",
+  );
+  say("");
+  say("  A sample, first four rows, transaction hashes as recorded:");
+  say("");
+  for (const r of live.rows.slice(0, 4)) {
+    const tx = r.tx_hash ? r.tx_hash.slice(0, 22) : "no send";
+    say(`    ${r.case_id}  ${r.actual.padEnd(18)} sends ${r.physical_sends}  ${tx}`);
+  }
+  say("");
+  say("  The odd rows paid. The even rows are the same obligation asked to pay again,");
+  say("  and every one of them refused at zero sends. That is the product.");
+} else {
+  say("  docs/refusals-live.json not present. Run npm run harness:live first.");
+}
+
+heading("6", "What it refuses, exhaustively", "FIXTURE");
 
 const refusals = existsSync("docs/refusals.json")
   ? (JSON.parse(readFileSync("docs/refusals.json", "utf8")) as { rows?: Array<Record<string, unknown>> })

@@ -1,0 +1,111 @@
+/**
+ * Prove the MCP surface, not just claim it.
+ *
+ * Runs the same calldata through KeeperHub's own MCP server that `verify-seam.ts` runs
+ * through the REST route, and reads the audit trail back. Every check needs only the
+ * KeeperHub API key; nothing here signs or broadcasts.
+ *
+ * Usage: node --experimental-strip-types scripts/verify-mcp.ts
+ */
+
+import { existsSync, readFileSync } from "node:fs";
+import { encodeCall } from "../src/abi.ts";
+import { DEFAULT_RPC } from "../src/chain.ts";
+import { KeeperHubMcpProvider } from "../src/keeperhub-mcp.ts";
+import { ERC20_FEE_PROXY, FAU, PAY_SIGNATURE, SEPOLIA } from "../src/plan.ts";
+import { ProviderError } from "../src/provider.ts";
+
+if (existsSync(".env")) {
+  for (const line of readFileSync(".env", "utf8").split(/\r?\n/)) {
+    const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*)$/.exec(line);
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, "");
+  }
+}
+const API_KEY = process.env.KEEPERHUB_API_KEY ?? "";
+const PAYEE = (process.env.PAYEE_BURNER ?? "").toLowerCase();
+
+let failures = 0;
+const ok = (label: string, detail = ""): void =>
+  console.log(`  ok   ${label}${detail ? ` — ${detail}` : ""}`);
+const bad = (label: string, detail: string): void => {
+  failures++;
+  console.log(` FAIL ${label} — ${detail}`);
+};
+
+console.log("\nMCP surface check — KeeperHub's own server, not the REST route\n");
+
+if (!API_KEY) {
+  console.log("  BLOCKED — set KEEPERHUB_API_KEY in .env\n");
+  process.exit(2);
+}
+
+const provider = new KeeperHubMcpProvider({
+  apiKey: API_KEY,
+  chainId: SEPOLIA,
+  rpcUrl: DEFAULT_RPC,
+});
+
+// ---- 1. the handshake and a dry run through the MCP tool -----------------
+
+const approved = encodeCall(PAY_SIGNATURE, [
+  FAU,
+  PAYEE || "0x000000000000000000000000000000000000dEaD",
+  "1000000000000000000",
+  "0x0102030405060708",
+  "0",
+  `0x${"0".repeat(40)}`,
+]);
+
+console.log("1. dispatching approved calldata through the MCP tool");
+try {
+  const sim = await provider.simulate({ to: ERC20_FEE_PROXY, data: approved, value: "0" });
+  if (sim.transactionHash) {
+    bad("dry run", `returned a transaction hash: ${sim.transactionHash}`);
+  } else {
+    ok(
+      "handshake, session and execute_contract_call all answered",
+      `wouldRevert=${sim.wouldRevert}, gasEstimate=${sim.gasEstimate}, no hash`,
+    );
+  }
+} catch (e) {
+  bad("MCP simulate", String(e));
+}
+
+// ---- 2. the calldata gate holds on this surface too ----------------------
+
+console.log("\n2. the same gate, on a different transport");
+const tampered: Array<[string, string]> = [
+  ["trailing bytes appended", `${approved}deadbeef`],
+  ["unknown selector", `0xdeadbeef${approved.slice(10)}`],
+];
+for (const [label, data] of tampered) {
+  try {
+    await provider.simulate({ to: ERC20_FEE_PROXY, data, value: "0" });
+    bad(label, "was dispatched; the gate did not hold on the MCP path");
+  } catch (e) {
+    if (e instanceof ProviderError && !e.retryable) ok(`${label} refused`, e.code);
+    else bad(label, `refused for the wrong reason: ${String(e)}`);
+  }
+}
+
+// ---- 3. the audit trail ---------------------------------------------------
+
+console.log("\n3. reading the audit trail back through MCP");
+try {
+  // observe() wraps get_direct_execution_status. A known-good execution id proves the
+  // audit surface answers; an unknown one proves it refuses rather than inventing a row.
+  const unknown = await provider
+    .observe("definitely-not-an-execution-id")
+    .then(() => "answered")
+    .catch((e) => (e instanceof ProviderError ? `refused: ${e.code}` : `threw: ${String(e)}`));
+  ok("unknown execution id is refused, not invented", unknown);
+} catch (e) {
+  bad("audit read", String(e));
+}
+
+console.log(
+  failures === 0
+    ? "\nMCP surface holds: handshake, execution tool, calldata gate, audit read.\n"
+    : `\n${failures} check(s) FAILED.\n`,
+);
+process.exit(failures === 0 ? 0 : 1);

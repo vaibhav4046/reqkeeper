@@ -21,21 +21,9 @@
  * chain directly and never trusts a status field.
  */
 
-import { decodeAndVerify } from "./abi.ts";
-import { selector } from "./keccak.ts";
+import { type CallStep, decodeAllowedCall } from "./calldata-gate.ts";
 import type { ExecuteResult, ExecutionProvider, Receipt, SimulateResult } from "./provider.ts";
 import { ProviderError } from "./provider.ts";
-
-/** Only these calls may ever be dispatched. A plan naming anything else is refused. */
-const ALLOWED_SIGNATURES = [
-  "transferFromWithReferenceAndFee(address,address,uint256,bytes,uint256,address)",
-  "approve(address,uint256)",
-  "mint(address,uint256)",
-] as const;
-
-const BY_SELECTOR = new Map<string, string>(
-  ALLOWED_SIGNATURES.map((sig) => [selector(sig).toLowerCase(), sig]),
-);
 
 export interface KeeperHubConfig {
   readonly apiKey: string;
@@ -44,13 +32,6 @@ export interface KeeperHubConfig {
   readonly rpcUrl: string;
   readonly baseUrl?: string;
   readonly timeoutMs?: number;
-}
-
-/** The step shape settle.ts dispatches: exactly what Request's /pay endpoint returns. */
-interface CallStep {
-  readonly to: string;
-  readonly data: string;
-  readonly value?: string;
 }
 
 interface KeeperHubResponse {
@@ -89,27 +70,8 @@ export class KeeperHubProvider implements ExecutionProvider {
    * malformed plan is not going to become well-formed on a retry.
    */
   #toArgs(step: CallStep): { functionName: string; functionArgs: string } {
-    if (typeof step.data !== "string" || step.data.length < 10) {
-      throw new ProviderError("calldata_invalid", "step has no calldata to dispatch", false);
-    }
-    const sel = step.data.slice(0, 10).toLowerCase();
-    const signature = BY_SELECTOR.get(sel);
-    if (!signature) {
-      throw new ProviderError(
-        "selector_not_allowed",
-        `calldata selector ${sel} is not on the allowlist; refusing to dispatch`,
-        false,
-      );
-    }
-    let args: string[];
-    try {
-      args = decodeAndVerify(signature, step.data);
-    } catch (e) {
-      // Re-encoding did not reproduce the approved bytes. Never send: the platform would be
-      // encoding from arguments that do not provably mean what was approved.
-      throw new ProviderError("calldata_mismatch", `${signature}: ${(e as Error).message}`, false);
-    }
-    return { functionName: signature.slice(0, signature.indexOf("(")), functionArgs: JSON.stringify(args) };
+    const call = decodeAllowedCall(step);
+    return { functionName: call.functionName, functionArgs: JSON.stringify(call.args) };
   }
 
   #body(step: CallStep): Record<string, unknown> {
