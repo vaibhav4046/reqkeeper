@@ -1,0 +1,452 @@
+<title>ReqKeeper</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=IBM+Plex+Mono:wght@300;400;500&display=swap">
+<style>
+  /* Deliberately single-theme: this page is an instrument readout, not a document that
+     follows the reader's theme. Every colour is painted explicitly so it holds on any
+     host ground. Palette derived from measured luminance steps, worst-case text 5.09:1. */
+  :root{
+    --canvas:#040806;
+    --surface:#1A2B1D;
+    --hairline:#283C2B;
+    --mid:#4C6351;
+    --text:#E6F7E8;
+    --text-2:#93AC98;
+    --muted:#879C8B;
+    --signal:#3BFF6C;
+    --warn:#FFB43B;
+    --bad:#FF6B5B;
+    --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+    --display:"Archivo","Helvetica Neue",Arial,sans-serif;
+    --gutter:clamp(20px,5vw,68px);
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--canvas);color:var(--text);
+    font-family:var(--mono);font-weight:300;font-size:15px;line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  #rig{position:fixed;inset:0;z-index:0;pointer-events:none}
+  main{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:0 var(--gutter) 96px}
+
+  /* --- chrome ------------------------------------------------------------ */
+  .topbar{
+    display:flex;justify-content:space-between;align-items:baseline;gap:18px;
+    padding:22px 0 0;font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--text-2);font-weight:500;
+  }
+  .topbar nav{display:flex;gap:20px;flex-wrap:wrap}
+  .topbar a{color:var(--text-2);text-decoration:none;padding-bottom:3px}
+  .topbar a:hover,.topbar a:focus-visible{color:var(--text);border-bottom:1px dashed var(--mid)}
+  .serial{
+    position:fixed;right:6px;top:50%;z-index:2;transform:translateY(-50%) rotate(90deg);
+    transform-origin:center;font-size:10px;letter-spacing:.3em;text-transform:uppercase;
+    color:var(--mid);white-space:nowrap;pointer-events:none;
+  }
+
+  /* --- hero -------------------------------------------------------------- */
+  .hero{padding:clamp(40px,7vw,92px) 0 clamp(32px,5vw,60px)}
+  .eyebrow{
+    font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--signal);
+    font-weight:500;margin:0 0 18px;
+  }
+  h1{
+    font-family:var(--display);font-weight:800;
+    font-size:clamp(52px,13vw,148px);line-height:.86;letter-spacing:-.045em;
+    text-transform:uppercase;margin:0;text-wrap:balance;
+  }
+  .lede{
+    max-width:60ch;margin:26px 0 0;font-size:clamp(16px,1.5vw,19px);
+    line-height:1.55;color:var(--text);
+  }
+  .lede b{font-weight:500;color:var(--signal)}
+  .plate{
+    margin-top:34px;display:flex;flex-wrap:wrap;gap:0;
+    border-top:1px solid var(--hairline);border-bottom:1px solid var(--hairline);
+  }
+  .plate div{
+    flex:1 1 150px;padding:14px 18px 14px 0;border-right:1px solid var(--hairline);
+  }
+  .plate div:last-child{border-right:0}
+  .plate dt{
+    font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--mid);
+    margin:0 0 6px;
+  }
+  .plate dd{margin:0;font-size:13px;color:var(--text);font-variant-numeric:tabular-nums}
+
+  /* --- sections ---------------------------------------------------------- */
+  section{padding:clamp(52px,8vw,110px) 0 0}
+  .fig{
+    font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--mid);
+    margin:0 0 14px;
+  }
+  h2{
+    font-family:var(--display);font-weight:800;
+    font-size:clamp(30px,5.2vw,62px);line-height:.92;letter-spacing:-.035em;
+    text-transform:uppercase;margin:0 0 22px;max-width:22ch;text-wrap:balance;
+  }
+  h3{
+    font-size:13px;letter-spacing:.14em;text-transform:uppercase;font-weight:500;
+    color:var(--text);margin:0 0 8px;
+  }
+  p{max-width:66ch;margin:0 0 16px;color:var(--text-2)}
+  p strong{color:var(--text);font-weight:500}
+  a.ref{color:var(--text);text-decoration:none;border-bottom:1px solid var(--mid)}
+  a.ref:hover,a.ref:focus-visible{border-bottom-color:var(--signal);color:var(--signal)}
+
+  .scroller{overflow-x:auto;border:1px solid var(--hairline);margin:26px 0 0}
+  table{border-collapse:collapse;width:100%;min-width:600px;font-size:13px}
+  caption{
+    text-align:left;padding:12px 16px;font-size:10px;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--mid);border-bottom:1px solid var(--hairline);
+  }
+  th{
+    text-align:left;padding:10px 16px;font-size:10px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--mid);font-weight:500;
+    border-bottom:1px solid var(--hairline);white-space:nowrap;
+  }
+  td{padding:11px 16px;border-bottom:1px solid rgba(40,60,43,.55);vertical-align:top;color:var(--text-2)}
+  tbody tr:last-child td{border-bottom:0}
+  td.code{font-weight:500;color:var(--text);white-space:nowrap}
+  td.n{text-align:right;font-variant-numeric:tabular-nums;color:var(--text)}
+  .zero{color:var(--signal);font-weight:500}
+  .one{color:var(--warn)}
+  tr.key td{background:rgba(59,255,108,.045)}
+
+  .stack{display:grid;gap:1px;margin-top:26px;background:var(--hairline);border:1px solid var(--hairline)}
+  .stack article{background:var(--canvas);padding:20px 22px}
+  .stack p{margin:0;font-size:13.5px}
+  .stack .src{
+    display:block;margin-top:10px;font-size:10px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--mid);
+  }
+
+  ol.limits{max-width:70ch;margin:24px 0 0;padding:0;list-style:none;counter-reset:l}
+  ol.limits li{
+    counter-increment:l;position:relative;padding:0 0 14px 42px;color:var(--text-2);font-size:13.5px;
+  }
+  ol.limits li::before{
+    content:counter(l,decimal-leading-zero);position:absolute;left:0;top:1px;
+    font-size:11px;letter-spacing:.1em;color:var(--mid);
+  }
+  ol.limits b{color:var(--text);font-weight:500}
+
+  .cmd{
+    margin-top:24px;border:1px solid var(--hairline);background:var(--surface);
+    padding:18px 20px;overflow-x:auto;
+  }
+  .cmd pre{margin:0;font-size:13px;line-height:1.9;color:var(--text)}
+  .cmd .c{color:var(--signal)}
+  .cmd .d{color:var(--muted)}
+
+  footer{
+    margin-top:clamp(56px,8vw,104px);padding-top:20px;
+    border-top:1px dashed var(--hairline);
+    display:flex;justify-content:space-between;flex-wrap:wrap;gap:14px;
+    font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--mid);
+  }
+  @media (prefers-reduced-motion:reduce){#rig{opacity:.5}}
+  @media (max-width:640px){.serial{display:none}}
+</style>
+
+<canvas id="rig" aria-hidden="true"></canvas>
+<div class="serial">REQKEEPER · SEPOLIA 11155111</div>
+
+<main>
+  <header class="topbar">
+    <span>ReqKeeper</span>
+    <nav>
+      <a href="#seam">The seam</a>
+      <a href="#identity">Identity</a>
+      <a href="#refusals">Refusals</a>
+      <a href="#limits">Limits</a>
+    </nav>
+  </header>
+
+  <div class="hero">
+    <p class="eyebrow">Request Network × KeeperHub · Ethereum Sepolia</p>
+    <h1>Pay it<br>once.</h1>
+    <p class="lede">
+      An agent retries. That is the defining property of an agent harness. When the thing
+      being retried moves money, a retry is a second payment — and every layer of the stack
+      says it is <b>someone else&rsquo;s problem</b>.
+    </p>
+    <dl class="plate">
+      <div><dt>Obligation source</dt><dd>Request invoice</dd></div>
+      <div><dt>Executor</dt><dd>KeeperHub</dd></div>
+      <div><dt>Selector</dt><dd>0xc219a14d</dd></div>
+      <div><dt>Refusal cases</dt><dd>24 / 24</dd></div>
+      <div><dt>Dependencies</dt><dd>0</dd></div>
+    </dl>
+  </div>
+
+  <section id="seam">
+    <p class="fig">Fig. 1 — where the guarantee goes missing</p>
+    <h2>Nobody owns the seam.</h2>
+    <p>
+      Each layer documents the gap and points at the next one. These are open issues, not
+      hypotheticals.
+    </p>
+    <div class="scroller">
+      <table>
+        <caption>Retry semantics at the agent-to-signer boundary</caption>
+        <thead>
+          <tr><th>Layer</th><th>Its position</th><th>State</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="code">Wallet SDK</td>
+            <td>&ldquo;A retry is a second, independently valid transaction&hellip; Nothing in either
+              response marks it as a duplicate.&rdquo; The key already exists in the SDK signature;
+              the one path that moves value does not pass it.
+              <a class="ref" href="https://github.com/coinbase/agentkit/issues/1483">agentkit#1483</a></td>
+            <td class="code">open</td>
+          </tr>
+          <tr>
+            <td class="code">Framework</td>
+            <td><code>stripe.charge(amount, recipient)</code> fires twice on retry.
+              <a class="ref" href="https://github.com/crewAIInc/crewAI/issues/5802">crewAI#5802</a></td>
+            <td class="code">111 comments</td>
+          </tr>
+          <tr>
+            <td class="code">Orchestrator</td>
+            <td>Tool calls over ~3 minutes are &ldquo;silently re-dispatched from the last checkpoint
+              while the original is still running&rdquo;.
+              <a class="ref" href="https://github.com/langchain-ai/langgraph/issues/7417">langgraph#7417</a></td>
+            <td class="code">open</td>
+          </tr>
+          <tr>
+            <td class="code">Payment rail</td>
+            <td>&ldquo;The spec never states how facilitators must deal with duplicate requests.&rdquo;
+              Five concurrent requests, four identical settlement proofs, duplicate debits
+              refunded after the fact.
+              <a class="ref" href="https://github.com/x402-foundation/x402/issues/452">x402#452</a></td>
+            <td class="code">open</td>
+          </tr>
+          <tr class="key">
+            <td class="code">Executor</td>
+            <td>KeeperHub&rsquo;s own docs: idempotency replay lasts 24 hours. &ldquo;Past that the stored
+              response is gone and <strong>the same key executes again, silently</strong>.&rdquo;</td>
+            <td class="code">shipped</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:22px">
+      KeeperHub owns reliability <em>within</em> a run. Nothing owns obligation identity
+      <em>across</em> runs.
+    </p>
+  </section>
+
+  <section id="identity">
+    <p class="fig">Fig. 2 — the load-bearing idea</p>
+    <h2>An invoice is an identity.</h2>
+    <p>
+      Every Request invoice carries a canonical request id and a 16-character payment
+      reference embedded in the calldata. That is a stable obligation identity issued by an
+      external system. It survives a payer wallet change, an API-key rotation, a re-import,
+      regenerated calldata, and the 24-hour replay expiry.
+    </p>
+    <p><strong>We did not invent an identity scheme. Request already ships one.</strong></p>
+    <div class="cmd">
+<pre><span class="d">// three identities, all derived from persisted state —</span>
+<span class="d">// no clock, no randomness, no generated text</span>
+obligation = sha256(<span class="c">ns.length</span>:ns:<span class="c">id.length</span>:id)
+plan       = sha256(canonicalJson(approvedBytes))
+step       = sha256(obligation:plan:stepIndex)</pre>
+    </div>
+    <p style="margin-top:22px">
+      Settlement needs <strong>two independent signals</strong>: a chain receipt read directly
+      via <code>eth_getTransactionReceipt</code>, and Request&rsquo;s own <code>hasBeenPaid</code>.
+      A confirmed receipt alone cannot mark anything paid. A provider status string never can.
+    </p>
+  </section>
+
+  <section id="refusals">
+    <p class="fig">Fig. 3 — 24 cases, 24 as specified</p>
+    <h2>The refusals are the product.</h2>
+    <p>
+      Generated by <code>npm run harness</code> against a provider that counts
+      <strong>physical sends</strong>, so &ldquo;no gas burned&rdquo; is asserted against a number
+      rather than inferred from a status string.
+    </p>
+    <div class="scroller">
+      <table>
+        <caption>Excerpt · full table in docs/refusals.json · mode FIXTURE</caption>
+        <thead>
+          <tr><th>Case</th><th>Scenario</th><th>Refusal</th><th>Sends</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="code">C02</td><td>Recipient not on the allowlist</td><td class="code">PAYEE_NOT_ALLOWED</td><td class="n zero">0</td></tr>
+          <tr><td class="code">C04</td><td>Invoice under cap that a <em>fee</em> pushes over</td><td class="code">LIMIT_EXCEEDED</td><td class="n zero">0</td></tr>
+          <tr><td class="code">C07</td><td>Token decimals differ from policy</td><td class="code">TOKEN_DECIMALS_MISMATCH</td><td class="n zero">0</td></tr>
+          <tr><td class="code">C12</td><td>No human decision yet</td><td class="code">AWAITING_APPROVAL</td><td class="n zero">0</td></tr>
+          <tr><td class="code">C14</td><td>Source facts changed after approval</td><td class="code">PLAN_CHANGED</td><td class="n zero">0</td></tr>
+          <tr><td class="code">C15</td><td>A rival plan already holds the obligation</td><td class="code">OBLIGATION_RESERVED</td><td class="n zero">0</td></tr>
+          <tr><td class="code">C17</td><td>Cached failure replays forever</td><td class="code">CACHED_FAILURE</td><td class="n zero">0</td></tr>
+          <tr><td class="code">C19</td><td>Dry run actually executed</td><td class="code">SIMULATE_EXECUTED</td><td class="n one">1</td></tr>
+          <tr><td class="code">C21</td><td>Provider claims success, chain has no receipt</td><td class="code">EVIDENCE_CONFLICT</td><td class="n one">1</td></tr>
+          <tr class="key"><td class="code">C23</td><td>Replay 25h later, provider cache expired</td><td class="code">PLAN_EXPIRED</td><td class="n one">1</td></tr>
+          <tr class="key"><td class="code">C24</td><td>Replay inside plan TTL, provider cache expired</td><td class="code">ALREADY_DISPATCHED</td><td class="n one">1</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:22px">
+      C23 and C24 are the thesis: <strong>the send count does not move across a replay.</strong>
+      16 of 22 refusals happen before any provider write at all.
+    </p>
+    <p>
+      C24 found a real bug in this codebase. A plan still inside its TTL, whose provider
+      idempotency cache had lapsed, re-entered dispatch, reused the same attempt row, called
+      <code>execute()</code> again — and the provider, having forgotten the key, paid a second
+      time. The guard now sits on <code>firstSendAt</code>, and C24 exists so it cannot regress.
+    </p>
+  </section>
+
+  <section>
+    <p class="fig">Fig. 4 — three documented hazards, each with a fault injection</p>
+    <h2>Modelled, not assumed.</h2>
+    <div class="stack">
+      <article>
+        <h3>Replay window expires at 24h</h3>
+        <p>The same key then executes again, silently. Defended by a UNIQUE obligation
+          constraint and a <code>firstSendAt</code> guard, both of which outlive the provider
+          cache.</p>
+        <span class="src">docs.keeperhub.com/api/direct-execution</span>
+      </article>
+      <article>
+        <h3>A reused key replays a cached failure</h3>
+        <p>So a retry can never succeed. Distinguished from &ldquo;unpaid&rdquo;. Resolution needs a
+          new approved plan — never a key rotation, which would pay twice.</p>
+        <span class="src">issue #1840</span>
+      </article>
+      <article>
+        <h3><code>simulate=true</code> is ignored and executes</h3>
+        <p>A dry run is therefore not a safety boundary. A transaction hash returned from a
+          simulate call is treated as a real send and raised as
+          <code>EVIDENCE_CONFLICT</code>.</p>
+        <span class="src">issues #1959 / #1929</span>
+      </article>
+    </div>
+  </section>
+
+  <section id="limits">
+    <p class="fig">Fig. 5 — published because they are true</p>
+    <h2>What this does not do.</h2>
+    <ol class="limits">
+      <li><b>Duplicate protection is deployment-scoped.</b> It cannot stop an independent
+        wallet, another deployment, or a human paying the invoice out of band.</li>
+      <li><b>No semantic dedup across request ids.</b> Two Request ids may name the same
+        real-world invoice. Not detected.</li>
+      <li><b>Revocation is not an onchain undo.</b> Already-broadcast work completes.</li>
+      <li><b>The audit trail is tamper-evident, not tamper-proof.</b> The same database
+        administrator can rewrite it. It is not blockchain evidence.</li>
+      <li><b>No prompt-injection detection.</b> A guarded signer enforces a declarative
+        policy. It does not detect injection and does not claim to.</li>
+      <li><b>Approval fatigue is real and unsolved.</b> Measured across 11,429 reviews over
+        seven months, approval rates drift 30.1% → 36.8% while inline comments fall 22%. This
+        design reduces prompt <em>count</em> rather than pretending a per-action queue is safe.</li>
+      <li><b>The live leg has not run.</b> Creating a Request invoice needs a credential
+        obtainable only by signing in a browser. Every harness row is tagged
+        <code>FIXTURE</code>. None is labelled live, and none will be until a real Sepolia
+        hash exists.</li>
+    </ol>
+    <div class="cmd">
+<pre><span class="c">npm test</span>                  <span class="d">105 unit tests</span>
+<span class="c">npm run harness</span>           <span class="d">24 refusal cases → docs/refusals.json</span>
+<span class="c">npm run verify:onchain</span>    <span class="d">reads Sepolia, no credentials required</span></pre>
+    </div>
+  </section>
+
+  <footer>
+    <span>Node 24 · zero dependencies · MIT</span>
+    <span>Testnet only — mainnet disabled in code</span>
+  </footer>
+</main>
+
+<script>
+  // Procedural wireframe torus, drawn from scroll position.
+  //
+  // Deliberately not a scroll-scrubbed frame sequence: 120 frames at 1280x800 is ~1.84 MB of
+  // transfer and ~492 MB decoded, against iOS Safari's ~224 MB canvas ceiling. Geometry costs
+  // no bytes and no decode. Canvas is also not an LCP candidate, so the H1 stays the LCP.
+  (function () {
+    const canvas = document.getElementById("rig");
+    const ctx = canvas.getContext("2d");
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)");
+
+    const RINGS = 22, PER_RING = 34, R = 1, r = 0.42;
+    let w = 0, h = 0, dpr = 1, progress = 0, target = 0, raf = 0;
+
+    function resize() {
+      dpr = Math.min(devicePixelRatio || 1, 2);
+      w = innerWidth; h = innerHeight;
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      draw();
+    }
+
+    function project(x, y, z, cx, cy, scale) {
+      const d = 3.2;
+      const k = d / (d + z);
+      return [cx + x * scale * k, cy + y * scale * k, k];
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, w, h);
+
+      const scale = Math.min(w, h) * 0.34;
+      const cx = w * (w > 900 ? 0.72 : 0.5);
+      const cy = h * 0.5;
+
+      // Scroll drives rotation. At rest (progress 0) the form is already legible, so the
+      // first frame of the page is never an empty canvas.
+      const a = 0.6 + progress * Math.PI * 1.6;
+      const b = 0.35 + progress * Math.PI * 0.8;
+      const ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b);
+
+      for (let i = 0; i < RINGS; i++) {
+        const u = (i / RINGS) * Math.PI * 2;
+        ctx.beginPath();
+        let faded = 0;
+        for (let j = 0; j <= PER_RING; j++) {
+          const v = (j / PER_RING) * Math.PI * 2;
+          const rx = (R + r * Math.cos(v)) * Math.cos(u);
+          const ry = r * Math.sin(v);
+          const rz = (R + r * Math.cos(v)) * Math.sin(u);
+          // rotate Y then X
+          const x1 = rx * cb + rz * sb;
+          const z1 = -rx * sb + rz * cb;
+          const y2 = ry * ca - z1 * sa;
+          const z2 = ry * sa + z1 * ca;
+          const [px, py, k] = project(x1, y2, z2, cx, cy, scale);
+          faded += k;
+          if (j === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        const depth = faded / (PER_RING + 1);
+        ctx.strokeStyle = "rgba(59,255,108," + (0.035 + Math.pow(depth - 0.55, 2) * 0.5).toFixed(3) + ")";
+        ctx.lineWidth = depth > 1.05 ? 1.1 : 0.6;
+        ctx.stroke();
+      }
+    }
+
+    function tick() {
+      progress += (target - progress) * 0.09;
+      draw();
+      if (Math.abs(target - progress) > 0.0005) raf = requestAnimationFrame(tick);
+      else raf = 0;
+    }
+
+    function onScroll() {
+      const max = Math.max(1, document.body.scrollHeight - innerHeight);
+      target = Math.min(1, scrollY / max);
+      if (reduce.matches) { progress = target; draw(); return; }
+      if (!raf) raf = requestAnimationFrame(tick);
+    }
+
+    addEventListener("resize", resize, { passive: true });
+    addEventListener("scroll", onScroll, { passive: true });
+    resize();
+    onScroll();
+  })();
+</script>
