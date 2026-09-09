@@ -140,8 +140,8 @@ Six files, in the order that explains the design:
 Needs Node 24+. Nothing else — no `npm install`, no `node_modules`.
 
 ```bash
-npm test                  # 128 unit tests
-npm run harness           # 26 refusal cases -> docs/refusals.json
+npm test                  # 146 unit tests
+npm run harness           # 26 cases, 24 of them refusals -> docs/refusals.json
 npm run verify:onchain    # reads Sepolia via public RPC, no credentials
 npm run verify:seam       # proves the calldata gate against the live API (needs the KeeperHub key)
 npm run settle:live       # settles one real Request obligation; run twice to see the refusal
@@ -190,7 +190,7 @@ Duplicate protection is layered, and the layers refuse at different distances fr
 |---|---|---|
 | terminal-state check | the obligation already settled | `ALREADY_SETTLED` — refuses before a plan is even built |
 | `UNIQUE(plan_hash, step_index)` + `firstSendAt` | a plan's step was already sent but the outcome is unresolved | `ALREADY_DISPATCHED` — harness case C25 |
-| `UNIQUE(obligation_id)` reservation | a rival plan holds the same obligation | `OBLIGATION_RESERVED` |
+| `reserved_by_plan`, claimed inside `BEGIN IMMEDIATE` | a rival plan holds the same obligation | `OBLIGATION_RESERVED` |
 
 All three live in the local store, so all three outlive the provider's 24-hour idempotency
 window rather than depending on it.
@@ -323,7 +323,7 @@ Each one is documented and money-critical, not hypothetical. Each has a fault in
 
 | Hazard | Source | Defence |
 |---|---|---|
-| Replay window expires at 24h, same key silently executes again | `docs.keeperhub.com/api/direct-execution` | `UNIQUE(obligation_id)` + `firstSendAt` guard, both outliving the provider cache |
+| Replay window expires at 24h, same key silently executes again | `docs.keeperhub.com/api/direct-execution` | `obligation_id` primary key + `UNIQUE(namespace, request_id)` + the `firstSendAt` guard, all outliving the provider cache |
 | Reused key replays a **cached failure**, so retry can never succeed | issue #1840 | Distinguished from "unpaid". Requires a new approved plan — never a key rotation |
 | `?simulate=true` is ignored and the transaction really executes | issues #1959 / #1929 | A dry run is not treated as a safety boundary. A tx hash returned from a simulate call is `EVIDENCE_CONFLICT` and treated as a real send |
 
@@ -378,7 +378,7 @@ These are published because they are true, and because vague claims poison the c
 
 Stated plainly rather than left for a reviewer to discover.
 
-- **The 24 harness rows are still `FIXTURE`.** One obligation has settled live and refused a
+- **All 26 harness rows are still `FIXTURE`.** One obligation has settled live and refused a
   live replay, but the other 23 scenarios — a lapsed replay window, a cached provider failure,
   a rival plan holding the obligation — are reproduced against `FixtureProvider`, because
   provoking them for real would mean deliberately paying twice. The refusal *logic* is the same
@@ -389,9 +389,11 @@ Stated plainly rather than left for a reviewer to discover.
 - **`Idempotency-Key` is accepted by KeeperHub but its behaviour is unconfirmed.** The header is
   sent on every execution and the API does not reject it. Whether it actually deduplicates
   cannot be tested without deliberately paying twice, so no claim is made about it here — which
-  is the entire reason duplicate protection lives in this codebase's `UNIQUE(obligation_id)` and
+  is the entire reason duplicate protection lives in this codebase's own identity constraints and
   `firstSendAt` guard rather than depending on the provider's.
-- No frontend yet. No demo video yet.
+- **The console is a static page, not an operator tool.** `web/console.html` renders the
+  harness output and the settlement facts; nothing on it is clickable that does anything.
+  Proposing and approving a payment is CLI-only.
 - The bounty PR for #1959/#1929 is not opened.
 
 Everything claimed above is reproducible by running the commands in "Run it". Everything not
