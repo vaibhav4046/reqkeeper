@@ -199,7 +199,7 @@ Needs Node 24+. Nothing else — no `npm install`, no `node_modules`.
 
 ```bash
 npm run gate-a            # the make-or-break gate: does this integration exist end to end?
-npm test                  # 187 unit tests
+npm test                  # 239 unit tests
 npm run harness           # 26 cases, 24 of them refusals -> docs/refusals.json
 npm run verify:onchain    # reads Sepolia via public RPC, no credentials
 npm run verify:seam       # proves the calldata gate against the live API (needs the KeeperHub key)
