@@ -1,0 +1,459 @@
+<title>ReqKeeper Console</title>
+<script id="reqkeeper-data" type="application/json">{"tests":146,"refusals":{"generatedAt":"2026-09-09T03:14:49.719Z","mode":"FIXTURE","note":"Deterministic fault injection against an in-memory provider that counts physical sends. These rows prove the refusal logic, not the live integration. Live rows require Gate A and are tagged LIVE_TESTNET when present.","totals":{"cases":26,"passed":26,"failed":0,"refusalCases":24,"refusedBeforeAnyProviderWrite":18},"rows":[{"case_id":"C01","scenario":"a clean, approved obligation settles","expected":"SETTLED","actual":"SETTLED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x0000000000000000000000000000000000000000000000000000000000000001","independently_verified":true,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C02","scenario":"recipient not on the allowlist","expected":"PAYEE_NOT_ALLOWED","actual":"PAYEE_NOT_ALLOWED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C03","scenario":"total debit over the cap","expected":"LIMIT_EXCEEDED","actual":"LIMIT_EXCEEDED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C04","scenario":"invoice under cap that a fee pushes over","expected":"LIMIT_EXCEEDED","actual":"LIMIT_EXCEEDED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C05","scenario":"wrong chain","expected":"UNSUPPORTED_CHAIN","actual":"UNSUPPORTED_CHAIN","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C06","scenario":"wrong token on the right chain","expected":"UNSUPPORTED_TOKEN","actual":"UNSUPPORTED_TOKEN","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C07","scenario":"token decimals differ from policy (10^12 hazard)","expected":"TOKEN_DECIMALS_MISMATCH","actual":"TOKEN_DECIMALS_MISMATCH","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C08","scenario":"Request already reports it paid","expected":"SOURCE_ALREADY_PAID","actual":"SOURCE_ALREADY_PAID","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C09","scenario":"zero amount","expected":"AMOUNT_NOT_POSITIVE","actual":"AMOUNT_NOT_POSITIVE","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C10","scenario":"unrecognised fee recipient","expected":"FEE_RECIPIENT_UNKNOWN","actual":"FEE_RECIPIENT_UNKNOWN","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C11","scenario":"fee above the ceiling","expected":"FEE_EXCEEDS_CEILING","actual":"FEE_EXCEEDS_CEILING","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C12","scenario":"no human decision yet","expected":"AWAITING_APPROVAL","actual":"AWAITING_APPROVAL","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C13","scenario":"reviewer rejects","expected":"REVIEW_REJECTED","actual":"REVIEW_REJECTED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C14","scenario":"source facts changed between approval and dispatch","expected":"PLAN_CHANGED","actual":"PLAN_CHANGED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C15","scenario":"a rival plan already holds the obligation","expected":"OBLIGATION_RESERVED","actual":"OBLIGATION_RESERVED","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":null,"mode":"FIXTURE","pass":true},{"case_id":"C16","scenario":"provider write times out with no response","expected":"EXECUTION_OUTCOME_UNKNOWN","actual":"EXECUTION_OUTCOME_UNKNOWN","refused_before_provider_write":false,"physical_sends":1,"tx_hash":null,"independently_verified":false,"fault_injected":"TIMEOUT_NO_RESPONSE","mode":"FIXTURE","pass":true},{"case_id":"C17","scenario":"cached failure replays forever (#1840)","expected":"CACHED_FAILURE","actual":"CACHED_FAILURE","refused_before_provider_write":false,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":"CACHED_FAILURE","mode":"FIXTURE","pass":true},{"case_id":"C18","scenario":"same key, different body","expected":"IDEMPOTENCY_CONFLICT","actual":"IDEMPOTENCY_CONFLICT","refused_before_provider_write":false,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":"IDEMPOTENCY_CONFLICT","mode":"FIXTURE","pass":true},{"case_id":"C19","scenario":"dry run actually executed (#1959)","expected":"SIMULATE_EXECUTED","actual":"SIMULATE_EXECUTED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i5i","independently_verified":false,"fault_injected":"SIMULATE_IGNORED","mode":"FIXTURE","pass":true},{"case_id":"C20","scenario":"receipt says reverted","expected":"EXECUTION_REVERTED","actual":"EXECUTION_REVERTED","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x0000000000000000000000000000000000000000000000000000000000000001","independently_verified":false,"fault_injected":"RECEIPT_REVERTED","mode":"FIXTURE","pass":true},{"case_id":"C21","scenario":"provider claims success, chain has no receipt","expected":"EVIDENCE_CONFLICT","actual":"EVIDENCE_CONFLICT","refused_before_provider_write":false,"physical_sends":1,"tx_hash":"0x0000000000000000000000000000000000000000000000000000000000000001","independently_verified":false,"fault_injected":"COMPLETE_BUT_RECEIPT_MISSING","mode":"FIXTURE","pass":true},{"case_id":"C22","scenario":"provider rate limits the preflight","expected":"rate_limited","actual":"rate_limited","refused_before_provider_write":true,"physical_sends":0,"tx_hash":null,"independently_verified":false,"fault_injected":"RATE_LIMITED","mode":"FIXTURE","pass":true},{"case_id":"C23","scenario":"replay 25h later, settled, provider cache expired","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":1,"tx_hash":"0x0000000000000000000000000000000000000000000000000000000000000001","independently_verified":false,"fault_injected":"REPLAY_EXPIRED","mode":"FIXTURE","pass":true},{"case_id":"C24","scenario":"replay inside plan TTL, settled, provider cache expired","expected":"ALREADY_SETTLED","actual":"ALREADY_SETTLED","refused_before_provider_write":true,"physical_sends":1,"tx_hash":null,"independently_verified":false,"fault_injected":"REPLAY_EXPIRED","mode":"FIXTURE","pass":true},{"case_id":"C25","scenario":"replay inside plan TTL, outcome unconfirmed","expected":"ALREADY_DISPATCHED","actual":"ALREADY_DISPATCHED","refused_before_provider_write":true,"physical_sends":1,"tx_hash":"0x0000000000000000000000000000000000000000000000000000000000000001","independently_verified":false,"fault_injected":"REPLAY_EXPIRED","mode":"FIXTURE","pass":true},{"case_id":"C26","scenario":"replay 25h later, outcome unconfirmed","expected":"PLAN_EXPIRED","actual":"PLAN_EXPIRED","refused_before_provider_write":true,"physical_sends":1,"tx_hash":null,"independently_verified":false,"fault_injected":"REPLAY_EXPIRED","mode":"FIXTURE","pass":true}]},"settlement":{"requestId":"011a5eca74adfa1e61276d5d3b3c41339c2daddaaa406b6f1b7344c2a4679a2403","paymentReference":"0x3ad3fe6653fb8827","obligationId":"3a79273eb6cab086a787cf5bbee3864982acda2e61b44875fdc6562e6e662f8d","amountBaseUnits":"1000000000000000000","txHash":"0x134f352dc69843105a01d1b9d6cc9799b660bd28e08920144bb67cb3852bfeff","restatement":"Pay 1 FAU to 0xc43d766cb7c48b9b198db87441b97c09e81717a1 on chain 11155111, plus 0 fee.\nTotal leaving the wallet: 1 FAU (1000000000000000000 base units)."}}</script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  /* Committed single-theme: a signer's console, painted explicitly so it holds on any host
+     ground rather than borrowing one. */
+  :root {
+    --canvas: #040806;
+    --surface: #1A2B1D;
+    --hairline: #283C2B;
+    --mid: #4C6351;
+    --text: #E6F7E8;
+    --text-2: #93AC98;
+    --muted: #879C8B;
+    --signal: #3BFF6C;
+    --refuse: #FFD166;
+    --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+    --mono: "IBM Plex Mono", "Cascadia Code", Consolas, monospace;
+    --pad: clamp(1.25rem, 1rem + 2vw, 3.5rem);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--canvas);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--signal); text-decoration: none; border-bottom: 1px solid rgba(59,255,108,.3); }
+  a:hover { border-bottom-color: var(--signal); }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--signal); outline-offset: 3px; }
+  code, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  header.top {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(4,8,6,.92); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--hairline);
+    padding: 0 var(--pad);
+  }
+  .bar { display: flex; align-items: baseline; gap: 1.5rem; flex-wrap: wrap; padding: 1rem 0 .85rem; }
+  .wordmark { font-family: var(--mono); font-weight: 600; font-size: 1rem; color: var(--signal); letter-spacing: .02em; }
+  .tagline { color: var(--muted); font-size: .8rem; }
+  nav { display: flex; gap: .25rem; flex-wrap: wrap; margin-left: auto; }
+  nav a {
+    border: 1px solid transparent; border-bottom: none;
+    padding: .3rem .7rem; border-radius: 3px;
+    color: var(--text-2); font-size: .82rem; letter-spacing: .02em;
+  }
+  nav a:hover { color: var(--text); background: var(--surface); }
+  nav a[aria-current="page"] { color: var(--canvas); background: var(--signal); font-weight: 600; }
+
+  main { padding: var(--pad); max-width: 1180px; margin: 0 auto; }
+  section[hidden] { display: none !important; }
+
+  h1 { font-family: var(--display); font-weight: 800; font-size: clamp(1.9rem, 1.2rem + 3vw, 3.4rem);
+       line-height: 1.04; letter-spacing: -.02em; margin: 0 0 1rem; text-wrap: balance; }
+  h2 { font-family: var(--display); font-weight: 800; font-size: clamp(1.15rem, 1rem + .8vw, 1.6rem);
+       margin: 2.75rem 0 .9rem; letter-spacing: -.01em; text-wrap: balance; }
+  h3 { font-family: var(--mono); font-weight: 600; font-size: .78rem; letter-spacing: .14em;
+       text-transform: uppercase; color: var(--muted); margin: 2rem 0 .7rem; }
+  p { max-width: 68ch; color: var(--text-2); margin: 0 0 1rem; }
+  p strong { color: var(--text); font-weight: 500; }
+  .lead { font-size: 1.05rem; color: var(--text); max-width: 62ch; }
+
+  .rule { height: 1px; background: var(--hairline); margin: 2.5rem 0; border: 0; }
+
+  /* Figures: a number that carries weight, not a card grid. */
+  .figures { display: flex; flex-wrap: wrap; gap: 2.5rem 3.5rem; margin: 1.75rem 0 0; }
+  .fig .n { font-family: var(--display); font-weight: 800; font-size: clamp(2rem, 1.5rem + 2vw, 3rem);
+            line-height: 1; color: var(--signal); font-variant-numeric: tabular-nums; }
+  .fig .n.plain { color: var(--text); }
+  .fig .k { color: var(--muted); font-size: .78rem; letter-spacing: .1em; text-transform: uppercase; margin-top: .5rem; }
+
+  .scroll { overflow-x: auto; border: 1px solid var(--hairline); border-radius: 4px; background: #06100A; }
+  table { width: 100%; border-collapse: collapse; font-size: .84rem; min-width: 720px; }
+  th, td { text-align: left; padding: .6rem .8rem; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: .72rem; letter-spacing: .1em; text-transform: uppercase;
+       background: var(--surface); position: sticky; top: 0; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: rgba(26,43,29,.45); }
+  td.num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  .id { color: var(--muted); }
+
+  /* State encoded in form as well as text, so what matters reads at a glance. */
+  .pill { display: inline-block; padding: .1rem .5rem; border-radius: 2px; font-size: .74rem;
+          font-weight: 600; letter-spacing: .02em; white-space: nowrap; }
+  .pill.settled { background: rgba(59,255,108,.14); color: var(--signal); }
+  .pill.refuse  { background: rgba(255,209,102,.13); color: var(--refuse); }
+  .zero { color: var(--signal); font-weight: 600; }
+  .sent { color: var(--refuse); }
+
+  .filters { display: flex; gap: .4rem; flex-wrap: wrap; margin: 1.25rem 0 .9rem; }
+  .filters button {
+    font-family: var(--mono); font-size: .78rem; cursor: pointer;
+    background: transparent; color: var(--text-2);
+    border: 1px solid var(--hairline); border-radius: 3px; padding: .3rem .7rem;
+  }
+  .filters button:hover { color: var(--text); border-color: var(--mid); }
+  .filters button[aria-pressed="true"] { background: var(--signal); color: var(--canvas); border-color: var(--signal); font-weight: 600; }
+
+  pre { margin: 0; padding: 1rem 1.1rem; background: #06100A; border: 1px solid var(--hairline);
+        border-radius: 4px; overflow-x: auto; font-size: .8rem; line-height: 1.55; color: var(--text-2); }
+  pre b { color: var(--signal); font-weight: 600; }
+  pre i { color: var(--refuse); font-style: normal; }
+
+  dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: .45rem 1.5rem; margin: 1rem 0; font-size: .85rem; }
+  dl.kv dt { color: var(--muted); }
+  dl.kv dd { margin: 0; word-break: break-all; }
+
+  ol.steps { counter-reset: s; list-style: none; padding: 0; margin: 1.25rem 0; }
+  ol.steps li { counter-increment: s; position: relative; padding: 0 0 1.15rem 2.6rem; color: var(--text-2); max-width: 66ch; }
+  ol.steps li::before {
+    content: counter(s, decimal-leading-zero); position: absolute; left: 0; top: .1rem;
+    font-size: .74rem; font-weight: 600; color: var(--signal); letter-spacing: .06em;
+  }
+  ol.steps li b { color: var(--text); font-weight: 500; }
+
+  ul.plain { list-style: none; padding: 0; margin: 1rem 0; }
+  ul.plain li { color: var(--text-2); padding-left: 1.2rem; position: relative; margin-bottom: .5rem; max-width: 68ch; }
+  ul.plain li::before { content: "—"; position: absolute; left: 0; color: var(--mid); }
+
+  .note { border-left: 2px solid var(--mid); padding: .1rem 0 .1rem 1rem; margin: 1.5rem 0; color: var(--muted); font-size: .86rem; max-width: 66ch; }
+  .absent { border-left-color: var(--signal); }
+
+  footer { border-top: 1px solid var(--hairline); padding: 1.5rem var(--pad) 3rem; color: var(--muted); font-size: .78rem; }
+  @media (prefers-reduced-motion: no-preference) { nav a, .filters button { transition: background .15s, color .15s, border-color .15s; } }
+</style>
+
+<header class="top">
+  <div class="bar">
+    <span class="wordmark">reqkeeper</span>
+    <span class="tagline">exactly-once settlement · Request Network × KeeperHub · Sepolia</span>
+    <nav id="nav">
+      <a href="#/">Thesis</a>
+      <a href="#/seam">The seam</a>
+      <a href="#/refusals">Refusals</a>
+      <a href="#/settlement">Settlement</a>
+      <a href="#/agent">Agent surface</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <!-- ── thesis ─────────────────────────────────────────────────────── -->
+  <section id="r-" >
+    <h1>An agent retries.<br>A retry is a second payment.</h1>
+    <p class="lead">Retrying is the defining property of an agent harness. When the thing being
+      retried moves money, nothing in the stack owns the duplicate. ReqKeeper owns it at the
+      one place it can be owned: the seam between the agent and the signer.</p>
+
+    <div class="figures" id="hero-figs"></div>
+
+    <hr class="rule">
+
+    <h2>Nobody downstream owns this</h2>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Layer</th><th>Its position</th></tr></thead>
+        <tbody>
+          <tr><td>Wallet SDK</td><td><a href="https://github.com/coinbase/agentkit/issues/1483">agentkit#1483</a> — the idempotency key exists in the SDK signature; the one call path that moves value does not pass it</td></tr>
+          <tr><td>Agent framework</td><td><a href="https://github.com/crewAIInc/crewAI/issues/5802">crewAI#5802</a> — <code>stripe.charge(...)</code> fires twice on retry</td></tr>
+          <tr><td>Orchestrator</td><td><a href="https://github.com/langchain-ai/langgraph/issues/7417">langgraph#7417</a> — long tool calls silently re-dispatched while the original is still running</td></tr>
+          <tr><td>Payment rail</td><td><a href="https://github.com/x402-foundation/x402/issues/1805">x402#1805</a> — 5 concurrent requests, 4 got the same settlement proof</td></tr>
+          <tr><td>Execution layer</td><td>KeeperHub's own docs: replay lasts 24 hours, then the same key executes again, silently</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>Why Request Network</h2>
+    <p><strong>The invoice is the idempotency key.</strong> Every Request invoice carries a canonical
+      request id and a payment reference embedded in the calldata — a stable obligation identity
+      issued by an external system. It survives a wallet change, a key rotation, a re-import,
+      regenerated calldata, and the 24-hour replay expiry. We did not invent an identity scheme.</p>
+    <p>And the loop closes without fabrication: pay with the reference embedded and Request's own
+      payment detection flips the invoice to paid. <code>SETTLED</code> requires both an
+      independently read receipt and the source's own verdict.</p>
+  </section>
+
+  <!-- ── the seam ───────────────────────────────────────────────────── -->
+  <section id="r-seam" hidden>
+    <h1>The approved bytes are not the signed bytes</h1>
+    <p class="lead">Request hands you finished calldata. KeeperHub will not send finished calldata.
+      Something has to bridge that, and whatever bridges it is where a payment can quietly change
+      meaning.</p>
+
+    <h3>Probed, not assumed</h3>
+    <pre>contract-call, data      -> HTTP 400 {"error":"Missing required field","field":"<i>functionName</i>"}
+contract-call, callData  -> HTTP 400 {"error":"Missing required field","field":"<i>functionName</i>"}
+raw route                -> HTTP 400 {"error":"<i>Invalid action type: raw</i>"}
+transaction route        -> HTTP 400 {"error":"<i>Invalid action type: transaction</i>"}</pre>
+    <p>The only write surface is <code>(contractAddress, functionName, functionArgs)</code>, re-encoded
+      on KeeperHub's side against an ABI it resolves itself. So between "the human approved these
+      bytes" and "the signer signed these bytes" sits a decode, a transport, and a re-encode
+      performed by the execution platform.</p>
+
+    <h3>And the destination is not the contract you named</h3>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Field</th><th>What actually got signed</th><th>What was approved</th></tr></thead>
+        <tbody>
+          <tr><td><code>tx.from</code></td><td><code>0x809d8252…</code> a KeeperHub relayer</td><td>the payer</td></tr>
+          <tr><td><code>tx.to</code></td><td><code>0x5af5194b…</code> a 3963-byte forwarder</td><td>FAU <code>0x370DE27f…</code></td></tr>
+          <tr><td>selector</td><td><code>0x9aefaff8</code> on the forwarder</td><td><code>0x40c10f19</code> <span class="id">mint(address,uint256)</span></td></tr>
+          <tr><td>gas payer</td><td>the relayer, 0.000119 ETH</td><td>—</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>The named call survives only as an inner payload: a 65-byte signature, then the selector and
+      its arguments. <code>(to, data)</code> as approved appears in no transaction anywhere.</p>
+
+    <h3>What ReqKeeper does about it</h3>
+    <p>Decode the approved calldata, re-encode it locally, and dispatch only if the result is
+      byte-identical. Anything else refuses before a single network call.</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Smuggled variant</th><th>Refusal</th></tr></thead>
+        <tbody>
+          <tr><td>trailing bytes appended after the arguments</td><td><span class="pill refuse">calldata_mismatch</span></td></tr>
+          <tr><td>a selector not on the allowlist</td><td><span class="pill refuse">selector_not_allowed</span></td></tr>
+          <tr><td>dirty high bytes packed above an address</td><td><span class="pill refuse">calldata_mismatch</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">The codec refuses every type it does not implement. A codec that silently
+      mis-encodes an argument is worse than none, because it fails the byte-comparison that was
+      supposed to be the safety net. Its correctness is checked against KeeperHub's own encoder
+      output — two independent implementations, same 260 bytes.</div>
+  </section>
+
+  <!-- ── refusals ───────────────────────────────────────────────────── -->
+  <section id="r-refusals" hidden>
+    <h1>The refusal table</h1>
+    <p class="lead">The deliverable is not a feature list. It is the count of things correctly
+      refused, with the physical send count asserted against a number rather than inferred from a
+      status string.</p>
+    <div class="figures" id="refusal-figs"></div>
+    <div class="filters" id="filters"></div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Case</th><th>Scenario</th><th>Expected</th><th>Actual</th><th class="num">Sends</th><th>Pre-write</th></tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <div class="note">Every row is generated by <code>npm run harness</code> into
+      <code>docs/refusals.json</code>, and this page is built from that file — it cannot disagree
+      with the harness. Rows are tagged <code>FIXTURE</code>: the faults are injected against a
+      provider that counts physical sends, because provoking a lapsed replay window for real would
+      mean deliberately paying twice.</div>
+  </section>
+
+  <!-- ── settlement ─────────────────────────────────────────────────── -->
+  <section id="r-settlement" hidden>
+    <h1>One obligation, paid once</h1>
+    <p class="lead">A real Request invoice on Sepolia, paid through KeeperHub by the same function
+      that produces every refusal above. Run it twice; the second run is the product.</p>
+
+    <dl class="kv" id="settlement-kv"></dl>
+
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Run</th><th>State</th><th>Refusal</th><th>Provider write</th></tr></thead>
+        <tbody>
+          <tr><td>1st</td><td><span class="pill settled">SETTLED</span></td><td class="id">—</td><td class="sent">true</td></tr>
+          <tr><td>2nd</td><td><span class="pill settled">SETTLED</span></td><td><span class="pill refuse">ALREADY_SETTLED</span></td><td class="zero">false</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>The sentence a human approved</h3>
+    <pre id="restatement"></pre>
+    <p>Derived from the same values as the calldata, at the same moment. The Lobstar transfer — $4
+      intended, $441,780 sent — would have been caught by reading one line like this.</p>
+
+    <h3>Three independent confirmations</h3>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Source</th><th>Says</th></tr></thead>
+        <tbody>
+          <tr><td><code>eth_getTransactionReceipt</code></td><td>success, verified, gasUsed 74618</td></tr>
+          <tr><td>ERC20FeeProxy event log</td><td>reference seen for exactly 1000000000000000000</td></tr>
+          <tr><td>Request Network's own detection</td><td>balance 1000000000000000000, 1 payment event, paid</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>A provider's status string is never one of these. That is the whole point of the column.</p>
+
+    <h3>Duplicate protection is layered</h3>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Guard</th><th>Fires when</th><th>Refusal</th></tr></thead>
+        <tbody>
+          <tr><td>terminal-state check</td><td>the obligation already settled</td><td><span class="pill refuse">ALREADY_SETTLED</span></td></tr>
+          <tr><td><code>UNIQUE(plan_hash, step_index)</code> + <code>firstSendAt</code></td><td>a step was sent but the outcome is unresolved</td><td><span class="pill refuse">ALREADY_DISPATCHED</span></td></tr>
+          <tr><td><code>UNIQUE(obligation_id)</code></td><td>a rival plan holds the same obligation</td><td><span class="pill refuse">OBLIGATION_RESERVED</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>All three live in the local store, so all three outlive the provider's 24-hour idempotency
+      window rather than depending on it.</p>
+  </section>
+
+  <!-- ── agent surface ──────────────────────────────────────────────── -->
+  <section id="r-agent" hidden>
+    <h1>What the agent cannot do</h1>
+    <p class="lead">An MCP server over stdio, with five tools and one deliberate omission.</p>
+
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Tool</th><th>What an agent can do</th></tr></thead>
+        <tbody>
+          <tr><td><code>propose_payment</code></td><td>build a plan, get the sentence a human must read. Never dispatches.</td></tr>
+          <tr><td><code>settle_obligation</code></td><td>settle what a human already approved. Cannot pay twice.</td></tr>
+          <tr><td><code>obligation_status</code></td><td>state and full audit trail</td></tr>
+          <tr><td><code>verify_payment</code></td><td>confirm from the chain, without asking the provider</td></tr>
+          <tr><td><code>refusal_codes</code></td><td>the refusal vocabulary, each with do-not-retry guidance</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note absent"><strong style="color:var(--text)">There is no approve tool.</strong>
+      Not a disabled one, not one behind a permission flag — the capability is absent from the
+      protocol surface. An agent connected to this server cannot, by any sequence of calls,
+      authorise money to move. The test suite asserts the absence, so adding one breaks the build.</div>
+
+    <pre>agent calls approve_payment  -> <i>refused: unknown tool: approve_payment</i>
+agent calls record_approval  -> <i>refused: unknown tool: record_approval</i>
+agent calls sign_plan        -> <i>refused: unknown tool: sign_plan</i>
+
+agent calls propose_payment  -> AWAITING_APPROVAL
+physical sends so far        : <b>0</b>
+
+25 settle_obligation calls, no human decision recorded
+physical sends after 26 attempts : <b>0</b></pre>
+
+    <h3>The approval flow does not trust the proposer</h3>
+    <p><code>scripts/approve.ts</code> does not accept a plan hash. It recomputes one from the
+      invoice facts you type and compares it against the plan the agent reserved:</p>
+    <pre><i>REFUSED: the plan reserved for this obligation is not the plan these arguments describe.</i>
+  reserved by : be7830f4d60c3e9f9a409faf680d51840a93ff8a55922a4e72a9470c3d0a579b
+  you typed   : 7fbdadaff7d772ad7f73659f15bce30eb94b03a3b383cb9bdeeeaa34bd76e032</pre>
+    <p>An approval flow that trusts the proposer's own summary of what it proposed is not an
+      approval flow. That is why the CLI takes the invoice rather than an id.</p>
+
+    <h3>Honest limits</h3>
+    <ul class="plain">
+      <li>Duplicate protection is deployment-scoped. It cannot stop an independent wallet or a human paying the invoice out of band.</li>
+      <li>No semantic dedup across request ids. Two ids may mean the same real-world invoice.</li>
+      <li>Revocation is not an onchain undo. Already-broadcast work completes.</li>
+      <li>The audit trail is tamper-evident, not tamper-proof. It is not blockchain evidence and is not described as such.</li>
+      <li>No prompt-injection detection. A guarded signer enforces a declarative policy; it does not detect injection.</li>
+      <li>Sepolia only. Mainnet is disabled in code, deliberately.</li>
+    </ul>
+  </section>
+</main>
+
+<footer>
+  Testnet only. Zero dependencies in <code>src/</code>. One credential.
+  <span id="built"></span>
+</footer>
+
+<script>
+  const DATA = JSON.parse(document.getElementById("reqkeeper-data").textContent);
+  const rows = DATA.refusals.rows || [];
+  const t = DATA.refusals.totals || {};
+
+  const el = (h) => { const d = document.createElement("div"); d.innerHTML = h; return d.firstElementChild; };
+
+  function figures(host, items) {
+    host.innerHTML = items.map(([n, k, plain]) =>
+      `<div class="fig"><div class="n${plain ? " plain" : ""}">${n}</div><div class="k">${k}</div></div>`).join("");
+  }
+
+  figures(document.getElementById("hero-figs"), [
+    [`${t.passed}/${t.cases}`, "cases as specified"],
+    [t.refusedBeforeAnyProviderWrite, "refused before any provider write"],
+    ["1", "payment, however many retries", true],
+    [DATA.tests, "unit tests", true],
+  ]);
+
+  figures(document.getElementById("refusal-figs"), [
+    [`${t.passed}/${t.cases}`, "as specified"],
+    [`${t.refusedBeforeAnyProviderWrite}/${t.refusalCases}`, "refused pre-write"],
+    ["0", "gas burned on a refusal"],
+  ]);
+
+  // Settlement facts come from the build, not from prose typed twice.
+  const s = DATA.settlement;
+  document.getElementById("settlement-kv").innerHTML = [
+    ["request id", `<code>${s.requestId}</code>`],
+    ["payment reference", `<code>${s.paymentReference}</code>`],
+    ["obligation id", `<code>${s.obligationId}</code>`],
+    ["amount", `<code>${s.amountBaseUnits}</code> base units <span class="id">(1 FAU)</span>`],
+    ["transaction", `<a href="https://sepolia.etherscan.io/tx/${s.txHash}"><code>${s.txHash}</code></a>`],
+  ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+  document.getElementById("restatement").textContent = s.restatement;
+  document.getElementById("built").textContent = "· harness run " + (DATA.refusals.generatedAt || "").slice(0, 10);
+
+  // --- refusal table -------------------------------------------------------
+  const FILTERS = [
+    ["all", () => true],
+    ["refused before any send", (r) => r.refused_before_provider_write],
+    ["cost gas", (r) => r.physical_sends > 0],
+    ["the replay cases", (r) => /replay/i.test(r.scenario)],
+  ];
+  let active = 0;
+
+  function renderRows() {
+    const [, pred] = FILTERS[active];
+    const body = document.getElementById("rows");
+    const shown = rows.filter(pred);
+    body.innerHTML = shown.map((r) => {
+      const settled = r.actual === "SETTLED";
+      return `<tr>
+        <td class="id">${r.case_id}</td>
+        <td>${r.scenario}</td>
+        <td class="id">${r.expected}</td>
+        <td><span class="pill ${settled ? "settled" : "refuse"}">${r.actual}</span></td>
+        <td class="num ${r.physical_sends === 0 ? "zero" : "sent"}">${r.physical_sends}</td>
+        <td>${r.refused_before_provider_write ? '<span class="zero">yes</span>' : '<span class="id">no</span>'}</td>
+      </tr>`;
+    }).join("");
+    if (shown.length === 0) body.innerHTML = '<tr><td colspan="6" class="id">no cases match</td></tr>';
+  }
+
+  const fh = document.getElementById("filters");
+  fh.innerHTML = FILTERS.map(([label], i) =>
+    `<button type="button" aria-pressed="${i === 0}" data-i="${i}">${label}</button>`).join("");
+  fh.addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    active = Number(b.dataset.i);
+    [...fh.querySelectorAll("button")].forEach((x) => x.setAttribute("aria-pressed", String(Number(x.dataset.i) === active)));
+    renderRows();
+  });
+  renderRows();
+
+  // --- hash routing --------------------------------------------------------
+  const ROUTES = ["", "seam", "refusals", "settlement", "agent"];
+  function route() {
+    const want = (location.hash.replace(/^#\/?/, "") || "").split("/")[0];
+    const name = ROUTES.includes(want) ? want : "";
+    for (const r of ROUTES) {
+      const sec = document.getElementById("r-" + r);
+      if (sec) sec.hidden = r !== name;
+    }
+    for (const a of document.querySelectorAll("#nav a")) {
+      const target = a.getAttribute("href").replace(/^#\/?/, "");
+      if (target === name) a.setAttribute("aria-current", "page");
+      else a.removeAttribute("aria-current");
+    }
+    window.scrollTo({ top: 0, behavior: "instant" });
+  }
+  addEventListener("hashchange", route);
+  route();
+</script>

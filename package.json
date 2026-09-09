@@ -17,6 +17,7 @@
     "mcp": "node --experimental-strip-types scripts/mcp-server.ts",
     "approve": "node --experimental-strip-types scripts/approve.ts",
     "demo": "node --experimental-strip-types scripts/demo.ts",
-    "demo:video": "node --experimental-strip-types scripts/demo.ts && node tools/video/render.mjs docs/demo-transcript.txt docs/demo.mp4"
+    "demo:video": "node --experimental-strip-types scripts/demo.ts && node tools/video/render.mjs docs/demo-transcript.txt docs/demo.mp4",
+    "build:web": "node tools/web/build.mjs"
   }
 }
