@@ -434,8 +434,27 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
     }
   } catch (e) {
     const code = e instanceof ProviderError ? e.code : "simulate_failed";
-    store.setState(input.obligationId, "SIMULATION_BLOCKED", input.now);
+    const retryable = e instanceof ProviderError && e.retryable;
     store.releaseObligation(input.obligationId, planHash);
+
+    // A 429 is not a revert. Funnelling every preflight error into SIMULATION_BLOCKED — a
+    // TERMINAL state whose agent guidance reads "the payment would revert" — turns the
+    // platform's rate limit into a permanent refusal and a support ticket blaming the
+    // platform for a revert that never happened. A retryable failure leaves the obligation in
+    // PAYMENT_PREFLIGHT, which is replannable, so proposing again later is the right move and
+    // is the move the agent is told to make.
+    if (retryable) {
+      store.audit(input.obligationId, "system", "PREFLIGHT_UNAVAILABLE", { code });
+      return out({
+        state: "PAYMENT_PREFLIGHT",
+        refusal: code,
+        detail: `preflight unavailable: ${code}. This is the platform being busy, not the payment being wrong — propose again later. Nothing was sent.`,
+        providerWriteIssued: false,
+        planHash,
+      });
+    }
+
+    store.setState(input.obligationId, "SIMULATION_BLOCKED", input.now);
     return out({ state: "SIMULATION_BLOCKED", refusal: code, detail: `preflight unavailable: ${code}`, providerWriteIssued: false, planHash });
   }
 

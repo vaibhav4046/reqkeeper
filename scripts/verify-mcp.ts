@@ -94,11 +94,24 @@ console.log("\n3. reading the audit trail back through MCP");
 try {
   // observe() wraps get_direct_execution_status. A known-good execution id proves the
   // audit surface answers; an unknown one proves it refuses rather than inventing a row.
-  const unknown = await provider
+  // If the server answers for an execution id that does not exist, that row was invented and
+  // this check has FAILED. Reporting `ok` for either outcome, as this once did, makes the
+  // whole script decorative: a verification whose label asserts more than its code tests is
+  // the one thing that must not be in here.
+  await provider
     .observe("definitely-not-an-execution-id")
-    .then(() => "answered")
-    .catch((e) => (e instanceof ProviderError ? `refused: ${e.code}` : `threw: ${String(e)}`));
-  ok("unknown execution id is refused, not invented", unknown);
+    .then(() =>
+      bad(
+        "unknown execution id is refused, not invented",
+        "the MCP server answered for an execution id that does not exist — that row was invented",
+      ),
+    )
+    .catch((e) =>
+      ok(
+        "unknown execution id is refused, not invented",
+        e instanceof ProviderError ? `refused: ${e.code}` : `threw: ${String(e)}`,
+      ),
+    );
 } catch (e) {
   bad("audit read", String(e));
 }

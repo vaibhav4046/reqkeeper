@@ -41,6 +41,15 @@ export interface Policy {
   readonly planTtlSeconds: number;
 }
 
+/**
+ * Networks where a mistake costs real money. Refused outright, whatever the policy says.
+ *
+ * Ethereum, Optimism, BNB, Polygon, Base, Arbitrum, Avalanche. Not exhaustive, and not meant
+ * to be: it is a floor, not a firewall. Adding a chain here is a one-line change; removing
+ * the check is a decision someone has to make deliberately.
+ */
+const MAINNET_CHAIN_IDS = new Set([1, 10, 56, 137, 8453, 42161, 43114]);
+
 /** Facts read from Request. Untrusted input: shape-checked, never assumed. */
 export interface SourceFacts {
   readonly chainId: number;
@@ -81,6 +90,18 @@ function refuse(code: RefusalCode, detail: string): Decision {
 export function checkPolicy(policy: Policy, facts: SourceFacts): Decision {
   if (facts.hasBeenPaid) {
     return refuse("SOURCE_ALREADY_PAID", "Request reports this obligation is already paid");
+  }
+
+  // The README says mainnet is disabled in code, and this is the code. It used to be a single
+  // equality check against whatever the policy happened to name, so a caller constructing a
+  // Policy with chainId 1 passed straight through and the claim was prose, not a guard.
+  if (MAINNET_CHAIN_IDS.has(facts.chainId) || MAINNET_CHAIN_IDS.has(policy.chainId)) {
+    return refuse(
+      "UNSUPPORTED_CHAIN",
+      `chain ${MAINNET_CHAIN_IDS.has(facts.chainId) ? facts.chainId : policy.chainId} is a ` +
+        "production network. This project is testnet-only by construction: it has never been " +
+        "run where a mistake costs anything, so it must not be the thing that finds out.",
+    );
   }
 
   if (facts.chainId !== policy.chainId) {

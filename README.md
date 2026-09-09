@@ -12,7 +12,9 @@ An agent may propose; only a human approves; the approved calldata is re-encoded
 compared byte for byte before anything is sent.
 
 Proof: 38 real payments on Sepolia, 38 replays refused at zero sends, 45 live refusals before any
-provider write. Every row re-derives from a public RPC with no credentials.
+provider write. Every row re-derives from a public RPC with no credentials. The token is **FAU, a
+Sepolia faucet token anyone can mint for free**: real transactions moving an asset that is worth
+nothing. Real bytes, real receipts, no value at risk — which is what makes it reproducible.
 
 ```mermaid
 flowchart LR
@@ -27,7 +29,12 @@ flowchart LR
   S -.replay, 0 sends.-> X
 ```
 
-**Demo video:** [`docs/demo.mp4`](docs/demo.mp4)
+**Demo video:** [`docs/demo.mp4`](docs/demo.mp4) · **Console:** [`web/index.html`](web/index.html)
+
+**Who this is for:** payers that cannot be a smart account — a custodial or relayed EOA (here, a
+KeeperHub Turnkey wallet) whose agent must not pay the same invoice twice. **Not for you if** your
+payer can be an [ERC-7710 delegator smart account](https://docs.metamask.io/delegation-toolkit/concepts/delegation/caveat-enforcers/):
+use MetaMask's on-chain enforcers instead, which are strictly better. Next section says why.
 
 - **Integrated project:** [Request Network](https://request.network) — invoices on Ethereum Sepolia
 - **Execution:** two KeeperHub surfaces behind one interface — direct execution and its own MCP

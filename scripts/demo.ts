@@ -10,6 +10,7 @@
  * the submission video, so the video cannot drift from what the code does.
  */
 
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { findPaymentByReference } from "./../src/chain.ts";
 import { obligationId } from "../src/identity.ts";
@@ -17,6 +18,32 @@ import { handleRequest, TOOLS, type McpContext } from "../src/mcp.ts";
 import { NAMESPACE } from "../src/plan.ts";
 import { FixtureProvider } from "../src/provider.ts";
 import { Store } from "../src/store.ts";
+
+/**
+ * The real test count, from an actual run.
+ *
+ * This was hardcoded. It said 152 while the suite said 170, and the video rendered from this
+ * transcript said 146 — three numbers in three artifacts, all claiming to be the same
+ * measurement. tools/web/build.mjs already derives it and even has a comment predicting this
+ * exact failure; the demo path never adopted the same rule.
+ */
+const TEST_COUNT: number = (() => {
+  const parse = (out: string): number => {
+    const m = /^# pass (\d+)$/m.exec(out) ?? /tests (\d+)/.exec(out);
+    return m ? Number(m[1]) : 0;
+  };
+  try {
+    return parse(
+      execFileSync(process.execPath, ["--experimental-strip-types", "--test"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+      }),
+    );
+  } catch (e) {
+    return parse(String((e as { stdout?: string }).stdout ?? ""));
+  }
+})();
+
 
 if (existsSync(".env")) {
   for (const line of readFileSync(".env", "utf8").split(/\r?\n/)) {
@@ -265,8 +292,8 @@ say("  Including two that found real bugs in this codebase, both now regression-
 
 say();
 say(`${"─".repeat(74)}`);
-say("  npm test          152 tests");
-say("  npm run harness   26 refusal cases");
+say(`  npm test          ${TEST_COUNT} tests`);
+say("  npm run harness   26 cases, 24 of them refusals");
 say("  npm run verify:seam / verify:onchain / settle:live");
 say("");
 say("  Zero dependencies. One credential. Testnet only, deliberately.");

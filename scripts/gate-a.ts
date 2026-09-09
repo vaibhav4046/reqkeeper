@@ -52,8 +52,15 @@ const RN_API_KEY = process.env.REQUEST_API_KEY ?? "";
 const PAYEE = process.env.PAYEE_ADDRESS ?? "";
 
 /** Never print a credential. A prefix is enough to tell "wrong key" from "no key". */
+/**
+ * Say whether a credential is present, never what it is.
+ *
+ * This used to print the first six characters. A prefix is still a fragment of a live key,
+ * and it ends up in terminal scrollback, CI logs and screen recordings — including the demo
+ * video this repository ships.
+ */
 function mask(v: string): string {
-  return v ? `${v.slice(0, 6)}…(${v.length} chars)` : "absent";
+  return v ? `present (${v.length} chars)` : "absent";
 }
 
 // ---- reporting ------------------------------------------------------------

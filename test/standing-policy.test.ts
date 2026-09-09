@@ -102,3 +102,32 @@ describe("a standing policy is what makes the gate real", () => {
     assert.equal(loaded.source, "environment");
   });
 });
+
+describe("mainnet is disabled in code, not only in prose", () => {
+  test("a mainnet chain id is refused even when the policy names it", () => {
+    const mainnetPolicy = { ...buildPolicy(hostile, operator), chainId: 1 };
+    const mainnetFacts = { ...buildSourceFacts(hostile), chainId: 1 };
+    const decision = checkPolicy(mainnetPolicy, mainnetFacts);
+    assert.equal(decision.ok, false);
+    assert.equal(decision.code, "UNSUPPORTED_CHAIN");
+    assert.match(decision.detail, /production network/);
+  });
+
+  test("every chain a mistake would cost real money on is covered", () => {
+    // Ethereum, Optimism, BNB, Polygon, Base, Arbitrum, Avalanche.
+    for (const chainId of [1, 10, 56, 137, 8453, 42161, 43114]) {
+      const decision = checkPolicy(
+        { ...buildPolicy(hostile, operator), chainId },
+        { ...buildSourceFacts(hostile), chainId },
+      );
+      assert.equal(decision.ok, false, `chain ${chainId} must be refused`);
+      assert.equal(decision.code, "UNSUPPORTED_CHAIN");
+    }
+  });
+
+  test("Sepolia still works", () => {
+    const honest = { ...hostile, payee: HONEST_PAYEE, feeAddress: FEE_HOME, feeAmount: "0" };
+    const decision = checkPolicy(buildPolicy(honest, operator), buildSourceFacts(honest));
+    assert.equal(decision.ok, true);
+  });
+});
