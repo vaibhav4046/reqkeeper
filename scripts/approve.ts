@@ -51,7 +51,12 @@ const reject = args.has("reject");
 const approver = args.get("approver") ?? "owner@reqkeeper.local";
 
 if (!existsSync(".data")) mkdirSync(".data");
-const store = new Store(".data/live.sqlite");
+// --db must exist here, not only in the tools that print approval commands. watch-request.ts
+// prints a ready-to-run approve command and takes --db itself; without the same flag here that
+// command would record an approval in a different database from the one holding the plan, and
+// the approval would silently apply to nothing.
+const dbPath = args.get("db") ?? ".data/live.sqlite";
+const store = new Store(dbPath);
 
 const policy = buildPolicy(facts);
 const sourceFacts = buildSourceFacts(facts);

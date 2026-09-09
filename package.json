@@ -25,6 +25,7 @@
     "invoices": "node tools/invoice/create-batch.mjs",
     "verify:live": "node --experimental-strip-types scripts/verify-live.ts",
     "resolve": "node --experimental-strip-types scripts/resolve.ts",
+    "watch": "node --experimental-strip-types scripts/watch-request.ts",
     "build:api": "tsc -p tsconfig.api.json"
   },
   "devDependencies": {
