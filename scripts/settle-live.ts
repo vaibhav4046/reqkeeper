@@ -153,7 +153,9 @@ const outcome = await settleObligation(
     facts,
     steps,
     approval: { approver: "owner@reqkeeper.local", decision: "APPROVED" },
-    now: Math.floor(Date.now() / 1000),
+    // Milliseconds. planTtlSeconds is multiplied by 1000 downstream, so passing seconds here
+    // would stretch a one-hour approval into roughly 41 days.
+    now: Date.now(),
     factsAtDispatch: facts,
   },
 );

@@ -169,22 +169,31 @@ A real Request invoice, paid through KeeperHub by the same `settle()` function t
 the 24 refusals. `npm run settle:live` reproduces it, and running it **twice** is the point.
 
 ```
-requestId        : 012072a1818e83b2f153aa232112c03d09147c02ca5be45c6d507a78d4d5e70576
-paymentReference : 0x0056dcf7fc0a464f
-obligationId     : 5928c34b56e16441eb52d407ed7f320216988d0d34c6f3bb5ae286d1fa6020f9
+requestId        : 011a5eca74adfa1e61276d5d3b3c41339c2daddaaa406b6f1b7344c2a4679a2403
+paymentReference : 0x3ad3fe6653fb8827
+obligationId     : 3a79273eb6cab086a787cf5bbee3864982acda2e61b44875fdc6562e6e662f8d
 ```
 
 | Run | State | Refusal | Provider write | Tx |
 |---|---|---|---|---|
-| **1st** | `SETTLED` | — | `true` | [`0x90a4f848…`](https://sepolia.etherscan.io/tx/0x90a4f84864fa5c7c3b565d570135ab14f3358bff4da522239284f60c082612c2) |
-| **2nd** | `EXECUTION_OUTCOME_UNKNOWN` | `ALREADY_DISPATCHED` | **`false`** | *same hash, nothing sent* |
+| **1st** | `SETTLED` | — | `true` | [`0x134f352d…`](https://sepolia.etherscan.io/tx/0x134f352dc69843105a01d1b9d6cc9799b660bd28e08920144bb67cb3852bfeff) |
+| **2nd** | `SETTLED` | `ALREADY_SETTLED` | **`false`** | *nothing sent* |
 
-> `step 0 of this plan was already dispatched at 1788922264 (execution 3s4xsrjwrt30wohqcwbfk);`
-> `checking that execution, no new payment submitted`
+> `obligation is already SETTLED; nothing to do and nothing sent`
 
 The second run is the entire product. Same obligation, same approved plan, a fresh process, and
-no second payment — enforced by `UNIQUE(obligation_id)` and the `firstSendAt` guard in the local
-store, which outlive the provider's 24-hour idempotency window rather than depending on it.
+no second payment.
+
+Duplicate protection is layered, and the layers refuse at different distances from the money:
+
+| Guard | Fires when | Refusal |
+|---|---|---|
+| terminal-state check | the obligation already settled | `ALREADY_SETTLED` — refuses before a plan is even built |
+| `UNIQUE(plan_hash, step_index)` + `firstSendAt` | a plan's step was already sent but the outcome is unresolved | `ALREADY_DISPATCHED` — harness case C24 |
+| `UNIQUE(obligation_id)` reservation | a rival plan holds the same obligation | `OBLIGATION_RESERVED` |
+
+All three live in the local store, so all three outlive the provider's 24-hour idempotency
+window rather than depending on it.
 
 **The approval sentence a human actually signed off**, derived from the same values as the
 calldata at the same moment:
@@ -196,8 +205,8 @@ calldata at the same moment:
 
 | Source | Says |
 |---|---|
-| `eth_getTransactionReceipt` | `success`, `verified=true`, `gasUsed=91694` |
-| ERC20FeeProxy event log | reference `0x0056dcf7fc0a464f` for exactly `1000000000000000000` |
+| `eth_getTransactionReceipt` | `success`, `verified=true`, `gasUsed=74618` |
+| ERC20FeeProxy event log | reference `0x3ad3fe6653fb8827` for exactly `1000000000000000000` |
 | Request Network's own detection | `balance: 1000000000000000000`, 1 payment event, `hasBeenPaid: true` |
 
 Setup executions, also live and also verified by reading the chain:
@@ -217,6 +226,54 @@ with a wallet, then generate it *inside a payment destination's settings*. The p
 requires nothing — `sepolia.gateway.request.network` accepts `persistTransaction` unauthenticated
 — so [`tools/invoice/`](tools/invoice/) creates the invoice there, signing with a burner keypair
 generated on the spot. The whole demo runs on **one** credential: the KeeperHub API key.
+
+## The agent surface, and the one thing it cannot do
+
+[`src/mcp.ts`](src/mcp.ts) is an MCP server over stdio. Five tools:
+
+| Tool | What an agent can do |
+|---|---|
+| `propose_payment` | build a plan, get back the sentence a human must read. Never dispatches. |
+| `settle_obligation` | settle an obligation a human already approved. Cannot pay twice. |
+| `obligation_status` | state and full audit trail |
+| `verify_payment` | confirm a payment from the chain, without asking the provider |
+| `refusal_codes` | the refusal vocabulary, each with do-not-retry guidance |
+
+**There is no approve tool.** Not a disabled one, not one behind a permission flag — the
+capability is absent from the protocol surface. An agent connected to this server cannot, by
+any sequence of calls, authorise money to move. Approval is written only by
+[`scripts/approve.ts`](scripts/approve.ts), a separate human CLI the server neither exposes
+nor can invoke.
+
+`test/mcp.test.ts` asserts the absence, including that the handler refuses `approve`,
+`approve_payment`, `record_approval`, `authorize` and `sign_plan` if a client guesses at them.
+An agent calling `settle_obligation` twenty-five times before a human has decided moves
+nothing — the test asserts `totalSends() === 0`.
+
+And the approval CLI does not accept a plan hash. It **recomputes** one from the invoice
+facts you type and compares it against the plan the agent actually reserved:
+
+Asking it to approve 5 FAU for an obligation whose plan says 1 FAU:
+
+```
+REFUSED: the plan reserved for this obligation is not the plan these arguments describe.
+  reserved by : be7830f4d60c3e9f9a409faf680d51840a93ff8a55922a4e72a9470c3d0a579b
+  you typed   : 7fbdadaff7d772ad7f73659f15bce30eb94b03a3b383cb9bdeeeaa34bd76e032
+
+Something proposed a different payment than the one you are approving. Investigate
+before recording any decision.
+```
+
+An approval flow that trusts the proposer's own summary of what it proposed is not an
+approval flow. That is why the CLI takes the invoice rather than an id.
+
+```jsonc
+// register with any MCP client
+{ "mcpServers": { "reqkeeper": {
+    "command": "node",
+    "args": ["--experimental-strip-types", "scripts/mcp-server.ts"],
+    "cwd": "/path/to/reqkeeper" } } }
+```
 
 ## The refusal table
 

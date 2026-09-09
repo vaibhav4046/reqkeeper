@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-09-09T00:46:40.333Z",
+  "generatedAt": "2026-09-09T03:11:10.820Z",
   "mode": "FIXTURE",
   "note": "Deterministic fault injection against an in-memory provider that counts physical sends. These rows prove the refusal logic, not the live integration. Live rows require Gate A and are tagged LIVE_TESTNET when present.",
   "totals": {
     "cases": 24,
-    "passed": 24,
-    "failed": 0,
+    "passed": 22,
+    "failed": 2,
     "refusalCases": 22,
     "refusedBeforeAnyProviderWrite": 16
   },
@@ -300,27 +300,27 @@
       "case_id": "C23",
       "scenario": "replay 25h later, provider idempotency cache expired",
       "expected": "PLAN_EXPIRED",
-      "actual": "PLAN_EXPIRED",
+      "actual": "ALREADY_SETTLED",
       "refused_before_provider_write": true,
       "physical_sends": 1,
       "tx_hash": "0x0000000000000000000000000000000000000000000000000000000000000001",
       "independently_verified": false,
       "fault_injected": "REPLAY_EXPIRED",
       "mode": "FIXTURE",
-      "pass": true
+      "pass": false
     },
     {
       "case_id": "C24",
       "scenario": "replay inside plan TTL, provider cache expired",
       "expected": "ALREADY_DISPATCHED",
-      "actual": "ALREADY_DISPATCHED",
+      "actual": "ALREADY_SETTLED",
       "refused_before_provider_write": true,
       "physical_sends": 1,
-      "tx_hash": "0x0000000000000000000000000000000000000000000000000000000000000001",
+      "tx_hash": null,
       "independently_verified": false,
       "fault_injected": "REPLAY_EXPIRED",
       "mode": "FIXTURE",
-      "pass": true
+      "pass": false
     }
   ]
 }

@@ -13,6 +13,8 @@
     "harness": "node --experimental-strip-types scripts/harness.ts",
     "verify:onchain": "node --experimental-strip-types scripts/verify-onchain.ts",
     "verify:seam": "node --experimental-strip-types scripts/verify-seam.ts",
-    "settle:live": "node --experimental-strip-types scripts/settle-live.ts"
+    "settle:live": "node --experimental-strip-types scripts/settle-live.ts",
+    "mcp": "node --experimental-strip-types scripts/mcp-server.ts",
+    "approve": "node --experimental-strip-types scripts/approve.ts"
   }
 }

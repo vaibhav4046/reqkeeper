@@ -1,0 +1,324 @@
+/**
+ * The agent-facing surface: an MCP server over stdio.
+ *
+ * The load-bearing design decision is a negative one. **There is no approve tool.** An agent
+ * connected to this server can read an obligation, propose a payment, ask what happened, and
+ * ask the chain to confirm it — and it cannot, by any sequence of calls, authorise the money
+ * to move. Approval is written only by `scripts/approve.ts`, a separate human CLI that this
+ * server does not expose and cannot invoke.
+ *
+ * That is not a policy toggle or a permission flag that could be misconfigured. The
+ * capability is absent from the protocol surface, so "the agent approved its own proposal"
+ * is not a state this system can reach. `test/mcp.test.ts` asserts the absence, so adding
+ * such a tool later breaks the build.
+ *
+ * Everything else follows from that: `settle_obligation` is exposed, and is safe to expose,
+ * because it reads the approval out of the store rather than accepting one as an argument.
+ * An agent calling it before a human has decided gets `AWAITING_APPROVAL` and no send.
+ */
+
+import { findPaymentByReference } from "./chain.ts";
+import { obligationId } from "./identity.ts";
+import type { ExecutionProvider } from "./provider.ts";
+import { buildPolicy, buildSourceFacts, buildSteps, NAMESPACE, type InvoiceFacts } from "./plan.ts";
+import { settleObligation } from "./settle.ts";
+import type { Store } from "./store.ts";
+
+export const PROTOCOL_VERSION = "2024-11-05";
+export const SERVER_INFO = { name: "reqkeeper", version: "0.1.0" };
+
+export interface McpContext {
+  readonly store: Store;
+  readonly provider: ExecutionProvider;
+  readonly rpcUrl?: string;
+  /** Injectable so tests do not need a chain. */
+  readonly findPayment?: typeof findPaymentByReference;
+}
+
+interface JsonRpcRequest {
+  jsonrpc?: string;
+  id?: string | number | null;
+  method?: string;
+  params?: Record<string, unknown>;
+}
+
+const INVOICE_SCHEMA = {
+  type: "object",
+  properties: {
+    requestId: { type: "string", description: "The canonical Request Network request id." },
+    paymentReference: { type: "string", description: "0x-prefixed 8-byte payment reference from the invoice." },
+    payee: { type: "string", description: "Recipient address, exactly as the invoice states it." },
+    amountBaseUnits: { type: "string", description: "Invoice amount in token base units, as a decimal string. Never a number." },
+    maxTotalDebitBaseUnits: { type: "string", description: "Ceiling on the TOTAL debit including fees. Required: there is no safe default." },
+    feeAmount: { type: "string", description: "Fee in base units. Defaults to \"0\"." },
+    feeAddress: { type: "string", description: "Fee recipient. Defaults to the zero address." },
+  },
+  required: ["requestId", "paymentReference", "payee", "amountBaseUnits", "maxTotalDebitBaseUnits"],
+} as const;
+
+export const TOOLS = [
+  {
+    name: "propose_payment",
+    description:
+      "Build and persist a payment plan for a Request Network obligation, and return the exact " +
+      "sentence a human must approve. Never dispatches. Always returns AWAITING_APPROVAL on a " +
+      "fresh obligation. This is the only tool an agent needs to do its half of the job.",
+    inputSchema: INVOICE_SCHEMA,
+  },
+  {
+    name: "settle_obligation",
+    description:
+      "Attempt to settle an already-approved obligation. Reads the human decision from the " +
+      "store; it cannot be supplied as an argument. With no approval recorded this refuses " +
+      "with AWAITING_APPROVAL and sends nothing. Calling it twice cannot pay twice.",
+    inputSchema: INVOICE_SCHEMA,
+  },
+  {
+    name: "obligation_status",
+    description: "Current state and full audit trail for an obligation, by request id.",
+    inputSchema: {
+      type: "object",
+      properties: { requestId: { type: "string" } },
+      required: ["requestId"],
+    },
+  },
+  {
+    name: "verify_payment",
+    description:
+      "Independently confirm a payment by reading the ERC20FeeProxy event log off-chain for a " +
+      "payment reference. Does not consult the execution provider, so it can contradict it.",
+    inputSchema: {
+      type: "object",
+      properties: { paymentReference: { type: "string" } },
+      required: ["paymentReference"],
+    },
+  },
+  {
+    name: "refusal_codes",
+    description:
+      "The refusal vocabulary: every code this system can answer with, and what it means. " +
+      "Useful for an agent deciding whether a refusal is worth retrying.",
+    inputSchema: { type: "object", properties: {} },
+  },
+] as const;
+
+/** Refusals an agent must never retry, because retrying cannot change the answer. */
+const TERMINAL_FOR_AGENTS: Record<string, string> = {
+  AWAITING_APPROVAL: "A human has not decided yet. Do not retry; wait to be told.",
+  REVIEW_REJECTED: "A human refused this payment. Never retry.",
+  ALREADY_DISPATCHED: "This obligation was already sent. Retrying cannot pay it again, and must not try.",
+  ALREADY_SETTLED: "Already settled. Nothing to do.",
+  PAYEE_NOT_ALLOWED: "The recipient is not on the allowlist. Requires a human policy change.",
+  LIMIT_EXCEEDED: "Total debit exceeds the ceiling a human set. Requires a human policy change.",
+  TOKEN_DECIMALS_MISMATCH: "The token's decimals disagree with policy. A retry repeats the same mistake.",
+  PLAN_CHANGED: "The invoice changed after approval. A new proposal and a new approval are required.",
+  PLAN_EXPIRED: "The approval aged out. Propose again.",
+  OBLIGATION_RESERVED: "Another plan holds this obligation. Do not race it.",
+  CACHED_FAILURE: "The provider is replaying a cached failure. Rotating the key would pay twice; do not.",
+  EVIDENCE_CONFLICT: "The provider and the chain disagree. A human must look before anything else happens.",
+  SIMULATE_EXECUTED: "A dry run really executed. Treat as a real send and stop.",
+};
+
+function toInvoiceFacts(a: Record<string, unknown>): InvoiceFacts {
+  const str = (k: string, fallback?: string): string => {
+    const v = a[k];
+    if (typeof v === "string" && v !== "") return v;
+    if (fallback !== undefined) return fallback;
+    throw new Error(`"${k}" is required and must be a non-empty string`);
+  };
+  // Numbers are refused rather than coerced: 1e18 already exceeds Number.MAX_SAFE_INTEGER.
+  for (const k of ["amountBaseUnits", "maxTotalDebitBaseUnits", "feeAmount"]) {
+    if (typeof a[k] === "number") {
+      throw new Error(`"${k}" must be a decimal string, not a number — base units exceed float precision`);
+    }
+  }
+  return {
+    requestId: str("requestId"),
+    paymentReference: str("paymentReference"),
+    payee: str("payee"),
+    amountBaseUnits: str("amountBaseUnits"),
+    maxTotalDebitBaseUnits: str("maxTotalDebitBaseUnits"),
+    feeAmount: str("feeAmount", "0"),
+    feeAddress: str("feeAddress", `0x${"0".repeat(40)}`),
+  };
+}
+
+async function callTool(ctx: McpContext, name: string, args: Record<string, unknown>): Promise<unknown> {
+  const findPayment = ctx.findPayment ?? findPaymentByReference;
+
+  switch (name) {
+    case "refusal_codes":
+      return {
+        codes: TERMINAL_FOR_AGENTS,
+        note:
+          "Every code above is terminal for an agent. If you receive one, the correct action is " +
+          "to report it to a human, not to retry with different arguments.",
+      };
+
+    case "verify_payment": {
+      const reference = String(args.paymentReference ?? "");
+      if (!/^0x[0-9a-fA-F]+$/.test(reference)) throw new Error("paymentReference must be 0x hex");
+      const sighting = await findPayment(reference, { rpcUrl: ctx.rpcUrl });
+      return {
+        paid: sighting.found,
+        txHash: sighting.txHash ?? null,
+        amountBaseUnits: sighting.amount ?? null,
+        source: "ERC20FeeProxy event log, read directly from the chain",
+        blocksScanned: sighting.scannedBlocks ?? null,
+        // Said out loud so a false is not mistaken for proof of non-payment: the scan is a
+        // bounded window, and a payment older than it would not be seen.
+        caveat: sighting.found
+          ? null
+          : sighting.truncated
+            ? "not seen in the scanned window; this is not proof the invoice is unpaid"
+            : "scanned to genesis; no payment with this reference exists",
+      };
+    }
+
+    case "obligation_status": {
+      const requestId = String(args.requestId ?? "");
+      if (!requestId) throw new Error("requestId is required");
+      const oid = obligationId(NAMESPACE, requestId);
+      const row = ctx.store.getObligation(oid);
+      if (!row) return { known: false, obligationId: oid };
+      return {
+        known: true,
+        obligationId: oid,
+        state: row.state,
+        auditTrail: ctx.store.auditTrail(oid),
+      };
+    }
+
+    case "propose_payment":
+    case "settle_obligation": {
+      const facts = toInvoiceFacts(args);
+      const oid = obligationId(NAMESPACE, facts.requestId);
+      const sourceFacts = buildSourceFacts(facts);
+
+      // propose_payment deliberately passes no approval, so settleObligation stops at the
+      // human-authority check. settle_obligation reads whatever a human actually wrote.
+      let approval: { approver: string; decision: "APPROVED" | "REJECTED" } | undefined;
+      if (name === "settle_obligation") {
+        // Approvals are keyed by plan hash, and the plan that reserved this obligation is the
+        // one propose_payment persisted. A never-proposed obligation has no reservation, so
+        // there is nothing to find and the settle stops at AWAITING_APPROVAL.
+        const reserved = ctx.store.getObligation(oid)?.reservedByPlan;
+        const recorded = reserved ? ctx.store.getApproval(reserved) : undefined;
+        if (recorded?.decision === "APPROVED" || recorded?.decision === "REJECTED") {
+          approval = { approver: recorded.approver, decision: recorded.decision };
+        }
+      }
+
+      const outcome = await settleObligation(
+        {
+          store: ctx.store,
+          provider: ctx.provider,
+          policy: buildPolicy(facts),
+          sourceSaysPaid: async () =>
+            (await findPayment(facts.paymentReference, { rpcUrl: ctx.rpcUrl })).found,
+        },
+        {
+          namespace: NAMESPACE,
+          requestId: facts.requestId,
+          obligationId: oid,
+          facts: sourceFacts,
+          steps: buildSteps(facts),
+          approval,
+          // Milliseconds. planTtlSeconds is multiplied by 1000 downstream, so passing seconds here
+    // would stretch a one-hour approval into roughly 41 days.
+    now: Date.now(),
+          factsAtDispatch: sourceFacts,
+        },
+      );
+
+      return {
+        obligationId: oid,
+        state: outcome.state,
+        refusal: outcome.refusal ?? null,
+        detail: outcome.detail,
+        planHash: outcome.planHash ?? null,
+        txHash: outcome.txHash ?? null,
+        providerWriteIssued: outcome.providerWriteIssued,
+        approvalSentence: outcome.restatement ?? null,
+        agentGuidance: outcome.refusal
+          ? (TERMINAL_FOR_AGENTS[outcome.refusal] ?? "Report this to a human rather than retrying.")
+          : outcome.state === "AWAITING_APPROVAL"
+            ? TERMINAL_FOR_AGENTS.AWAITING_APPROVAL
+            : null,
+      };
+    }
+
+    default:
+      throw new Error(`unknown tool: ${name}`);
+  }
+}
+
+export interface JsonRpcResponse {
+  jsonrpc: "2.0";
+  id: string | number | null;
+  result?: unknown;
+  error?: { code: number; message: string };
+}
+
+/** Returns null for notifications, which must not be answered. */
+export async function handleRequest(
+  ctx: McpContext,
+  req: JsonRpcRequest,
+): Promise<JsonRpcResponse | null> {
+  const id = req.id ?? null;
+
+  switch (req.method) {
+    case "initialize":
+      return {
+        jsonrpc: "2.0",
+        id,
+        result: {
+          protocolVersion: PROTOCOL_VERSION,
+          capabilities: { tools: {} },
+          serverInfo: SERVER_INFO,
+          instructions:
+            "ReqKeeper settles Request Network invoices exactly once. You can propose a payment " +
+            "and check on it. You cannot approve one — there is no tool for that, by design. " +
+            "Call propose_payment, show the returned approvalSentence to a human verbatim, and " +
+            "stop until they decide.",
+        },
+      };
+
+    case "notifications/initialized":
+    case "notifications/cancelled":
+      return null;
+
+    case "ping":
+      return { jsonrpc: "2.0", id, result: {} };
+
+    case "tools/list":
+      return { jsonrpc: "2.0", id, result: { tools: TOOLS } };
+
+    case "tools/call": {
+      const name = String(req.params?.name ?? "");
+      const args = (req.params?.arguments ?? {}) as Record<string, unknown>;
+      try {
+        const payload = await callTool(ctx, name, args);
+        return {
+          jsonrpc: "2.0",
+          id,
+          result: { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }] },
+        };
+      } catch (e) {
+        // Tool failures are reported in-band as isError, per MCP, so the agent can read them.
+        return {
+          jsonrpc: "2.0",
+          id,
+          result: {
+            content: [{ type: "text", text: `refused: ${(e as Error).message}` }],
+            isError: true,
+          },
+        };
+      }
+    }
+
+    default:
+      if (req.method?.startsWith("notifications/")) return null;
+      return { jsonrpc: "2.0", id, error: { code: -32601, message: `method not found: ${req.method}` } };
+  }
+}

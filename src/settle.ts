@@ -65,9 +65,58 @@ export function restate(policy: Policy, facts: SourceFacts, totalDebitBaseUnits:
   );
 }
 
+/**
+ * The plan, content-addressed.
+ *
+ * Exported so a human approval tool can recompute the hash from the invoice itself rather
+ * than trusting a hash an agent handed it. If the two disagree, the agent proposed something
+ * other than what the human is being shown, and the approval must not be recorded.
+ */
+export function derivePlan(p: {
+  obligationId: string;
+  policy: Policy;
+  facts: SourceFacts;
+  steps: SettleInput["steps"];
+  totalDebitBaseUnits: string;
+  sourceFactsHash: string;
+}): { planBody: Record<string, unknown> & { policyHash: string }; planHash: string } {
+  const planBody = {
+    obligationId: p.obligationId,
+    chainId: p.policy.chainId,
+    token: p.policy.token.address.toLowerCase(),
+    decimals: p.policy.token.decimals,
+    payee: p.facts.payee.toLowerCase(),
+    invoiceBaseUnits: p.facts.invoiceBaseUnits,
+    feeBaseUnits: p.facts.feeBaseUnits,
+    totalDebitBaseUnits: p.totalDebitBaseUnits,
+    steps: p.steps,
+    sourceFactsHash: p.sourceFactsHash,
+    policyHash: hashPolicy(p.policy),
+  };
+  return { planBody, planHash: hashPlan(planBody) };
+}
+
 export async function settleObligation(deps: SettleDeps, input: SettleInput): Promise<SettleOutcome> {
   const { store, provider, policy } = deps;
   const factsHash = sourceFactsHash(input.facts);
+
+  // --- 0. an obligation whose money already moved is not re-entered -------
+  //
+  // Without this the pipeline runs again on a settled obligation and setState drags it back
+  // to PAYMENT_PREFLIGHT before the later guards refuse — so the money is safe, but the
+  // recorded state regresses and the agent surface reports a finished payment as
+  // pre-dispatch. Only the money-moved states are short-circuited: PLAN_EXPIRED and
+  // POLICY_DENIED are terminal too, and a fresh plan for those must still be proposable.
+  const priorState = store.getObligation(input.obligationId)?.state;
+  if (priorState === "SETTLED" || priorState === "SOURCE_ALREADY_PAID") {
+    store.audit(input.obligationId, "system", "REFUSED_REENTRY", { state: priorState });
+    return out({
+      state: priorState,
+      refusal: "ALREADY_SETTLED",
+      detail: `obligation is already ${priorState}; nothing to do and nothing sent`,
+      providerWriteIssued: false,
+    });
+  }
 
   store.importObligation({
     obligationId: input.obligationId,
@@ -90,20 +139,14 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
   }
 
   // --- 2. immutable plan --------------------------------------------------
-  const planBody = {
+  const { planBody, planHash } = derivePlan({
     obligationId: input.obligationId,
-    chainId: policy.chainId,
-    token: policy.token.address.toLowerCase(),
-    decimals: policy.token.decimals,
-    payee: input.facts.payee.toLowerCase(),
-    invoiceBaseUnits: input.facts.invoiceBaseUnits,
-    feeBaseUnits: input.facts.feeBaseUnits,
-    totalDebitBaseUnits: decision.totalDebitBaseUnits,
+    policy,
+    facts: input.facts,
     steps: input.steps,
+    totalDebitBaseUnits: decision.totalDebitBaseUnits,
     sourceFactsHash: factsHash,
-    policyHash: hashPolicy(policy),
-  };
-  const planHash = hashPlan(planBody);
+  });
   const expiresAt = input.now + policy.planTtlSeconds * 1000;
   store.savePlan({
     planHash,
