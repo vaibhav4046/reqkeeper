@@ -34,8 +34,17 @@ Request triggers, KeeperHub executes, and a human sits between them.
 
 1. **Request triggers.** `npm run watch` polls the invoices this deployment knows about and asks
    the chain which are still unpaid. An unpaid Request invoice is what causes a payment proposal
-   to exist — no human types a command to start it. The poller passes no approval, so it cannot
-   dispatch anything, by construction.
+   to exist — no human types a command to start it. The poller passes no approval, and beyond
+   that it holds a provider whose every method throws, so it cannot dispatch anything even if a
+   later edit let an unapproved plan through.
+
+   Real output, against 41 live Request invoices (`docs/request-trigger.txt`):
+
+   ```
+   016ff0225b1dd706b7…  0xd9e6ee9360a89ed9  unpaid   AWAITING_APPROVAL
+
+   40 already paid, 1 proposed and waiting on a human, 0 refused. 0 provider writes.
+   ```
 2. **The agent proposes.** Over MCP, an agent calls `propose_payment` and gets back the exact
    sentence a human must read. There is no approve tool on the surface — not disabled, not
    permission-flagged, absent from the protocol.

@@ -1,0 +1,8 @@
+016ff0225b1dd706b7ad8b2461f09e09c4ac9c662f1e919a1eeb71a8705f03b48e  0xd9e6ee9360a89ed9  unpaid   AWAITING_APPROVAL
+
+40 already paid, 1 proposed and waiting on a human, 0 refused. 0 provider writes.
+
+Approve any of these by hand. Nothing moves until you do:
+
+  node --experimental-strip-types scripts/approve.ts --requestId=016ff0225b1dd706b7ad8b2461f09e09c4ac9c662f1e919a1eeb71a8705f03b48e --reference=0xd9e6ee9360a89ed9 --payee=0xc43d766CB7c48B9B198db87441b97c09e81717A1 --amount=1000000000000000000 --max=1000000000000000000 --fee=0 --feeAddress=0x0000000000000000000000000000000000000000
+
