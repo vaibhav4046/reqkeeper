@@ -15,6 +15,7 @@
  */
 
 import { DatabaseSync } from "node:sqlite";
+import { ReplanError, assertTransition, canReplan, type State } from "./machine.ts";
 
 export type JobKind = "DISPATCH_STEP" | "OBSERVE_EXECUTION" | "RECONCILE_SOURCE";
 
@@ -56,10 +57,6 @@ CREATE TABLE IF NOT EXISTS obligations (
   source_facts_json TEXT NOT NULL,
   source_facts_hash TEXT NOT NULL,
   reserved_by_plan  TEXT,
-  -- The debt's real identity. A request id is free text supplied by the caller, so two
-  -- spellings of one invoice used to mint two obligations and pay it twice. The reference is
-  -- derived from the invoice by Request and is what the chain actually carries.
-  payment_reference TEXT,
   row_version       INTEGER NOT NULL DEFAULT 1,
   created_at        INTEGER NOT NULL,
   updated_at        INTEGER NOT NULL
@@ -67,9 +64,6 @@ CREATE TABLE IF NOT EXISTS obligations (
 -- Belt and braces: PRIMARY KEY already enforces this, but the intent is load-bearing
 -- enough to state twice. One canonical Request obligation, one row, forever.
 CREATE UNIQUE INDEX IF NOT EXISTS obligations_identity ON obligations (namespace, request_id);
--- One payment reference is one debt, whatever the caller called it.
-CREATE UNIQUE INDEX IF NOT EXISTS obligations_reference ON obligations (payment_reference)
-  WHERE payment_reference IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS plans (
   plan_hash          TEXT PRIMARY KEY,
@@ -137,12 +131,60 @@ CREATE TABLE IF NOT EXISTS audit (
 );
 `;
 
+/**
+ * Bring an existing database up to the current shape.
+ *
+ * `CREATE TABLE IF NOT EXISTS` is not a migration: it is a no-op on a table that already
+ * exists, whatever columns that table has. The payment reference was added to the schema
+ * long after the first live database was created, so on that file the column was never
+ * added and the UNIQUE index over it — the entire defence against paying one debt twice
+ * under two spellings — was never created either. It failed loudly, which is the lucky
+ * case; a slightly different ordering would have left the index quietly absent.
+ *
+ * Additive only, and idempotent: SQLite cannot drop or retype a column without rebuilding
+ * the table, and rebuilding a table that holds payment history is not something to do on
+ * process start.
+ */
+function migrate(db: DatabaseSync): void {
+  const columns = db.prepare("PRAGMA table_info(obligations)").all() as Array<{ name: string }>;
+  if (!columns.some((c) => c.name === "payment_reference")) {
+    // The debt's real identity. A request id is free text supplied by the caller, so two
+    // spellings of one invoice used to mint two obligations and pay it twice. The reference
+    // is derived from the invoice by Request and is what the chain actually carries.
+    db.exec("ALTER TABLE obligations ADD COLUMN payment_reference TEXT");
+  }
+  // One payment reference is one debt, whatever the caller called it.
+  db.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS obligations_reference ON obligations (payment_reference) " +
+      "WHERE payment_reference IS NOT NULL",
+  );
+}
+
+function staleFence(jobId: number, generation: number): Error {
+  const e = new Error(`stale fencing generation for job ${jobId}: held ${generation}`);
+  (e as Error & { code?: string }).code = "STALE_FENCE";
+  return e;
+}
+
 export class Store {
   #db: DatabaseSync;
 
   constructor(path = ":memory:") {
     this.#db = new DatabaseSync(path);
     this.#db.exec(SCHEMA);
+    migrate(this.#db);
+    // The duplicate defence is a UNIQUE index in this file. A corrupted index silently stops
+    // being a constraint, so the file is checked at open rather than trusted.
+    const integrity = this.#db.prepare("PRAGMA integrity_check").get() as
+      | { integrity_check?: string }
+      | undefined;
+    const verdict = integrity?.integrity_check ?? "unknown";
+    if (verdict !== "ok") {
+      throw new Error(
+        `refusing to open a corrupt settlement database (${path}): integrity_check said "${verdict}". ` +
+          "The uniqueness constraints that stop a double payment cannot be trusted here.",
+      );
+    }
   }
 
   close(): void {
@@ -242,10 +284,65 @@ export class Store {
       .get(paymentReference) as { obligationId: string; state: string } | undefined;
   }
 
-  setState(obligationId: string, state: string, now = Date.now()): void {
-    this.#db
-      .prepare("UPDATE obligations SET state = ?, row_version = row_version + 1, updated_at = ? WHERE obligation_id = ?")
-      .run(state, now, obligationId);
+  /**
+   * The ONLY way a state is written, and the only place the machine is enforced.
+   *
+   * It used to be an unchecked UPDATE, with `assertTransition` called once, by hand, at a
+   * single call site — so the table in machine.ts documented a machine that nothing ran.
+   * Reading the current state and checking the edge inside one transaction is what makes it
+   * real: an impossible move now throws instead of quietly overwriting a row that says money
+   * moved. Writing the same state twice is a no-op, so a retry is not an illegal move.
+   */
+  setState(obligationId: string, state: State, now = Date.now()): void {
+    this.tx(() => {
+      const row = this.#db
+        .prepare("SELECT state FROM obligations WHERE obligation_id = ?")
+        .get(obligationId) as { state: State } | undefined;
+      if (!row) throw new Error(`unknown obligation ${obligationId}`);
+      if (row.state === state) return;
+      assertTransition(row.state, state);
+      this.#db
+        .prepare("UPDATE obligations SET state = ?, row_version = row_version + 1, updated_at = ? WHERE obligation_id = ?")
+        .run(state, now, obligationId);
+    });
+  }
+
+  /**
+   * Start a fresh settlement over an existing debt.
+   *
+   * Deliberately not a transition: a refusal stays closed, and this opens a new attempt
+   * beside it. Refused for anything past the point of no return, which is what stops a
+   * re-proposal from dragging a live or finished payment back to the start.
+   */
+  replan(obligationId: string, now = Date.now()): void {
+    this.tx(() => {
+      const row = this.#db
+        .prepare("SELECT state FROM obligations WHERE obligation_id = ?")
+        .get(obligationId) as { state: State } | undefined;
+      if (!row) throw new Error(`unknown obligation ${obligationId}`);
+      if (!canReplan(row.state)) throw new ReplanError(row.state);
+      if (row.state === "VALIDATING") return;
+      this.#db
+        .prepare(
+          "UPDATE obligations SET state = 'VALIDATING', row_version = row_version + 1, updated_at = ? WHERE obligation_id = ?",
+        )
+        .run(now, obligationId);
+    });
+  }
+
+  /** Everything a resolver needs to finish a settlement it did not start. */
+  obligationForRecovery(obligationId: string):
+    | { obligationId: string; requestId: string; state: State; paymentReference: string | null }
+    | undefined {
+    return this.#db
+      .prepare(
+        `SELECT obligation_id AS obligationId, request_id AS requestId, state,
+                payment_reference AS paymentReference
+           FROM obligations WHERE obligation_id = ?`,
+      )
+      .get(obligationId) as
+      | { obligationId: string; requestId: string; state: State; paymentReference: string | null }
+      | undefined;
   }
 
   /**
@@ -266,6 +363,34 @@ export class Store {
         .prepare("UPDATE obligations SET reserved_by_plan = ?, row_version = row_version + 1 WHERE obligation_id = ?")
         .run(planHash, obligationId);
       return { ok: true as const };
+    });
+  }
+
+  /**
+   * Give the reservation back.
+   *
+   * Without this one bad proposal bricks an invoice forever: the plan is refused, the debt is
+   * still owed, and no other plan can ever claim it. Only the holder may release, and only
+   * while nothing has been dispatched — releasing a live payment's claim would re-open the
+   * door this whole project exists to shut.
+   */
+  releaseObligation(obligationId: string, planHash: string): { released: boolean; reason?: string } {
+    return this.tx(() => {
+      const row = this.#db
+        .prepare("SELECT reserved_by_plan AS held, state FROM obligations WHERE obligation_id = ?")
+        .get(obligationId) as { held: string | null; state: State } | undefined;
+      if (!row) throw new Error(`unknown obligation ${obligationId}`);
+      if (row.held === null) return { released: false, reason: "not reserved" };
+      if (row.held !== planHash) return { released: false, reason: "held by another plan" };
+      if (!canReplan(row.state)) return { released: false, reason: `already dispatched (${row.state})` };
+      const dispatched = this.#db
+        .prepare("SELECT COUNT(*) AS n FROM attempts WHERE plan_hash = ? AND first_send_at IS NOT NULL")
+        .get(planHash) as { n: number };
+      if (Number(dispatched.n) > 0) return { released: false, reason: "plan has a dispatched attempt" };
+      this.#db
+        .prepare("UPDATE obligations SET reserved_by_plan = NULL, row_version = row_version + 1 WHERE obligation_id = ?")
+        .run(obligationId);
+      return { released: true };
     });
   }
 
@@ -465,14 +590,40 @@ export class Store {
     }
   }
 
-  completeJob(jobId: number): void {
-    this.#db.prepare("UPDATE jobs SET status = 'done', lease_expires_at = 0 WHERE id = ?").run(jobId);
+  /**
+   * Fencing is a condition of the write, not a check beside it.
+   *
+   * `assertFencing` then `completeJob` is two statements: a worker can pass the check, lose
+   * its lease, and still complete a job another worker now owns. Putting the generation in
+   * the WHERE clause makes losing the race mean writing nothing at all.
+   */
+  completeJob(jobId: number, generation: number): void {
+    const info = this.#db
+      .prepare("UPDATE jobs SET status = 'done', lease_expires_at = 0 WHERE id = ? AND fencing_generation = ?")
+      .run(jobId, generation);
+    if (Number(info.changes) === 0) throw staleFence(jobId, generation);
   }
 
-  deferJob(jobId: number, dueAt: number, errorCode: string): void {
-    this.#db
-      .prepare("UPDATE jobs SET due_at = ?, lease_expires_at = 0, last_error_code = ? WHERE id = ?")
-      .run(dueAt, errorCode, jobId);
+  deferJob(jobId: number, dueAt: number, errorCode: string, generation: number): void {
+    const info = this.#db
+      .prepare(
+        "UPDATE jobs SET due_at = ?, lease_expires_at = 0, last_error_code = ? WHERE id = ? AND fencing_generation = ?",
+      )
+      .run(dueAt, errorCode, jobId, generation);
+    if (Number(info.changes) === 0) throw staleFence(jobId, generation);
+  }
+
+  /** The attempt that actually went out for an obligation, if one did. */
+  sentAttemptFor(obligationId: string): AttemptRow | undefined {
+    return this.#db
+      .prepare(
+        `SELECT id, obligation_id AS obligationId, plan_hash AS planHash, step_index AS stepIndex,
+                idempotency_key AS idempotencyKey, endpoint, body_json AS bodyJson,
+                first_send_at AS firstSendAt, outcome, execution_id AS executionId, tx_hash AS txHash
+           FROM attempts WHERE obligation_id = ? AND first_send_at IS NOT NULL
+           ORDER BY id DESC LIMIT 1`,
+      )
+      .get(obligationId) as AttemptRow | undefined;
   }
 
   pendingJobCount(): number {

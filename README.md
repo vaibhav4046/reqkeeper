@@ -2,13 +2,36 @@
 
 **Exactly-once settlement of Request Network obligations through KeeperHub.**
 
-Your agent proposes. You approve the exact bytes. KeeperHub executes. ReqKeeper refuses the
-second payment.
+An agent retries. When the thing being retried moves money, the retry is a second payment, and
+no layer owns the problem: the wallet SDK drops the idempotency key, the orchestrator silently
+re-dispatches, and KeeperHub's replay cache forgets the key after 24 hours and executes again.
+
+ReqKeeper puts obligation identity where it outlives all of that. The Request invoice is the key.
+An agent may propose; only a human approves; the approved calldata is re-encoded locally and
+compared byte for byte before anything is sent.
+
+Proof: 38 real payments on Sepolia, 38 replays refused at zero sends, 45 live refusals before any
+provider write. Every row re-derives from a public RPC with no credentials.
+
+```mermaid
+flowchart LR
+  A[agent proposes] --> P{policy gate}
+  P -->|refuse, 0 sends| X[(refusal table)]
+  P --> H[human approves plan hash]
+  H --> C{calldata gate<br/>re-encode, compare bytes}
+  C -->|mismatch, 0 sends| X
+  C --> K[KeeperHub executes]
+  K --> V[chain receipt + fee-proxy log<br/>+ Request reconciliation]
+  V --> S([SETTLED])
+  S -.replay, 0 sends.-> X
+```
+
+**Demo video:** [`docs/demo.mp4`](docs/demo.mp4)
 
 - **Integrated project:** [Request Network](https://request.network) — invoices on Ethereum Sepolia
 - **Execution:** two KeeperHub surfaces behind one interface — direct execution
   (`/api/execute/contract-call`) and KeeperHub's own MCP server, plus its audit trail
-- **Evidence:** 38 real payments on Sepolia, 38 replays refused at zero sends, every row
+- **Evidence:** [`docs/refusals-live.json`](docs/refusals-live.json) — 83 rows, every one
   re-derivable from a public RPC with no credentials
 - **Network:** Ethereum Sepolia (11155111). Testnet only, deliberately. Mainnet is disabled in code.
 - **Cost to run:** $0. No paid API, no card. `src/` and every `scripts/` entry have zero
@@ -18,10 +41,9 @@ second payment.
 
 ---
 
-## The problem, in one paragraph
+## Nobody owns the duplicate
 
-An agent retries. That is the defining property of an agent harness. When the thing being
-retried moves money, a retry is a second payment, and nothing in the stack owns the problem:
+Every layer has looked at this and placed it somewhere else:
 
 | Layer | Its position |
 |---|---|

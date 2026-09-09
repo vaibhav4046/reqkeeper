@@ -84,6 +84,21 @@ if (!obligation) {
   process.exit(1);
 }
 
+// An obligation can exist with no saved plan: a proposal refused by policy imports the row
+// and stops before the plan is written. Recording an approval against a plan hash that is
+// not in the plans table used to surface as a raw SQLite foreign-key error, which reads like
+// a crash rather than the refusal it is.
+if (!store.getPlan(planHash)) {
+  console.error(
+    `\nno such plan locally: ${planHash}\n` +
+      "The invoice you typed hashes to a plan nothing has proposed. Either the numbers differ\n" +
+      "from what the agent proposed, or the proposal was refused before a plan was written.\n" +
+      "Nothing recorded.\n",
+  );
+  store.close();
+  process.exit(1);
+}
+
 const reserved = obligation.reservedByPlan;
 if (reserved && reserved !== planHash) {
   console.error(

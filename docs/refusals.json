@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-09T06:23:36.426Z",
+  "generatedAt": "2026-09-09T07:04:22.596Z",
   "mode": "FIXTURE",
   "note": "Deterministic fault injection against an in-memory provider that counts physical sends. These rows prove the refusal logic, not the live integration. Live rows require Gate A and are tagged LIVE_TESTNET when present.",
   "totals": {
@@ -329,7 +329,7 @@
       "actual": "ALREADY_DISPATCHED",
       "refused_before_provider_write": true,
       "physical_sends": 1,
-      "tx_hash": "0x0000000000000000000000000000000000000000000000000000000000000001",
+      "tx_hash": null,
       "independently_verified": false,
       "fault_injected": "REPLAY_EXPIRED",
       "mode": "FIXTURE",
@@ -337,9 +337,9 @@
     },
     {
       "case_id": "C26",
-      "scenario": "replay 25h later, outcome unconfirmed",
-      "expected": "PLAN_EXPIRED",
-      "actual": "PLAN_EXPIRED",
+      "scenario": "replay 25h later (plan expired too), outcome unconfirmed",
+      "expected": "ALREADY_DISPATCHED",
+      "actual": "ALREADY_DISPATCHED",
       "refused_before_provider_write": true,
       "physical_sends": 1,
       "tx_hash": null,

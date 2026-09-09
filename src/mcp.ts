@@ -193,7 +193,23 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
     case "settle_obligation": {
       const facts = toInvoiceFacts(args);
       const oid = obligationId(NAMESPACE, facts.requestId);
-      const sourceFacts = buildSourceFacts(facts);
+
+      // Ask the chain whether this reference has already been paid, rather than assuming it
+      // has not. A read failure is not evidence of anything, so it leaves the flag false and
+      // the later guards — the reference index, the attempt row — still refuse a duplicate.
+      // A sighting only means "already paid" when it is not ours. Once this obligation has a
+      // dispatched attempt, the same log entry is evidence of the payment we made, and the
+      // earlier guards handle the replay. A read failure is not evidence, so it stays false.
+      let alreadyPaid = false;
+      if (!ctx.store.sentAttemptFor(oid)) {
+        try {
+          const sighting = await findPayment(facts.paymentReference);
+          alreadyPaid = sighting?.found === true;
+        } catch {
+          alreadyPaid = false;
+        }
+      }
+      const sourceFacts = buildSourceFacts({ ...facts, hasBeenPaid: alreadyPaid });
 
       // propose_payment deliberately passes no approval, so settleObligation stops at the
       // human-authority check. settle_obligation reads whatever a human actually wrote.

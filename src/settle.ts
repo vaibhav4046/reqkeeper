@@ -4,7 +4,8 @@
  * and nothing may reach the provider without a durable attempt row behind it.
  */
 
-import { assertTransition, type State } from "./machine.ts";
+import { canReplan, type State } from "./machine.ts";
+import { ERC20_FEE_PROXY, decodeAllowedCall } from "./calldata-gate.ts";
 import { idempotencyKey, planHash as hashPlan, policyHash as hashPolicy, sourceFactsHash } from "./identity.ts";
 import { checkPolicy, type Policy, type SourceFacts } from "./policy.ts";
 import { toHuman } from "./money.ts";
@@ -51,6 +52,58 @@ export interface SettleDeps {
    * how a duplicate obligation reported SETTLED using the first payment's log.
    */
   readonly sourceSaysPaid: (requestId: string, txHash: string) => Promise<boolean>;
+}
+
+
+/**
+ * Does the calldata mean something other than the invoice policy just cleared?
+ *
+ * Returns a sentence naming the disagreement, or null when every step's decoded arguments
+ * match the facts. This is the seam the whole project is named for: an approval is a
+ * sentence about an invoice, a payment is 260 bytes, and until something compares them the
+ * approval is only evidence that a human read a summary.
+ */
+function calldataDisagreesWithFacts(
+  steps: ReadonlyArray<{ kind: string; to: string; data: string; value: string }>,
+  facts: SourceFacts,
+  totalDebitBaseUnits: string,
+  paymentReference?: string,
+): string | null {
+  const eq = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+
+  for (const [i, step] of steps.entries()) {
+    let call;
+    try {
+      call = decodeAllowedCall(step);
+    } catch (e) {
+      return `step ${i}: ${(e as Error).message}`;
+    }
+
+    if (call.functionName === "transferFromWithReferenceAndFee") {
+      const [token, payee, amount, reference, fee, feeRecipient] = call.args;
+      if (!eq(token, facts.tokenAddress)) return `step ${i} pays in token ${token}, the invoice is in ${facts.tokenAddress}`;
+      if (!eq(payee, facts.payee)) return `step ${i} pays ${payee}, the invoice is owed to ${facts.payee}`;
+      if (amount !== facts.invoiceBaseUnits) return `step ${i} moves ${amount}, the invoice is ${facts.invoiceBaseUnits}`;
+      if (fee !== facts.feeBaseUnits) return `step ${i} pays a fee of ${fee}, the invoice fee is ${facts.feeBaseUnits}`;
+      if (!eq(feeRecipient, facts.feeRecipient)) return `step ${i} sends the fee to ${feeRecipient}, not ${facts.feeRecipient}`;
+      if (paymentReference !== undefined && !eq(reference, paymentReference)) {
+        return `step ${i} carries reference ${reference}, this debt is ${paymentReference}`;
+      }
+      continue;
+    }
+
+    if (call.functionName === "approve") {
+      const [spender, amount] = call.args;
+      if (!eq(spender, ERC20_FEE_PROXY)) return `step ${i} approves ${spender}, not the payment proxy`;
+      if (BigInt(amount) > BigInt(totalDebitBaseUnits)) {
+        return `step ${i} approves ${amount}, more than the ${totalDebitBaseUnits} this plan may debit`;
+      }
+      continue;
+    }
+
+    return `step ${i} calls ${call.functionName}, which no invoice authorises`;
+  }
+  return null;
 }
 
 function out(o: SettleOutcome): SettleOutcome {
@@ -140,13 +193,15 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
   // recorded state regresses and the agent surface reports a finished payment as
   // pre-dispatch. PLAN_EXPIRED and POLICY_DENIED are terminal too, and a fresh plan for
   // those must still be proposable, so only the money-moved states short-circuit.
-  const priorState = store.getObligation(input.obligationId)?.state;
-  if (priorState === "SETTLED" || priorState === "SOURCE_ALREADY_PAID") {
+  const priorState = store.getObligation(input.obligationId)?.state as State | undefined;
+  if (priorState !== undefined && !canReplan(priorState)) {
     store.audit(input.obligationId, "system", "REFUSED_REENTRY", { state: priorState });
     return out({
       state: priorState,
-      refusal: "ALREADY_SETTLED",
-      detail: `obligation is already ${priorState}; nothing to do and nothing sent`,
+      refusal: priorState === "SETTLED" ? "ALREADY_SETTLED" : "ALREADY_DISPATCHED",
+      detail:
+        `obligation is already ${priorState}; a payment past this point is resolved by ` +
+        "observing the one that was sent, never by proposing another. Nothing sent.",
       providerWriteIssued: false,
     });
   }
@@ -163,13 +218,40 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
   store.audit(input.obligationId, "agent", "PROPOSED", { requestId: input.requestId });
 
   // --- 1. policy, before anything else can cost money ---------------------
-  store.setState(input.obligationId, "VALIDATING", input.now);
+  //
+  // `replan`, not `setState`: a previous refusal is closed forever and this opens a new
+  // settlement beside it. It throws for anything past the point of no return, which is the
+  // same guard as 0b enforced one layer down, where nothing can route around it.
+  store.replan(input.obligationId, input.now);
   const decision = checkPolicy(policy, input.facts);
   if (!decision.ok) {
     const state: State = decision.code === "SOURCE_ALREADY_PAID" ? "SOURCE_ALREADY_PAID" : "POLICY_DENIED";
     store.setState(input.obligationId, state, input.now);
     store.audit(input.obligationId, "system", "REFUSED", { code: decision.code });
     return out({ state, refusal: decision.code, detail: decision.detail, providerWriteIssued: false });
+  }
+
+  // --- 1b. the bytes must mean the facts policy just cleared --------------
+  //
+  // Policy clears an invoice; the provider is handed calldata. Nothing used to compare the
+  // two, so a plan could pass every ceiling and still carry bytes paying a different payee.
+  // The gate at the provider proves the bytes decode to an allowlisted call — it has no idea
+  // what this invoice says. This is the only place both halves are in scope at once.
+  const disagreement = calldataDisagreesWithFacts(
+    input.steps,
+    input.facts,
+    decision.totalDebitBaseUnits,
+    input.paymentReference,
+  );
+  if (disagreement) {
+    store.setState(input.obligationId, "CALLDATA_MISMATCH", input.now);
+    store.audit(input.obligationId, "system", "REFUSED", { code: "CALLDATA_MISMATCH", detail: disagreement });
+    return out({
+      state: "CALLDATA_MISMATCH",
+      refusal: "CALLDATA_MISMATCH",
+      detail: disagreement,
+      providerWriteIssued: false,
+    });
   }
 
   // --- 2. immutable plan --------------------------------------------------
@@ -212,6 +294,24 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
 
   // --- 4. human authority -------------------------------------------------
   store.setState(input.obligationId, "AWAITING_APPROVAL", input.now);
+
+  // A rejection is permanent for the plan it rejected. Re-asking is how an agent turns a no
+  // into a yes by attrition, so the recorded decision is consulted before any new one is
+  // taken. A genuinely different plan hashes differently and gets its own hearing.
+  const priorDecision = store.getApproval(planHash);
+  if (priorDecision?.decision === "REJECTED") {
+    store.setState(input.obligationId, "REVIEW_REJECTED", input.now);
+    store.releaseObligation(input.obligationId, planHash);
+    store.audit(input.obligationId, "system", "REFUSED", { code: "REVIEW_REJECTED", planHash });
+    return out({
+      state: "REVIEW_REJECTED",
+      refusal: "REVIEW_REJECTED",
+      detail: `${priorDecision.approver} rejected this exact plan; asking again does not change it`,
+      providerWriteIssued: false,
+      planHash,
+    });
+  }
+
   if (!input.approval) {
     return out({
       state: "AWAITING_APPROVAL",
@@ -232,6 +332,9 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
   });
   if (input.approval.decision === "REJECTED") {
     store.setState(input.obligationId, "REVIEW_REJECTED", input.now);
+    // A rejected plan must not hold the invoice hostage. Releasing lets a corrected plan be
+    // proposed; without it one bad proposal bricks the debt forever.
+    store.releaseObligation(input.obligationId, planHash);
     return out({
       state: "REVIEW_REJECTED",
       refusal: "REVIEW_REJECTED",
@@ -246,12 +349,14 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
   const plan = store.getPlan(planHash);
   if (!plan || input.now > plan.expiresAt) {
     store.setState(input.obligationId, "PLAN_EXPIRED", input.now);
+    store.releaseObligation(input.obligationId, planHash);
     return out({ state: "PLAN_EXPIRED", refusal: "PLAN_EXPIRED", detail: "approval expired before dispatch", providerWriteIssued: false, planHash });
   }
   if (input.factsAtDispatch) {
     const nowHash = sourceFactsHash(input.factsAtDispatch);
     if (nowHash !== plan.sourceFactsHash) {
       store.setState(input.obligationId, "PLAN_CHANGED", input.now);
+      store.releaseObligation(input.obligationId, planHash);
       return out({ state: "PLAN_CHANGED", refusal: "PLAN_CHANGED", detail: "source facts changed after approval", providerWriteIssued: false, planHash });
     }
   }
@@ -277,11 +382,13 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
     }
     if (sim.wouldRevert) {
       store.setState(input.obligationId, "SIMULATION_BLOCKED", input.now);
+      store.releaseObligation(input.obligationId, planHash);
       return out({ state: "SIMULATION_BLOCKED", refusal: "SIMULATION_BLOCKED", detail: "payment would revert", providerWriteIssued: false, planHash });
     }
   } catch (e) {
     const code = e instanceof ProviderError ? e.code : "simulate_failed";
     store.setState(input.obligationId, "SIMULATION_BLOCKED", input.now);
+    store.releaseObligation(input.obligationId, planHash);
     return out({ state: "SIMULATION_BLOCKED", refusal: code, detail: `preflight unavailable: ${code}`, providerWriteIssued: false, planHash });
   }
 
@@ -388,7 +495,6 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
     store.setState(input.obligationId, "EVIDENCE_CONFLICT", input.now);
     return out({ state: "EVIDENCE_CONFLICT", refusal: "EVIDENCE_CONFLICT", detail: `provider says ${executed.status} but receipt is ${receipt.receiptStatus}`, providerWriteIssued: true, txHash: receipt.hash, planHash });
   }
-  assertTransition("CHAIN_PENDING", "CHAIN_CONFIRMED");
   store.setState(input.obligationId, "CHAIN_CONFIRMED", input.now);
 
   // --- 10. reconcile with Request itself ---------------------------------

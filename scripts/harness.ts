@@ -17,6 +17,8 @@ import { Store } from "../src/store.ts";
 import { settleObligation } from "../src/settle.ts";
 import { obligationId } from "../src/identity.ts";
 import { toBaseUnits } from "../src/money.ts";
+import { encodeCall } from "../src/abi.ts";
+import { PAY_SIGNATURE } from "../src/plan.ts";
 import type { Policy, SourceFacts } from "../src/policy.ts";
 
 const NS = "request-network:sepolia";
@@ -52,10 +54,39 @@ function facts(over: Partial<SourceFacts> = {}): SourceFacts {
   };
 }
 
-const STEPS = [
-  { kind: "ALLOWANCE_GRANT", to: FAU, data: "0x095ea7b3", value: "0" },
-  { kind: "REQUEST_PAYMENT", to: PROXY, data: "0xc219a14d", value: "0" },
-];
+const REFERENCE = "0x0056a1b2c3d4e5f6";
+
+/**
+ * Real, fully encoded calldata built from the same facts the case asserts against.
+ *
+ * These used to be bare four-byte selectors. Every fixture passed, and not one of them
+ * exercised the argument bytes — which is the entire thesis. A stub cannot disagree with an
+ * invoice, so a suite built on stubs can never catch calldata that does.
+ */
+function stepsFor(f: SourceFacts) {
+  const total = (BigInt(f.invoiceBaseUnits) + BigInt(f.feeBaseUnits)).toString();
+  return [
+    {
+      kind: "ALLOWANCE_GRANT",
+      to: f.tokenAddress,
+      data: encodeCall("approve(address,uint256)", [PROXY, total]),
+      value: "0",
+    },
+    {
+      kind: "REQUEST_PAYMENT",
+      to: PROXY,
+      data: encodeCall(PAY_SIGNATURE, [
+        f.tokenAddress,
+        f.payee,
+        f.invoiceBaseUnits,
+        REFERENCE,
+        f.feeBaseUnits,
+        f.feeRecipient,
+      ]),
+      value: "0",
+    },
+  ];
+}
 
 const APPROVED = { approver: "human:owner", decision: "APPROVED" as const };
 
@@ -96,7 +127,7 @@ async function run(
       requestId,
       obligationId: oid,
       facts: cfg.facts,
-      steps: STEPS,
+      steps: cfg.steps ?? stepsFor(cfg.facts),
       approval: "approval" in cfg ? cfg.approval : APPROVED,
       now: cfg.now ?? 1_000_000,
       factsAtDispatch: cfg.factsAtDispatch,
@@ -180,7 +211,7 @@ await run("provider rate limits the preflight", "rate_limited", () => ({ facts: 
   const requestId = "req-replay";
   const oid = obligationId(NS, requestId);
   const deps = { store, provider, policy, sourceSaysPaid: async () => true };
-  const input = { namespace: NS, requestId, obligationId: oid, facts: facts(), steps: STEPS, approval: APPROVED, now: 1_000_000 };
+  const input = { namespace: NS, requestId, obligationId: oid, facts: facts(), steps: stepsFor(facts()), approval: APPROVED, now: 1_000_000 };
 
   const first = await settleObligation(deps, input);
   const sendsAfterFirst = provider.totalSends();
@@ -216,7 +247,7 @@ await run("provider rate limits the preflight", "rate_limited", () => ({ facts: 
   const requestId = "req-inttl";
   const oid = obligationId(NS, requestId);
   const deps = { store, provider, policy, sourceSaysPaid: async () => true };
-  const input = { namespace: NS, requestId, obligationId: oid, facts: facts(), steps: STEPS, approval: APPROVED, now: 2_000_000 };
+  const input = { namespace: NS, requestId, obligationId: oid, facts: facts(), steps: stepsFor(facts()), approval: APPROVED, now: 2_000_000 };
 
   await settleObligation(deps, input);
   const sendsAfterFirst = provider.totalSends();
@@ -247,7 +278,10 @@ await run("provider rate limits the preflight", "rate_limited", () => ({ facts: 
 // never reaches SETTLED the attempt-level and TTL guards would be shadowed and untested.
 for (const [label, advanceMs, want] of [
   ["replay inside plan TTL, outcome unconfirmed", 60_000, "ALREADY_DISPATCHED"],
-  ["replay 25h later, outcome unconfirmed", 25 * 3600 * 1000, "PLAN_EXPIRED"],
+  // The plan has also expired here, but expiry never gets a look in: an obligation whose
+  // outcome is unknown is refused before any planning, because a second plan over a live
+  // payment is the failure this project exists to stop. Expiry would be the weaker answer.
+  ["replay 25h later (plan expired too), outcome unconfirmed", 25 * 3600 * 1000, "ALREADY_DISPATCHED"],
 ] as const) {
   n++;
   const store = new Store();
@@ -256,7 +290,7 @@ for (const [label, advanceMs, want] of [
   const oid = obligationId(NS, requestId);
   // The chain never confirms, so the first call stops short of SETTLED.
   const deps = { store, provider, policy, sourceSaysPaid: async () => false };
-  const input = { namespace: NS, requestId, obligationId: oid, facts: facts(), steps: STEPS, approval: APPROVED, now: 3_000_000 };
+  const input = { namespace: NS, requestId, obligationId: oid, facts: facts(), steps: stepsFor(facts()), approval: APPROVED, now: 3_000_000 };
 
   await settleObligation(deps, input);
   const sendsAfterFirst = provider.totalSends();

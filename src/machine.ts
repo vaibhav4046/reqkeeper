@@ -72,7 +72,14 @@ export const TERMINAL: readonly State[] = [
 
 const TRANSITIONS: Readonly<Record<State, readonly State[]>> = {
   IMPORTED: ["VALIDATING", "SOURCE_ALREADY_PAID", "OBLIGATION_RESERVED"],
-  VALIDATING: ["AWAITING_APPROVAL", "POLICY_DENIED", "SOURCE_ALREADY_PAID", "CALLDATA_MISMATCH"],
+  VALIDATING: [
+    "AWAITING_APPROVAL",
+    "POLICY_DENIED",
+    "SOURCE_ALREADY_PAID",
+    "CALLDATA_MISMATCH",
+    // The reservation is claimed after validation, so losing it is refused from here.
+    "OBLIGATION_RESERVED",
+  ],
   AWAITING_APPROVAL: ["APPROVED", "REVIEW_REJECTED", "PLAN_EXPIRED", "PLAN_CHANGED", "CANCELLED_BEFORE_PAYMENT"],
 
   // Re-checked at the dispatch boundary: facts, policy and plan can all have moved since approval.
@@ -90,10 +97,20 @@ const TRANSITIONS: Readonly<Record<State, readonly State[]>> = {
 
   // SIMULATION_BLOCKED here is the honest state after an allowance landed but the payment
   // will not simulate. The allowance exists on chain; the UI must say so.
-  PAYMENT_PREFLIGHT: ["PAYMENT_EXECUTING", "SIMULATION_BLOCKED", "PLAN_EXPIRED", "PLAN_CHANGED"],
+  // EVIDENCE_CONFLICT because a dry run that returns a transaction hash has executed (#1959):
+  // the safe reading is that money moved, never that the simulation was harmless.
+  PAYMENT_PREFLIGHT: [
+    "PAYMENT_EXECUTING",
+    "SIMULATION_BLOCKED",
+    "PLAN_EXPIRED",
+    "PLAN_CHANGED",
+    "EVIDENCE_CONFLICT",
+  ],
 
-  PAYMENT_EXECUTING: ["CHAIN_PENDING", "EXECUTION_OUTCOME_UNKNOWN"],
-  CHAIN_PENDING: ["CHAIN_CONFIRMED", "EXECUTION_REVERTED", "EXECUTION_OUTCOME_UNKNOWN"],
+  // An idempotency conflict mid-send means the provider holds a different body for our key.
+  PAYMENT_EXECUTING: ["CHAIN_PENDING", "EXECUTION_OUTCOME_UNKNOWN", "EVIDENCE_CONFLICT"],
+  // A receipt that does not corroborate the provider is a conflict, not a failure.
+  CHAIN_PENDING: ["CHAIN_CONFIRMED", "EXECUTION_REVERTED", "EXECUTION_OUTCOME_UNKNOWN", "EVIDENCE_CONFLICT"],
 
   // Cannot jump straight to SETTLED. Reconciliation is a mandatory stop.
   CHAIN_CONFIRMED: ["RECONCILING"],
@@ -110,7 +127,9 @@ const TRANSITIONS: Readonly<Record<State, readonly State[]>> = {
     "EVIDENCE_CONFLICT",
   ],
 
-  EVIDENCE_CONFLICT: ["RECONCILING", "SETTLED"],
+  // A conflict is resolved by evidence, and the chain outranks every other source: a
+  // receipt that says reverted closes it, whatever the provider or the indexer claim.
+  EVIDENCE_CONFLICT: ["RECONCILING", "SETTLED", "EXECUTION_REVERTED"],
 
   SETTLED: [],
   POLICY_DENIED: [],
@@ -124,6 +143,45 @@ const TRANSITIONS: Readonly<Record<State, readonly State[]>> = {
   EXECUTION_REVERTED: [],
   CANCELLED_BEFORE_PAYMENT: [],
 };
+
+/**
+ * States a fresh plan may be proposed from.
+ *
+ * Replanning is not a transition. A refusal is closed forever; proposing again starts a new
+ * settlement over the same debt, which is why it is a separate, audited operation rather
+ * than an edge in the table above. The set is exactly "no money moved and the debt still
+ * stands": SOURCE_ALREADY_PAID is excluded because there is nothing left to pay, and every
+ * state from PAYMENT_EXECUTING onward is excluded because a second plan over a live payment
+ * is the exact thing this project exists to refuse.
+ */
+export const REPLANNABLE: readonly State[] = [
+  "IMPORTED",
+  "VALIDATING",
+  "AWAITING_APPROVAL",
+  "APPROVED",
+  "POLICY_DENIED",
+  "OBLIGATION_RESERVED",
+  "REVIEW_REJECTED",
+  "PLAN_EXPIRED",
+  "PLAN_CHANGED",
+  "CALLDATA_MISMATCH",
+  "SIMULATION_BLOCKED",
+  "CANCELLED_BEFORE_PAYMENT",
+];
+
+export function canReplan(from: State): boolean {
+  return REPLANNABLE.includes(from);
+}
+
+export class ReplanError extends Error {
+  readonly code = "REPLAN_REFUSED";
+  readonly from: State;
+  constructor(from: State) {
+    super(`cannot propose a new plan from ${from}: this settlement is past the point of no return`);
+    this.name = "ReplanError";
+    this.from = from;
+  }
+}
 
 export const ALL_STATES: readonly State[] = Object.keys(TRANSITIONS) as State[];
 

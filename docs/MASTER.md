@@ -2,7 +2,7 @@
 
 **Event:** KeeperHub — The Agent Economy Hackathon (DoraHacks, id 2368)
 **Deadline:** 2026-09-18 10:00 UTC (12:00 CEST). Internal freeze 2026-09-17.
-**Written:** 2026-09-09. Board state at time of writing: `buidls_count: 0`, `hackers_count: 163`.
+**Written:** 2026-09-09.
 **Budget:** $0. Testnet only. Solo.
 
 This supersedes the ReqKeeper v2.0 spec. That document mandated 22 tables, 40+ API routes,
@@ -41,7 +41,6 @@ launder an assumption into a fact by restating it.
 | Sepolia `ERC20FeeProxy` = `0x399F5EE127ce7432E4921a61b8CF52b0af52cbfE` | `smart-contracts/src/lib/artifacts/ERC20FeeProxy/index.ts:150` |
 | FAU token (18dp) = `0x370DE27fdb7D1Ff1e1BaA7D11c5820a324Cf623C` | `currency/src/erc20/chains/sepolia.ts` |
 | FAU `mint(address,uint256)` is effectively public | 26 of last 50 txs to the contract are `mint`, from 7+ distinct senders |
-| Bounty is $1,000 (2 x $500), **requires a separate BUIDL** | DoraHacks API, `is_multi_tracks_allowed: false` |
 | Repo requires an `accepted`-labelled issue **before** the PR; CI check `check-issue-link` enforces it | `ISSUES.md`, `CONTRIBUTING.md` |
 | PR base branch is `staging`, title format `fix: #NNNN description` | same |
 
@@ -54,7 +53,6 @@ launder an assumption into a fact by restating it.
    will hit it.
 3. **Does Request waive its protocol fee on Sepolia?** Immaterial (worthless tokens) but it
    changes the exact approval amount, which the plan hash commits to.
-4. **Is `#1959`/`#1929` still unclaimed?** Re-check open PRs before starting the bounty work.
 
 ### KNOWN-WRONG THINGS IN CIRCULATION
 
@@ -70,7 +68,7 @@ launder an assumption into a fact by restating it.
 
 **Target (the "live project"):** Request Network, on Ethereum Sepolia.
 **Product:** exactly-once settlement of Request payment obligations through KeeperHub.
-**Bounty (separate BUIDL):** a PR fixing `#1959`/`#1929` — `?simulate=true` is ignored and the
+**Upstream fix:** a PR to KeeperHub fixing `#1959`/`#1929` — `?simulate=true` is ignored and the
 transaction really executes.
 
 ### Thesis
@@ -99,16 +97,16 @@ expiry. Do not invent an identity scheme — Request already ships one.
 
 And the loop closes without fabrication: pay with the reference embedded, and **Request's own
 payment detection flips the invoice to paid**. Two independent systems confirming each other is
-evidence a judge cannot dismiss as a wrapper.
+evidence that does not rest on this codebase's own reporting.
 
 ### Why not the alternatives
 
 | Candidate | Killed by |
 |---|---|
-| Wayfinder | All 13 chains mainnet. Only sim is an ephemeral fork with no public explorer link, so it **cannot satisfy rubric #2**. Publishing a Path bonds 10,300 PROMPT. |
-| Almanak | 19 chains, all mainnet. Local Anvil fork = no public tx hash. (Painful: KeeperHub pre-wrote the integration thesis at `/compare/almanak`.) |
+| Wayfinder | All 13 chains mainnet. Only sim is an ephemeral fork with no public explorer link, so **there is no verifiable public transaction**. Publishing a Path bonds 10,300 PROMPT. |
+| Almanak | 19 chains, all mainnet. Local Anvil fork = no public tx hash. |
 | Daydreams | Does not exist under that name any more. |
-| Superfluid / Aave / Uniswap / Safe / Chainlink | Plugins already exist → forfeits bounty novelty. Safe's is **read-only**; Aave's is **mainnet-only despite Aave having a real Sepolia market**. |
+| Superfluid / Aave / Uniswap / Safe / Chainlink | KeeperHub plugins already exist. Safe's is **read-only**; Aave's is **mainnet-only despite Aave having a real Sepolia market**. |
 | Compound v3, 0xSplits, LlamaPay | No usable testnet. |
 
 **Fallbacks if Gate A fails:** Sablier (verified on both Sepolia and Base Sepolia, both with live
@@ -117,8 +115,8 @@ UI pages to film) or Circle CCTP V2 (two chains, two tx hashes, permissionless f
 ### Honest framing
 
 Invoice auto-payment was **not** in the top 12 pain points found in the evidence sweep. The *seam*
-is the pain; Request is chosen for demonstrability and bounty leverage. **Pitch this as exactly-once
-execution proven on invoices — never as invoicing software.**
+is the pain; Request is chosen because the obligation identity and the settlement evidence are both
+already there. **This is exactly-once execution proven on invoices — it is not invoicing software.**
 
 ---
 
@@ -139,17 +137,17 @@ execution proven on invoices — never as invoicing software.**
 ### Do not build
 
 Multi-tenancy. Workspaces. Roles. Invitations. OAuth sign-in. Budget reservation tables.
-Evidence-bundle metadata tables. `/privacy`, `/security`, `/help` routes. A 7-persona judge panel
-with a 0-10 scorecard. Batch payments. Partial settlement. Mainnet. Recurring payroll.
+Evidence-bundle metadata tables. `/privacy`, `/security`, `/help` routes. Batch payments.
+Partial settlement. Mainnet. Recurring payroll.
 
-Rationale: judges get one login. Multi-tenancy is the single largest time sink here and is
-invisible on all five rubric lines. The v2 spec even said "do not populate navigation with dead
+Rationale: this is a single-operator deployment. Multi-tenancy is the single largest time sink
+here and buys nothing for one operator. The v2 spec even said "do not populate navigation with dead
 modules" and then mandated dead modules.
 
 ### Deliberately kept despite being expensive
 
 Plan hashing, the obligation registry, worker fencing, and the crash-window tests. These are the
-only differentiated part, and they map directly onto rubric #3.
+exactly-once guarantee itself; everything else is packaging around them.
 
 ---
 
@@ -228,7 +226,7 @@ Five. Anything else is dead navigation.
 | `/o/:id` | Obligation detail: source facts vs ReqKeeper annotations, current plan, permitted next action. |
 | `/o/:id/approve` | Immutable plan: exact recipient (full address inspectable), token contract, invoice amount, every fee, **total debit**, allowance side-effect and residual, policy verdict, staged simulation state, expiry. Confirmation button carries the amount and token in its label. |
 | `/o/:id/evidence` | Four separated layers: approved intent, provider observation, **independently verified chain effect**, Request reconciliation. Mode badge: `LIVE_TESTNET` / `FIXTURE` / `RECORDED_LIVE`. |
-| `/refusals` | The scored artifact. See §8. |
+| `/refusals` | The refusal table. See §8. |
 
 Render invoice descriptions as **inert text**. No HTML, no remote images, no following URLs from
 an invoice field. Imported payment metadata is untrusted content.
@@ -327,7 +325,7 @@ Three minutes. The refusals are the demo, not the happy path.
 | 8 | **Clock past 24h** | replay again with the provider cache expired → still refused |
 | 9 | **Mutated plan** | flip one base unit in the amount → `CALLDATA_MISMATCH` |
 | 10 | **Over-cap** | invoice above policy cap → `LIMIT_EXCEEDED`, refused before any provider write |
-| 11 | Limitation | state one real one out loud (see §13) |
+| 11 | Limitation | state one real one out loud (see §12) |
 
 Long waits may be edited with a visible "elapsed" label. Never imply instant finality.
 
@@ -335,24 +333,11 @@ Long waits may be edited with a visible "elapsed" label. Never imply instant fin
 
 ## 8. The refusal-table harness
 
-This is the scored artifact. The winner pattern is unambiguous — 3rd place beat 187 projects
-with a benchmark table and an npm package:
+The refusal table is the primary evidence artifact: a machine-generated record of every case the
+system is expected to refuse, what it actually did, and whether anything was sent. A correct
+refusal that still burned gas is a failed refusal.
 
-> 11/11 affordable transfers landed. **20/20 impossible transfers refused before submission
-> (0 gas burned).** 19.2s median to landed tx, p95 30.8s. All 11 hashes independently
-> re-verified via `eth_getTransactionReceipt`.
-
-1st place published all 1,092 tx hashes in `docs/receipts.json` and **refuses when it cannot
-prove the saving**. The ETHGlobal winner was praised for *filing bug reports* — "that is not what
-you do if you are trying to look good."
-
-Organizer's post-mortem, verbatim:
-
-> "the submissions that scored highest tended to be the ones that documented their own
-> limitations, sometimes in detail, occasionally retracting a claim they had made earlier after
-> re-checking it. **That honesty made every other claim more credible.**"
-
-So build `scripts/harness.ts` that emits `docs/refusals.json` + a rendered table:
+Build `scripts/harness.ts` to emit `docs/refusals.json` + a rendered table:
 
 ```
 case_id | scenario | expected | actual | refused_before_provider_write | gas_burned | tx_hash | independently_verified | mode
@@ -507,8 +492,8 @@ pivot to Sablier — and say plainly that Request was attempted and why it faile
 | 5 | Restricted agent surface (2 tools) + the 5 routes | Agent cannot approve or override |
 | 6 | Refusal harness, all cases, `refusals.json` | 0 gas on every correct refusal |
 | 7 | Landing page: frame pipeline + scroll hero | LCP is the H1, verified |
-| 8 | Demo video (same HyperFrames composition → mp4). README. Limitations. | Both BUIDLs drafted |
-| 9 | Bounty PR for `#1959`/`#1929`. One refutation pass. Submit. | Two BUIDLs filed |
+| 8 | Demo video (same HyperFrames composition → mp4). README. Limitations. | Docs match the build |
+| 9 | Upstream PR for `#1959`/`#1929`. One refutation pass. | PR opened against `staging` |
 
 **Freeze features after day 7.** Do not spend the last session adding batch payments.
 
@@ -672,57 +657,9 @@ most participants were at least mildly disoriented by scrolljacking and some tri
 
 ---
 
-## 12. Submission
+## 12. Known limitations — publish these
 
-**Two BUIDLs. One project submitted once silently forfeits $1,000.**
-
-### Main track — Best Integration into a Live Project
-
-Hard requirements: source link, demo video of the integration working, **and a link to a
-transaction executed through KeeperHub**. "Incomplete submissions cannot be judged."
-
-Form asks: which project and what the integration does · which KeeperHub surfaces (MCP, CLI, x402,
-MPP, agent-authored workflows, audit trail) · testnet or mainnet · **"What still breaks or is
-unfinished?"** · a reachable contact.
-
-Answer the breakage question in detail. It is scored, not penalised.
-
-### Bounty — Best KeeperHub Feature
-
-PR fixing `#1959` / `#1929`. Judged on mergeability, value to platform, code quality and tests,
-scope and completeness.
-
-Process, strictly enforced by CI:
-- Issue must already carry the **`accepted`** label. `#1959`/`#1929` do. Do **not** file something
-  new — maintainer triage is ~2 working days against a 9-day clock.
-- Base branch **`staging`**.
-- Title `fix: #1959 description`.
-- One change per PR.
-- Re-check for a competing PR first: **180 PRs landed since Aug 25 from ~20 external contributors.**
-  Already claimed: OpenClaw `#2343`, allowance-preflight `#2110` (PR #2338), workflow KV `#2288`
-  (PR #2368), ElizaOS `#2339` (PR #2324), LayerZero (PR #2323).
-
-Context worth knowing: **KeeperHub forked the 3rd-place repo into their own org one week after
-winners were announced.** They absorb work they like.
-
-### Live finalist round
-
-Two-stage judging: full repo-level review of every submission → up to 10 finalists → live panel in
-two parallel rooms. The rules are explicit that "a live pitch with questions is where a strong
-field pulls apart… you present the working build rather than slides."
-
-Rehearse direct answers to: what authority does the agent actually have · what stops a duplicate
-after a lost response or a day-long outage · what can still happen through another wallet · how are
-fees and allowances bounded · what is independently verified versus provider-reported · which parts
-are testnet-only.
-
-"Our prompt prevents it" is not a security answer.
-
----
-
-## 13. Known limitations — publish these
-
-Not a disclaimer section. The evidence says this is scored.
+These belong in the README, stated plainly, not folded into a disclaimer nobody reads.
 
 1. **Duplicate protection is deployment-scoped.** Prevents a second successful payment of the same
    canonical Request obligation through this deployment. Cannot stop an independent wallet, another
@@ -749,7 +686,7 @@ Not a disclaimer section. The evidence says this is scored.
 
 ---
 
-## 14. Master prompt for the coding agent
+## 13. Master prompt for the coding agent
 
 Paste from here down.
 
@@ -767,7 +704,7 @@ do not finish with a plan for someone else to implement.
 3. Exactly-once behaviour demonstrated across duplicate, crash, and replay-expiry paths.
 4. A complete refusal table with independently verified hashes and zero gas on correct refusals.
 5. One page that another person can operate, in the specified palette.
-6. Reproducible evidence, an honest README, a working demo video, and the bounty PR.
+6. Reproducible evidence, an honest README, a working demo video, and the upstream fix PR.
 
 **Order of work.** Gate A (§9) first, completely, before any product code. If Gate A fails, stop
 and report the exact failing request with sanitised diagnostics. Do not build around a broken
@@ -839,7 +776,7 @@ verification.
 
 ---
 
-## 15. Source register
+## 14. Source register
 
 Recheck anything load-bearing at implementation time. Most architecture below is ReqKeeper design,
 not a claim that upstream docs supply a solution.
@@ -851,7 +788,7 @@ not a claim that upstream docs supply a solution.
 | S3 | Live chain list — **public, no auth** | `app.keeperhub.com/api/chains` |
 | S4 | Free tier | `keeperhub.com/pricing` |
 | S5 | Contribution gate: `accepted` label, `staging` base, title format | `github.com/KeeperHub/keeperhub/blob/staging/ISSUES.md` |
-| S6 | `simulate=true` ignored — the bounty target | `github.com/KeeperHub/keeperhub` issues `#1959`, `#1929` |
+| S6 | `simulate=true` ignored — the upstream fix target | `github.com/KeeperHub/keeperhub` issues `#1959`, `#1929` |
 | S7 | Reused key replays a cached failure | same, `#1840` |
 | S8 | Request API v2 endpoints + auth | `docs.request.network/api-reference/endpoints-overview` |
 | S9 | Sepolia token + proxy addresses | `requestNetwork/packages/currency/src/erc20/chains/sepolia.ts` |

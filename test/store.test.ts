@@ -1,5 +1,9 @@
 import test, { describe } from "node:test";
 import assert from "node:assert/strict";
+import { DatabaseSync } from "node:sqlite";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Store } from "../src/store.ts";
 import { idempotencyKey, obligationId } from "../src/identity.ts";
 
@@ -203,17 +207,33 @@ describe("job leasing and fencing", () => {
   });
 
   test("a deferred job becomes due again and records why", () => {
-    const { s, jobId } = withJob();
-    s.deferJob(jobId, 50_000, "PROVIDER_429");
+    const { s, jobId, gen } = withJob();
+    s.deferJob(jobId, 50_000, "PROVIDER_429", gen);
     assert.deepEqual(s.claimJobs({ limit: 10, now: 49_999, leaseMs: 1000 }), [], "not due yet");
     assert.equal(s.claimJobs({ limit: 10, now: 50_000, leaseMs: 1000 }).length, 1);
     s.close();
   });
 
   test("a completed job is never claimed again", () => {
-    const { s, jobId } = withJob();
-    s.completeJob(jobId);
+    const { s, jobId, gen } = withJob();
+    s.completeJob(jobId, gen);
     assert.deepEqual(s.claimJobs({ limit: 10, now: 999_999, leaseMs: 1000 }), []);
+    assert.equal(s.pendingJobCount(), 0);
+    s.close();
+  });
+
+  test("a worker that lost its lease cannot complete or defer the job", () => {
+    const { s, jobId, gen: stale } = withJob();
+    // The lease lapses and a second worker claims the same job.
+    const live = s.claimJobs({ limit: 10, now: 40_000, leaseMs: 60_000 })[0].fencingGeneration;
+    assert.notEqual(stale, live, "the second claim must bump the generation");
+
+    // The old worker wakes up and tries to finish work it no longer owns.
+    assert.throws(() => s.completeJob(jobId, stale), /stale fencing generation/);
+    assert.throws(() => s.deferJob(jobId, 99_000, "LATE", stale), /stale fencing generation/);
+    assert.equal(s.pendingJobCount(), 1, "the job still belongs to the live worker");
+
+    s.completeJob(jobId, live);
     assert.equal(s.pendingJobCount(), 0);
     s.close();
   });
@@ -235,6 +255,47 @@ describe("audit trail", () => {
     s.audit(OID, "human:owner", "APPROVED", { planHash: PLAN });
     assert.deepEqual(s.auditTrail(OID).map((r) => r.action), ["PROPOSED", "APPROVED"]);
     assert.equal(s.auditTrail(OID)[0].actor, "agent:token-1");
+    s.close();
+  });
+});
+
+describe("an older database is migrated, not silently left without its defences", () => {
+  test("a file created before payment_reference gains the column and the unique index", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "reqkeeper-")), "old.sqlite");
+
+    // Exactly the obligations table as it was before the reference was the debt's identity.
+    const old = new DatabaseSync(path);
+    old.exec(`CREATE TABLE obligations (
+      obligation_id     TEXT PRIMARY KEY,
+      namespace         TEXT NOT NULL,
+      request_id        TEXT NOT NULL,
+      state             TEXT NOT NULL,
+      source_facts_json TEXT NOT NULL,
+      source_facts_hash TEXT NOT NULL,
+      reserved_by_plan  TEXT,
+      row_version       INTEGER NOT NULL DEFAULT 1,
+      created_at        INTEGER NOT NULL,
+      updated_at        INTEGER NOT NULL
+    )`);
+    old.close();
+
+    // Opening it used to throw: CREATE TABLE IF NOT EXISTS is a no-op on an existing table,
+    // so the index over the missing column could not be created.
+    const s = new Store(path);
+    const shared = { namespace: "ns", sourceFactsJson: "{}", sourceFactsHash: "h" };
+    assert.equal(
+      s.importObligation({ obligationId: "o1", requestId: "inv-1", paymentReference: "0xdead", ...shared }).created,
+      true,
+    );
+
+    // The defence must actually be live on the migrated file, not merely present in the DDL.
+    assert.throws(
+      () => s.importObligation({ obligationId: "o2", requestId: "INV-1", paymentReference: "0xdead", ...shared }),
+      /UNIQUE/i,
+      "one payment reference must still be one debt after a migration",
+    );
+
+    assert.equal(s.obligationForReference("0xdead")?.obligationId, "o1");
     s.close();
   });
 });

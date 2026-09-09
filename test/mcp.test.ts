@@ -230,13 +230,15 @@ test("a settled obligation is never re-entered, and its state never regresses", 
   });
   // The chain must agree about THIS transaction and THIS amount, not merely that the
   // reference appears somewhere. FixtureProvider's first send is 0x…01.
+  // Request indexes a payment only after one has been made. A stub that reports the
+  // reference paid before the first send is not a slow indexer, it is a different invoice —
+  // and the code now correctly refuses that as SOURCE_ALREADY_PAID.
   const paid: McpContext = {
     ...c,
-    findPayment: async () => ({
-      found: true,
-      txHash: `0x${"0".repeat(63)}1`,
-      amount: ONE,
-    }),
+    findPayment: async () =>
+      c.provider.totalSends() > 0
+        ? { found: true, txHash: `0x${"0".repeat(63)}1`, amount: ONE }
+        : { found: false },
   };
   const first = await call(paid, "settle_obligation", INVOICE);
   assert.equal(first.json.state, "SETTLED");

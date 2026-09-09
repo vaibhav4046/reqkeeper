@@ -1,0 +1,102 @@
+/**
+ * Drain the outbox against the real chain. The operational half of settlement.
+ *
+ * `settle` gets a payment sent and durably recorded. It cannot finish the job on its own:
+ * a transaction that has not been mined yet, or a Request indexer that has not caught up,
+ * leaves the obligation in RECONCILIATION_PENDING or EXECUTION_OUTCOME_UNKNOWN. Those are
+ * honest states, not failures — but something has to come back and look, or they are
+ * permanent. This is that something.
+ *
+ * It has no write path to the provider at all. It reads chain receipts and the fee-proxy
+ * event log, and it moves state. The worst a bug in here can do is fail to advance an
+ * obligation; it cannot pay anything.
+ *
+ * Usage:
+ *   node --experimental-strip-types scripts/resolve.ts [--passes=5] [--db=.data/live.sqlite]
+ */
+
+import { existsSync, readFileSync } from "node:fs";
+import { DEFAULT_RPC, findPaymentByReference, rpcCall } from "../src/chain.ts";
+import { obligationId } from "../src/identity.ts";
+import { NAMESPACE } from "../src/plan.ts";
+import { Store } from "../src/store.ts";
+import { drainUntilQuiet } from "../src/worker.ts";
+import type { Receipt } from "../src/provider.ts";
+
+function loadDotEnv(): void {
+  if (!existsSync(".env")) return;
+  for (const line of readFileSync(".env", "utf8").split(/\r?\n/)) {
+    const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*)$/.exec(line);
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, "");
+  }
+}
+loadDotEnv();
+
+const args = new Map<string, string>();
+for (const a of process.argv.slice(2)) {
+  const m = /^--([a-zA-Z]+)(?:=(.*))?$/.exec(a);
+  if (m) args.set(m[1], m[2] ?? "true");
+}
+
+const dbPath = args.get("db") ?? ".data/live.sqlite";
+const passes = Number(args.get("passes") ?? 5);
+const rpcUrl = process.env.SEPOLIA_RPC ?? DEFAULT_RPC;
+
+if (!existsSync(dbPath)) {
+  console.error(`\nno settlement database at ${dbPath}. Nothing has been settled from here.\n`);
+  process.exit(1);
+}
+
+/**
+ * A receipt read straight from a public node. No credentials, no provider.
+ *
+ * `verified` is only true when the node returned a receipt with a status we understand;
+ * anything else stays unverified, which keeps the obligation short of SETTLED rather than
+ * letting a transport hiccup look like confirmation.
+ */
+async function receipt(hash: string): Promise<Receipt> {
+  const r = (await rpcCall(rpcUrl, "eth_getTransactionReceipt", [hash])) as
+    | { status?: string; gasUsed?: string }
+    | null;
+  if (!r) return { hash, verified: false, receiptStatus: "not_found", gasUsed: "0" };
+  const gasUsed = r.gasUsed ? BigInt(r.gasUsed).toString() : "0";
+  if (r.status === "0x1") return { hash, verified: true, receiptStatus: "success", gasUsed };
+  if (r.status === "0x0") return { hash, verified: true, receiptStatus: "reverted", gasUsed };
+  return { hash, verified: false, receiptStatus: "not_found", gasUsed };
+}
+
+const store = new Store(dbPath);
+
+/**
+ * Request's own view, read from the fee proxy's event log rather than an API.
+ *
+ * It must confirm THIS transaction. A boolean over the reference alone would accept some
+ * other transaction's evidence, which is how a duplicate obligation once reported itself
+ * settled using the first payment's log entry.
+ */
+async function sourceSaysPaid(requestId: string, txHash: string): Promise<boolean> {
+  const obligation = store.obligationForRecovery(obligationId(NAMESPACE, requestId));
+  const reference = obligation?.paymentReference;
+  if (!reference) return false;
+  const sighting = await findPaymentByReference(reference, { lookbackBlocks: 300_000, rpcUrl });
+  return sighting.found === true && sighting.txHash?.toLowerCase() === txHash.toLowerCase();
+}
+
+const results = await drainUntilQuiet(
+  { store, provider: { receipt }, sourceSaysPaid },
+  { now: Date.now(), maxPasses: passes, stepMs: 0 },
+);
+
+const claimed = results.reduce((n, r) => n + r.claimed, 0);
+const completed = results.reduce((n, r) => n + r.completed, 0);
+const deferred = results.reduce((n, r) => n + r.deferred, 0);
+const advanced = results.flatMap((r) => r.advanced);
+
+console.log(`\nresolve: ${claimed} jobs claimed, ${completed} completed, ${deferred} deferred\n`);
+for (const a of advanced) {
+  console.log(`  ${a.obligationId.slice(0, 14)}…  ${a.from} -> ${a.to}`);
+}
+if (advanced.length === 0) console.log("  nothing moved.");
+console.log(`\n${store.pendingJobCount()} jobs still owed work.\n`);
+
+store.close();

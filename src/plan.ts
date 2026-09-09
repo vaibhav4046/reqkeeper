@@ -31,6 +31,15 @@ export interface InvoiceFacts {
   readonly tokenAddress?: string;
   readonly tokenDecimals?: number;
   readonly tokenSymbol?: string;
+  /**
+   * Whether the chain already shows this reference paid.
+   *
+   * This was hardcoded false, which made SOURCE_ALREADY_PAID unreachable: the policy checked
+   * a field nothing ever set, so the one refusal that stops paying a settled invoice could
+   * never fire outside a test. Callers that can read the chain must read it and pass the
+   * answer; callers that cannot must say so by omitting it, and get the safe default.
+   */
+  readonly hasBeenPaid?: boolean;
 }
 
 export function buildPolicy(f: InvoiceFacts): Policy {
@@ -59,7 +68,7 @@ export function buildSourceFacts(f: InvoiceFacts): SourceFacts {
     invoiceBaseUnits: f.amountBaseUnits,
     feeBaseUnits: f.feeAmount,
     feeRecipient: f.feeAddress.toLowerCase(),
-    hasBeenPaid: false,
+    hasBeenPaid: f.hasBeenPaid ?? false,
   };
 }
 
