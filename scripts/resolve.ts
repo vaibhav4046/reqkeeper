@@ -86,8 +86,14 @@ async function sourceSaysPaid(requestId: string, txHash: string): Promise<boolea
   );
 }
 
+/** Recovery for an attempt that was sent but never recorded. Read-only, like everything here. */
+async function findPaidReference(reference: string) {
+  const seen = await findPaymentByReference(reference, { lookbackBlocks: 300_000, rpcUrl });
+  return seen.found && seen.txHash ? { txHash: seen.txHash, amount: seen.amount } : null;
+}
+
 const results = await drainUntilQuiet(
-  { store, provider: { receipt }, sourceSaysPaid },
+  { store, provider: { receipt }, sourceSaysPaid, findPaidReference },
   // Run by hand, this is an operator asking, not a timer polling: look past the retry
   // backoff rather than reporting "nothing moved" for work that is scheduled a moment out.
   { now: Date.now(), maxPasses: passes, stepMs: 0, lookaheadMs: 60_000 },

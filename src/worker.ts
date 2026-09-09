@@ -25,6 +25,15 @@ export interface WorkerDeps {
   readonly provider: Pick<ExecutionProvider, "receipt">;
   /** The same independent reconciliation settle uses: this transaction, this invoice. */
   readonly sourceSaysPaid: (requestId: string, txHash: string) => Promise<boolean>;
+  /**
+   * Find a payment by its reference, for an attempt that was sent but never recorded.
+   *
+   * Optional because the fixture provider has no chain behind it. Without it, a process that
+   * dies between `markSent` and `recordOutcome` leaves the obligation in PAYMENT_EXECUTING
+   * with no transaction hash and no way out: it is not replannable, and no observation has
+   * anything to observe. The reference is the one identifier that survives the crash.
+   */
+  readonly findPaidReference?: (reference: string) => Promise<{ txHash?: string; amount?: string } | null>;
 }
 
 export interface DrainResult {
@@ -117,6 +126,33 @@ async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Reso
   if (job.kind === "DISPATCH_STEP") {
     const attempt = job.attemptId === null ? undefined : store.getAttempt(job.attemptId);
     if (attempt?.outcome) return { done: true, advanced };
+
+    // Sent, but no outcome was ever written: the process died inside the send. The money may
+    // have moved. The only honest way to find out is to look for the reference on chain.
+    if (attempt?.firstSendAt && obligation.state === "PAYMENT_EXECUTING") {
+      if (!deps.findPaidReference || !obligation.paymentReference) {
+        move("EXECUTION_OUTCOME_UNKNOWN");
+        return { done: false, reason: "CANNOT_OBSERVE", advanced };
+      }
+      const seen = await deps.findPaidReference(obligation.paymentReference);
+      if (seen?.txHash && (obligation.invoiceBaseUnits === null || seen.amount === obligation.invoiceBaseUnits)) {
+        store.recordOutcome(attempt.id, { outcome: "SENT", txHash: seen.txHash });
+        move("CHAIN_PENDING");
+        store.enqueue({
+          kind: "OBSERVE_EXECUTION",
+          dedupeKey: `observe:${attempt.planHash}:${attempt.stepIndex}`,
+          obligationId: job.obligationId,
+          attemptId: attempt.id,
+          dueAt: now,
+          now,
+        });
+        return { done: true, advanced };
+      }
+      // Nothing on chain yet. Not "unpaid" — unknown, and it stays unknown until it is seen.
+      move("EXECUTION_OUTCOME_UNKNOWN");
+      return { done: false, reason: "NOT_SEEN_ON_CHAIN", advanced };
+    }
+
     return { done: false, reason: "AWAITING_DISPATCH", advanced };
   }
 

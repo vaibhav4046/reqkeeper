@@ -197,3 +197,75 @@ describe("the outbox actually drains", () => {
     assert.equal(provider.totalSends(), 1);
   });
 });
+
+describe("a crash inside the send is recoverable, not permanent", () => {
+  // The window between markSent and recordOutcome. The provider may have executed; the
+  // process died before anything was written down. PAYMENT_EXECUTING is not replannable and
+  // there is no transaction hash to observe, so without recovery the obligation is bricked in
+  // a money-moved state forever.
+  function crashedMidSend() {
+    const store = new Store();
+    const provider = new FixtureProvider("NONE");
+    const requestId = "req-crashed";
+    const oid = obligationId(NS, requestId);
+    store.importObligation({
+      obligationId: oid,
+      namespace: NS,
+      requestId,
+      sourceFactsJson: JSON.stringify(facts),
+      sourceFactsHash: "h",
+      paymentReference: REFERENCE,
+      now: 1_000,
+    });
+    for (const s of ["VALIDATING", "AWAITING_APPROVAL", "APPROVED", "PAYMENT_PREFLIGHT", "PAYMENT_EXECUTING"] as const) {
+      store.setState(oid, s, 1_000);
+    }
+    const { attemptId } = store.openAttempt({
+      obligationId: oid,
+      planHash: "plan-crashed",
+      stepIndex: 0,
+      idempotencyKey: "key-crashed",
+      endpoint: "/api/execute/contract-call",
+      bodyJson: "{}",
+      now: 1_000,
+    });
+    store.markSent(attemptId, 1_000);   // ... and then the process died here.
+    return { store, provider, oid };
+  }
+
+  test("the payment is found by its reference and the obligation moves on", async () => {
+    const { store, provider, oid } = crashedMidSend();
+    const hash = `0x${"7".repeat(64)}`;
+
+    await drainOnce(
+      {
+        store,
+        provider: { receipt: async (h) => ({ hash: h, verified: true, receiptStatus: "success", gasUsed: "52000" }) },
+        sourceSaysPaid: async () => true,
+        findPaidReference: async () => ({ txHash: hash, amount: facts.invoiceBaseUnits }),
+      },
+      { now: 2_000, lookaheadMs: 60_000 },
+    );
+
+    assert.notEqual(store.getObligation(oid)?.state, "PAYMENT_EXECUTING", "must not stay stuck");
+    assert.equal(store.sentAttemptFor(oid)?.txHash, hash);
+    assert.equal(provider.totalSends(), 0, "recovery reads, it never sends");
+  });
+
+  test("a payment that is not on chain stays unknown rather than being retried", async () => {
+    const { store, provider, oid } = crashedMidSend();
+
+    await drainOnce(
+      {
+        store,
+        provider: { receipt: async (h) => ({ hash: h, verified: false, receiptStatus: "not_found", gasUsed: "0" }) },
+        sourceSaysPaid: async () => false,
+        findPaidReference: async () => null,
+      },
+      { now: 2_000, lookaheadMs: 60_000 },
+    );
+
+    assert.equal(store.getObligation(oid)?.state, "EXECUTION_OUTCOME_UNKNOWN");
+    assert.equal(provider.totalSends(), 0);
+  });
+});
