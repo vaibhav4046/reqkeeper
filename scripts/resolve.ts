@@ -16,7 +16,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { DEFAULT_RPC, findPaymentByReference, rpcCall } from "../src/chain.ts";
+import { DEFAULT_RPC, findPaymentByReference, rpcCall, type PaymentExpectation } from "../src/chain.ts";
 import { obligationId } from "../src/identity.ts";
 import { NAMESPACE } from "../src/plan.ts";
 import { Store } from "../src/store.ts";
@@ -78,7 +78,12 @@ async function sourceSaysPaid(requestId: string, txHash: string): Promise<boolea
   const obligation = store.obligationForRecovery(obligationId(NAMESPACE, requestId));
   const reference = obligation?.paymentReference;
   if (!reference) return false;
-  const sighting = await findPaymentByReference(reference, { lookbackBlocks: 300_000, rpcUrl });
+  const sighting = await findPaymentByReference(reference, {
+    lookbackBlocks: 300_000,
+    rpcUrl,
+    // Token, payee and fee as well as the reference, from the facts stored at import.
+    expect: obligation.expectation ?? undefined,
+  });
   return (
     sighting.found === true &&
     sighting.txHash?.toLowerCase() === txHash.toLowerCase() &&
@@ -87,8 +92,8 @@ async function sourceSaysPaid(requestId: string, txHash: string): Promise<boolea
 }
 
 /** Recovery for an attempt that was sent but never recorded. Read-only, like everything here. */
-async function findPaidReference(reference: string) {
-  const seen = await findPaymentByReference(reference, { lookbackBlocks: 300_000, rpcUrl });
+async function findPaidReference(reference: string, expect?: PaymentExpectation) {
+  const seen = await findPaymentByReference(reference, { lookbackBlocks: 300_000, rpcUrl, expect });
   return seen.found && seen.txHash ? { txHash: seen.txHash, amount: seen.amount } : null;
 }
 

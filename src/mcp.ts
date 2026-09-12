@@ -20,7 +20,7 @@
 import { findPaymentByReference } from "./chain.ts";
 import { obligationId } from "./identity.ts";
 import type { ExecutionProvider } from "./provider.ts";
-import { buildPolicy, buildSourceFacts, buildSteps, NAMESPACE, type InvoiceFacts } from "./plan.ts";
+import { buildPolicy, buildSourceFacts, buildSteps, FAU, NAMESPACE, type InvoiceFacts } from "./plan.ts";
 import { settleObligation } from "./settle.ts";
 import { drainUntilQuiet } from "./worker.ts";
 import type { Store } from "./store.ts";
@@ -224,8 +224,13 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
             const seen = await findPayment(row.paymentReference, {
               rpcUrl: ctx.rpcUrl,
               lookbackBlocks: 300_000,
+              // Recovered from the facts stored at import, so the recovery path matches token,
+              // payee and fee, not the reference and amount alone.
+              expect: row.expectation ?? undefined,
             });
-            // Same three questions settle asks: our reference, our transaction, our amount.
+            // Same questions settle asks: our reference, our transaction, our payment. The
+            // amount is re-checked here rather than left to `expect`, so an obligation stored
+            // before the expectation existed is still matched on the value that moved.
             return (
               seen.found &&
               seen.txHash?.toLowerCase() === txHash.toLowerCase() &&
@@ -255,16 +260,27 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
       // A sighting only means "already paid" when it is not ours. Once this obligation has a
       // dispatched attempt, the same log entry is evidence of the payment we made, and the
       // earlier guards handle the replay. A read failure is not evidence, so it stays false.
+      // One statement of what paying this invoice looks like, shared by the pre-check and
+      // the reconciler so the two cannot drift apart.
+      const expectation = {
+        tokenAddress: FAU,
+        to: facts.payee,
+        amount: facts.amountBaseUnits,
+        feeAmount: facts.feeAmount,
+        feeAddress: facts.feeAddress,
+      };
+
       let alreadyPaid = false;
       if (!ctx.store.sentAttemptFor(oid)) {
         try {
-          const sighting = await findPayment(facts.paymentReference);
-          // The amount has to agree too. Nothing has been dispatched yet, so there is no
-          // transaction of ours to match against — but a dust transfer carrying this
-          // reference does not satisfy the invoice, and accepting it as settlement lets
-          // anyone who knows the reference permanently refuse payment of that invoice.
-          // Fails closed either way; this keeps it from failing closed on a stranger's log.
-          alreadyPaid = sighting?.found === true && sighting.amount === facts.amountBaseUnits;
+          // Every field, not the reference and not the amount alone. Nothing has been
+          // dispatched yet, so there is no transaction of ours to match against — but a
+          // transfer carrying this reference to somebody else, or in another token, does not
+          // satisfy this invoice, and treating it as settlement lets anyone who can read a
+          // reference off-chain refuse payment of that invoice permanently. References are
+          // public: they derive from data anchored openly on Sepolia.
+          const sighting = await findPayment(facts.paymentReference, { expect: expectation });
+          alreadyPaid = sighting?.found === true;
         } catch {
           alreadyPaid = false;
         }
@@ -294,12 +310,12 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
             // Not just "the reference appears somewhere": it must be OUR transaction for
             // OUR amount. A boolean over the reference alone accepts another payment's
             // evidence, which is how a duplicate obligation reported SETTLED.
-            const seen = await findPayment(facts.paymentReference, { rpcUrl: ctx.rpcUrl, lookbackBlocks: 300_000 });
-            return (
-              seen.found &&
-              seen.txHash?.toLowerCase() === txHash.toLowerCase() &&
-              seen.amount === facts.amountBaseUnits
-            );
+            const seen = await findPayment(facts.paymentReference, {
+              rpcUrl: ctx.rpcUrl,
+              lookbackBlocks: 300_000,
+              expect: expectation,
+            });
+            return seen.found && seen.txHash?.toLowerCase() === txHash.toLowerCase();
           },
         },
         {

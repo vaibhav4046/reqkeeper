@@ -17,6 +17,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { canonicalReference } from "./identity.ts";
 import { keccak256Hex } from "./keccak.ts";
+import type { PaymentExpectation } from "./chain.ts";
 import { ReplanError, assertTransition, canReplan, type State } from "./machine.ts";
 
 export type JobKind = "DISPATCH_STEP" | "OBSERVE_EXECUTION" | "RECONCILE_SOURCE";
@@ -560,6 +561,13 @@ export class Store {
         state: State;
         paymentReference: string | null;
         invoiceBaseUnits: string | null;
+        /**
+         * What paying this obligation looks like on chain, recovered from the facts that were
+         * stored when it was imported. The recovery path needs this: matching a fee-proxy log
+         * on its reference alone accepts a stranger's transaction as settlement, and the
+         * recovery path is exactly where nobody is watching.
+         */
+        expectation: PaymentExpectation | null;
       }
     | undefined {
     const row = this.#db
@@ -573,9 +581,27 @@ export class Store {
       | undefined;
     if (!row) return undefined;
     let invoiceBaseUnits: string | null = null;
+    let expectation: PaymentExpectation | null = null;
     try {
-      const parsed = JSON.parse(row.factsJson) as { invoiceBaseUnits?: string };
+      const parsed = JSON.parse(row.factsJson) as {
+        invoiceBaseUnits?: string;
+        payee?: string;
+        tokenAddress?: string;
+        feeBaseUnits?: string;
+        feeRecipient?: string;
+      };
       invoiceBaseUnits = parsed.invoiceBaseUnits ?? null;
+      // Only when every load-bearing field is present. A partial expectation is worse than
+      // none: it reads as a full check while silently skipping the field that was missing.
+      if (parsed.invoiceBaseUnits && parsed.payee && parsed.tokenAddress) {
+        expectation = {
+          tokenAddress: parsed.tokenAddress,
+          to: parsed.payee,
+          amount: parsed.invoiceBaseUnits,
+          feeAmount: parsed.feeBaseUnits,
+          feeAddress: parsed.feeRecipient,
+        };
+      }
     } catch {
       invoiceBaseUnits = null;
     }
@@ -585,6 +611,7 @@ export class Store {
       state: row.state,
       paymentReference: row.paymentReference,
       invoiceBaseUnits,
+      expectation,
     };
   }
 

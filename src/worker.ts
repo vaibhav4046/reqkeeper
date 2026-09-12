@@ -17,6 +17,7 @@
 
 import { isTerminal, type State } from "./machine.ts";
 import type { ExecutionProvider } from "./provider.ts";
+import type { PaymentExpectation } from "./chain.ts";
 import type { Fence, Job, Store } from "./store.ts";
 
 export interface WorkerDeps {
@@ -33,7 +34,10 @@ export interface WorkerDeps {
    * with no transaction hash and no way out: it is not replannable, and no observation has
    * anything to observe. The reference is the one identifier that survives the crash.
    */
-  readonly findPaidReference?: (reference: string) => Promise<{ txHash?: string; amount?: string } | null>;
+  readonly findPaidReference?: (
+    reference: string,
+    expect?: PaymentExpectation,
+  ) => Promise<{ txHash?: string; amount?: string } | null>;
 }
 
 export interface DrainResult {
@@ -113,10 +117,17 @@ interface Resolution {
  */
 async function findByReference(
   deps: WorkerDeps,
-  obligation: { readonly paymentReference: string | null; readonly invoiceBaseUnits: string | null },
+  obligation: {
+    readonly paymentReference: string | null;
+    readonly invoiceBaseUnits: string | null;
+    readonly expectation?: PaymentExpectation | null;
+  },
 ): Promise<string | undefined> {
   if (!deps.findPaidReference || !obligation.paymentReference) return undefined;
-  const seen = await deps.findPaidReference(obligation.paymentReference);
+  // The expectation is handed down so the chain read can match token, payee and fee as well
+  // as the reference. The amount check below stays regardless: a lookup that ignores the
+  // expectation must not silently become a reference-only match.
+  const seen = await deps.findPaidReference(obligation.paymentReference, obligation.expectation ?? undefined);
   if (!seen?.txHash) return undefined;
   if (obligation.invoiceBaseUnits !== null && seen.amount !== obligation.invoiceBaseUnits) return undefined;
   return seen.txHash;
