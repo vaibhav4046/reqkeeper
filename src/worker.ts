@@ -17,7 +17,7 @@
 
 import { isTerminal, type State } from "./machine.ts";
 import type { ExecutionProvider } from "./provider.ts";
-import type { PaymentExpectation } from "./chain.ts";
+import type { PaymentExpectation, PaymentSighting } from "./chain.ts";
 import type { Fence, Job, Store } from "./store.ts";
 
 export interface WorkerDeps {
@@ -38,6 +38,16 @@ export interface WorkerDeps {
     reference: string,
     expect?: PaymentExpectation,
   ) => Promise<{ txHash?: string; amount?: string } | null>;
+  /**
+   * A full chain sighting, with its own uncertainty attached.
+   *
+   * `findPaidReference` answers "here is a payment" or `null`, and `null` conflates "the chain
+   * says no" with "I could not tell". That is fine for recovering a hash — a retry costs
+   * nothing — but it is not enough to decide whether a simulation that died mid-flight ever
+   * executed. Concluding "nothing happened" from an inconclusive read is precisely how a second
+   * payment gets authorised, so that decision needs `found`, `truncated` and `corroborated`.
+   */
+  readonly sightPayment?: (reference: string, expect?: PaymentExpectation) => Promise<PaymentSighting>;
 }
 
 export interface DrainResult {
@@ -159,6 +169,60 @@ async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Reso
     store.setState(job.obligationId, to, now, fence);
     advanced.push({ obligationId: job.obligationId, from, to });
   };
+
+  // --- OBSERVE_PREFLIGHT: did a simulation that never came back actually execute? ------
+  //
+  // Committed before `simulate`, cancelled the moment the settle path gets past it under its own
+  // power. Surviving to be claimed means the process died inside the simulation: the obligation
+  // is stuck in PAYMENT_PREFLIGHT, which is not replannable, with no attempt row and nothing
+  // else queued. Zero sends and, before this existed, zero ways forward.
+  //
+  // The question is not "may we retry" but "did anything happen", and the chain is the only
+  // thing that knows. Nothing here can send.
+  if (job.kind === "OBSERVE_PREFLIGHT") {
+    if (obligation.state !== "PAYMENT_PREFLIGHT") return { done: true, advanced };
+    // Something was dispatched after all: the dispatch and observation jobs own this now, and
+    // they reason about a payment rather than about whether one exists.
+    if (store.sentAttemptFor(job.obligationId)) return { done: true, advanced };
+    if (!deps.sightPayment || !obligation.paymentReference) {
+      return { done: false, reason: "CANNOT_OBSERVE", advanced };
+    }
+
+    const sighting = await deps.sightPayment(obligation.paymentReference, obligation.expectation ?? undefined);
+
+    if (sighting.found) {
+      // The dry run executed for real (#1959). Money moved with no attempt row behind it, which
+      // is an integrity incident, not a settlement — a human has to look at it.
+      // No attempt row exists to hang the hash on — nothing ever intended to send — so the
+      // audit trail carries it. EVIDENCE_CONFLICT is an open investigation, not a settlement:
+      // the hash is here for the human who has to reconcile it, and no code path will treat it
+      // as permission to do anything.
+      move("EVIDENCE_CONFLICT");
+      store.audit(job.obligationId, "worker", "SIMULATE_LEAKED_EXECUTION", {
+        txHash: sighting.txHash ?? null,
+        via: "preflight observation",
+      });
+      return { done: true, advanced };
+    }
+
+    // Absence only counts when the read could actually see the whole window. A truncated scan,
+    // or one no second endpoint could corroborate, is "I could not tell" — and "I could not
+    // tell" must never become "go ahead".
+    if (sighting.truncated === true) return { done: false, reason: "SCAN_TRUNCATED", advanced };
+
+    // Nothing carrying this reference paid this invoice, across the full window. The simulation
+    // did not execute, so the debt simply stands unattempted and may be proposed again.
+    move("PREFLIGHT_UNAVAILABLE");
+    const heldBy = store.getObligation(job.obligationId)?.reservedByPlan;
+    const release = heldBy ? store.releaseObligation(job.obligationId, heldBy) : { released: false };
+    store.audit(job.obligationId, "worker", "PREFLIGHT_UNAVAILABLE", {
+      reason: "no payment for this reference on chain; the simulation did not execute",
+      scannedBlocks: sighting.scannedBlocks ?? null,
+      conflicts: sighting.conflicts ?? null,
+      released: release.released,
+    });
+    return { done: true, advanced };
+  }
 
   // A dispatch job exists only so the attempt is durable before the send. The send itself is
   // inline in settle, so this job is done once the attempt records any outcome at all.

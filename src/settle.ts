@@ -190,6 +190,80 @@ export function derivePlan(p: {
   return { planBody, planHash: hashPlan(planBody) };
 }
 
+/**
+ * The refusal a second proposer of the same debt is supposed to get.
+ *
+ * Shared between the pre-read at step 0 and the insert that follows it, because under a race
+ * they are two different ways of discovering the same fact and a caller should not be able to
+ * tell which one fired.
+ */
+function referenceAlreadyClaimed(
+  paymentReference: string,
+  holder: { obligationId: string; state: string } | undefined,
+): SettleOutcome {
+  const who = holder
+    ? `obligation ${holder.obligationId.slice(0, 12)}… (${holder.state})`
+    : "another obligation";
+  return out({
+    state: "OBLIGATION_RESERVED",
+    refusal: "REFERENCE_ALREADY_CLAIMED",
+    detail:
+      `payment reference ${paymentReference} already belongs to ${who}; this is the same debt ` +
+      "under a different request id",
+    providerWriteIssued: false,
+  });
+}
+
+/**
+ * Turn a lost race into the refusal it should have been, or return null to rethrow.
+ *
+ * `settleObligation` reads state and then acts on it in a separate statement, three times over:
+ * the reference check at step 0 then the insert at 0c, the state read at 0b then `replan` at
+ * step 1, and `replan` then `setState` at step 4. Two processes proposing the same debt at the
+ * same millisecond therefore lose in one of three places, and a red-team probe showed what the
+ * loser actually got in 39 of 40 trials: a raw
+ * `UNIQUE constraint failed: obligations.payment_reference` thrown out of the function, or a
+ * bare transition error — instead of `REFERENCE_ALREADY_CLAIMED`, and with no audit row under
+ * the right code.
+ *
+ * The money invariant held throughout: `execute()` was called exactly once in all 40 trials.
+ * This is about the refusal surface and the audit trail, not about safety. Every branch below
+ * is a refusal that costs zero sends, and anything not recognised here is rethrown, so a real
+ * bug still surfaces as a real bug rather than being dressed up as a polite refusal.
+ */
+function refusalForLostRace(e: unknown, store: Store, input: SettleInput): SettleOutcome | null {
+  const message = e instanceof Error ? e.message : String(e);
+  const code = (e as { code?: string } | undefined)?.code;
+
+  if (/UNIQUE constraint failed:\s*obligations\.payment_reference/i.test(message)) {
+    const holder = store.obligationForReference(input.paymentReference);
+    store.audit(input.obligationId, "system", "REFUSED", {
+      code: "REFERENCE_ALREADY_CLAIMED",
+      heldBy: holder?.obligationId ?? null,
+      via: "lost the race to the unique index",
+    });
+    return referenceAlreadyClaimed(input.paymentReference, holder);
+  }
+
+  // The winner finished between our read and our write. Both of these mean the same thing to a
+  // caller: somebody else is already past the point of no return on this debt.
+  if (code === "REPLAN_REFUSED" || code === "ILLEGAL_TRANSITION") {
+    const state = store.getObligation(input.obligationId)?.state as State | undefined;
+    store.audit(input.obligationId, "system", "REFUSED_REENTRY", { state: state ?? null, via: code });
+    return out({
+      state: state ?? "OBLIGATION_RESERVED",
+      refusal: state === "SETTLED" ? "ALREADY_SETTLED" : "ALREADY_DISPATCHED",
+      detail:
+        `another process reached ${state ?? "this obligation"} while this one was still ` +
+        "planning; a payment past that point is resolved by observing the one that was sent, " +
+        "never by proposing another. Nothing sent.",
+      providerWriteIssued: false,
+    });
+  }
+
+  return null;
+}
+
 export async function settleObligation(deps: SettleDeps, input: SettleInput): Promise<SettleOutcome> {
   const { store, provider, policy } = deps;
   const factsHash = sourceFactsHash(input.facts);
@@ -206,15 +280,7 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
         code: "REFERENCE_ALREADY_CLAIMED",
         heldBy: holder.obligationId,
       });
-      return out({
-        state: "OBLIGATION_RESERVED",
-        refusal: "REFERENCE_ALREADY_CLAIMED",
-        detail:
-          `payment reference ${input.paymentReference} already belongs to obligation ` +
-          `${holder.obligationId.slice(0, 12)}… (${holder.state}); this is the same debt ` +
-          "under a different request id",
-        providerWriteIssued: false,
-      });
+      return referenceAlreadyClaimed(input.paymentReference, holder);
     }
   }
 
@@ -238,15 +304,23 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
     });
   }
 
-  store.importObligation({
-    obligationId: input.obligationId,
-    namespace: input.namespace,
-    requestId: input.requestId,
-    sourceFactsJson: JSON.stringify(input.facts),
-    sourceFactsHash: factsHash,
-    paymentReference: input.paymentReference ?? null,
-    now: input.now,
-  });
+  // Step 0 read the reference index; this writes to it. Two statements, so a second proposer
+  // that passed the read a microsecond ago loses here instead, on the unique index.
+  try {
+    store.importObligation({
+      obligationId: input.obligationId,
+      namespace: input.namespace,
+      requestId: input.requestId,
+      sourceFactsJson: JSON.stringify(input.facts),
+      sourceFactsHash: factsHash,
+      paymentReference: input.paymentReference ?? null,
+      now: input.now,
+    });
+  } catch (e) {
+    const refused = refusalForLostRace(e, store, input);
+    if (refused) return refused;
+    throw e;
+  }
   store.audit(input.obligationId, "agent", "PROPOSED", { requestId: input.requestId });
 
   // --- 1. policy, before anything else can cost money ---------------------
@@ -254,7 +328,14 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
   // `replan`, not `setState`: a previous refusal is closed forever and this opens a new
   // settlement beside it. It throws for anything past the point of no return, which is the
   // same guard as 0b enforced one layer down, where nothing can route around it.
-  store.replan(input.obligationId, input.now);
+  // Step 0b read the state; this acts on it. The winner can finish in between.
+  try {
+    store.replan(input.obligationId, input.now);
+  } catch (e) {
+    const refused = refusalForLostRace(e, store, input);
+    if (refused) return refused;
+    throw e;
+  }
   const decision = checkPolicy(policy, input.facts);
   if (!decision.ok) {
     const state: State = decision.code === "SOURCE_ALREADY_PAID" ? "SOURCE_ALREADY_PAID" : "POLICY_DENIED";
@@ -390,7 +471,15 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
     });
   }
 
-  store.setState(input.obligationId, "APPROVED", input.now);
+  // The last read-then-write pair on this path: the winner may have moved the obligation past
+  // APPROVED since `replan` put it in VALIDATING.
+  try {
+    store.setState(input.obligationId, "APPROVED", input.now);
+  } catch (e) {
+    const refused = refusalForLostRace(e, store, input);
+    if (refused) return refused;
+    throw e;
+  }
 
   // --- 5. re-check at the dispatch boundary -------------------------------
   const plan = store.getPlan(planHash);
@@ -411,12 +500,14 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
   // --- 6. simulate. NOT a safety boundary (#1959) ------------------------
   const stepIndex = input.steps.length - 1;
   const body = { chainId: policy.chainId, ...input.steps[stepIndex] };
-  store.setState(input.obligationId, "PAYMENT_PREFLIGHT", input.now);
+  // State and the observation that will come looking, committed together. See store.beginPreflight.
+  store.beginPreflight(input.obligationId, planHash, input.now);
   try {
     const sim = await provider.simulate({ ...body, simulate: true });
     if (sim.transactionHash) {
       // A dry run returned a hash: it really executed. Treat as a real send, never retry.
       store.setState(input.obligationId, "EVIDENCE_CONFLICT", input.now);
+      store.endPreflight(planHash);
       store.audit(input.obligationId, "system", "SIMULATE_LEAKED_EXECUTION", { hash: sim.transactionHash });
       return out({
         state: "EVIDENCE_CONFLICT",
@@ -429,6 +520,7 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
     }
     if (sim.wouldRevert) {
       store.setState(input.obligationId, "SIMULATION_BLOCKED", input.now);
+      store.endPreflight(planHash);
       store.releaseObligation(input.obligationId, planHash);
       return out({ state: "SIMULATION_BLOCKED", refusal: "SIMULATION_BLOCKED", detail: "payment would revert", providerWriteIssued: false, planHash });
     }
@@ -457,6 +549,7 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
       // answered { released: false } and the return value was discarded. The reservation stuck
       // to a plan that never ran, and a corrected plan was refused OBLIGATION_RESERVED forever.
       store.setState(input.obligationId, "PREFLIGHT_UNAVAILABLE", input.now);
+      store.endPreflight(planHash);
       const release = store.releaseObligation(input.obligationId, planHash);
       store.audit(input.obligationId, "system", "PREFLIGHT_UNAVAILABLE", {
         code,
@@ -498,6 +591,7 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
     }
 
     store.setState(input.obligationId, "SIMULATION_BLOCKED", input.now);
+    store.endPreflight(planHash);
     const release = store.releaseObligation(input.obligationId, planHash);
     if (!release.released) {
       store.audit(input.obligationId, "system", "PREFLIGHT_RESERVATION_HELD", {

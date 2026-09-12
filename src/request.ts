@@ -1,0 +1,333 @@
+/**
+ * The facts, read from Request itself.
+ *
+ * Everything downstream of settlement is a guard over the payment reference: the canonical
+ * obligation id, the policy gate, the calldata seam, the approval sentence a human reads, the
+ * exactly-once compare-and-set. None of them re-derives that reference — they protect,
+ * faithfully, whatever they are handed. So a single wrong `paymentReference` in a local file
+ * does not break the machine; it aims it. Every gate passes, and the money moves against the
+ * wrong debt. The payee check does not save you either, because in that file the payee sits
+ * next to the reference and a hand that can edit one can edit both.
+ *
+ * This module is where that stops being possible. It reads the invoice from the public
+ * Sepolia gateway (no credential) and derives the reference from the invoice's own salt and
+ * payment address, so the reference is a CONSEQUENCE of the obligation rather than an input
+ * to it. `assertReferenceMatches` is the refusal the settle path uses when a caller supplies
+ * one anyway.
+ *
+ * Verified against the live gateway: every one of the 41 references recorded in
+ * `docs/live-invoices.json` is reproduced by `derivePaymentReference` from its own
+ * requestId/salt/paymentAddress.
+ */
+
+import { keccak256Hex } from "./keccak.ts";
+
+/** Sepolia. Mainnet ids are refused in code; this repository is testnet-only by policy. */
+export const SEPOLIA_CHAIN_ID = 11155111;
+
+/** The one Request payment network this project can settle: ERC20FeeProxy, with a fee field. */
+const FEE_PROXY_EXTENSION_ID = "pn-erc20-fee-proxy-contract";
+
+const DEFAULT_GATEWAY = process.env.REQUEST_GATEWAY_URL ?? "https://sepolia.gateway.request.network/";
+
+export type RequestErrorCode =
+  | "BAD_IDENTIFIER"
+  | "GATEWAY_UNAVAILABLE"
+  | "CHANNEL_EMPTY"
+  | "MALFORMED_TRANSACTION"
+  | "NO_CREATE_ACTION"
+  | "NO_FEE_PROXY_EXTENSION"
+  | "WRONG_NETWORK"
+  | "REFERENCE_MISMATCH";
+
+export class RequestError extends Error {
+  // See MoneyError: Node's strip-only TypeScript mode rejects constructor parameter
+  // properties, since those emit code rather than erase types.
+  readonly code: RequestErrorCode;
+
+  constructor(code: RequestErrorCode, message: string) {
+    super(message);
+    this.code = code;
+    this.name = "RequestError";
+  }
+}
+
+/**
+ * One invoice, as Request states it. Read, never inferred, never supplied by an agent.
+ *
+ * Nothing here is optional except the storage anchor, and that is absent only while the
+ * create action is still unconfirmed. A half-read invoice is worse than no invoice: the
+ * guards downstream would protect the half they were given.
+ */
+export interface InvoiceFactsFromRequest {
+  readonly requestId: string;
+  readonly chainId: number;
+  /** `currency.value` — the ERC20 the debt is denominated in. */
+  readonly tokenAddress: string;
+  /**
+   * The extension's `paymentAddress`, which is what the fee proxy actually pays and what the
+   * reference is derived from — NOT `parameters.payee`. They are usually the same address and
+   * are allowed to differ, so reading the wrong one yields a plausible wrong answer.
+   */
+  readonly payee: string;
+  /**
+   * `parameters.payee`: who the invoice names as creditor. Recorded for diagnosis only —
+   * paying this address rather than `payee` above would produce a transfer the reconciler
+   * cannot match. If the two disagree, a human should look before anything is settled.
+   */
+  readonly payeeOfRecord: string;
+  readonly invoiceBaseUnits: string;
+  readonly feeBaseUnits: string;
+  readonly feeRecipient: string;
+  readonly salt: string;
+  /** Derived here from requestId + salt + paymentAddress. Never taken from a caller. */
+  readonly paymentReference: string;
+  /** Where the create action is anchored on Sepolia. Absent while it is unconfirmed. */
+  readonly anchor?: { readonly blockNumber: number; readonly transactionHash: string };
+}
+
+export interface FetchInvoiceOptions {
+  readonly gatewayUrl?: string;
+  readonly timeoutMs?: number;
+}
+
+/**
+ * `last8Bytes(keccak256(utf8(lowercase(requestId + salt + paymentAddress))))`.
+ *
+ * Two subtleties, both of which fail silently into a wrong-but-plausible 8-byte answer:
+ *
+ *   1. The hash is over the UTF-8 TEXT of the concatenated hex strings, not over the bytes
+ *      those strings decode to. `keccak256Hex` encodes a string argument as UTF-8, which is
+ *      exactly what is wanted; handing it a decoded `Uint8Array` would not be.
+ *   2. The whole preimage is lowercased, and the pieces are concatenated in their recorded
+ *      spelling — the requestId and salt WITHOUT a `0x`, the payment address WITH one. A
+ *      `0x`-prefixed requestId therefore hashes to a different reference, which is why the
+ *      identifier checks below refuse one instead of quietly stripping it.
+ */
+export function derivePaymentReference(requestId: string, salt: string, paymentAddress: string): string {
+  const id = assertBareHex("requestId", requestId);
+  const s = assertBareHex("salt", salt);
+  const addr = assertAddress("paymentAddress", paymentAddress);
+  const preimage = (id + s + addr).toLowerCase();
+  return `0x${keccak256Hex(preimage).slice(-16)}`;
+}
+
+/**
+ * The refusal. A caller-supplied reference that is not the derived one names a different
+ * debt, and every guard downstream would have protected that one instead.
+ *
+ * Compared case-insensitively: references are hex, so `0xDEADBEEF` and `0xdeadbeef` are one
+ * debt and refusing there would be theatre, not safety.
+ */
+export function assertReferenceMatches(supplied: string, derived: string): void {
+  if (supplied.toLowerCase() === derived.toLowerCase()) return;
+  throw new RequestError(
+    "REFERENCE_MISMATCH",
+    `supplied payment reference ${supplied} is not the one this invoice derives (${derived}); ` +
+      "these are different debts, and nothing downstream re-derives the reference",
+  );
+}
+
+/**
+ * Read one invoice from the public Request gateway. No credential, no agent-supplied facts.
+ *
+ * Throws — never returns a partial record — on an HTTP failure, an empty or unparseable
+ * channel, a missing `create` action, a missing fee-proxy extension, or any network that is
+ * not Sepolia.
+ */
+export async function fetchInvoice(
+  requestId: string,
+  opts: FetchInvoiceOptions = {},
+): Promise<InvoiceFactsFromRequest> {
+  const id = assertBareHex("requestId", requestId);
+  const base = (opts.gatewayUrl ?? DEFAULT_GATEWAY).replace(/\/+$/, "");
+  const url = `${base}/getTransactionsByChannelId?channelId=${encodeURIComponent(id)}`;
+
+  let res: Response;
+  try {
+    res = await fetch(url, { signal: AbortSignal.timeout(opts.timeoutMs ?? 30_000) });
+  } catch (e) {
+    // A gateway that did not answer is not an invoice that does not exist.
+    throw new RequestError("GATEWAY_UNAVAILABLE", `Request gateway did not answer: ${asMessage(e)}`);
+  }
+  if (!res.ok) {
+    throw new RequestError("GATEWAY_UNAVAILABLE", `Request gateway answered HTTP ${res.status} for ${id}`);
+  }
+
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch (e) {
+    throw new RequestError("MALFORMED_TRANSACTION", `Request gateway returned non-JSON: ${asMessage(e)}`);
+  }
+
+  const transactions = asArray(dig(body, "result", "transactions"));
+  if (transactions.length === 0) {
+    throw new RequestError("CHANNEL_EMPTY", `no transactions on channel ${id}; this invoice does not exist here`);
+  }
+
+  // `transaction.data` is a JSON STRING, not an object: parse each before reading it.
+  const actions = transactions.map((tx, index) => {
+    const raw = dig(tx, "transaction", "data");
+    if (typeof raw !== "string") {
+      throw new RequestError("MALFORMED_TRANSACTION", `transaction ${index} on channel ${id} carries no data string`);
+    }
+    try {
+      return { index, data: dig(JSON.parse(raw), "data") };
+    } catch (e) {
+      throw new RequestError(
+        "MALFORMED_TRANSACTION",
+        `transaction ${index} on channel ${id} is not parseable JSON: ${asMessage(e)}`,
+      );
+    }
+  });
+
+  const create = actions.find((a) => asString(dig(a.data, "name")) === "create");
+  if (!create) {
+    throw new RequestError(
+      "NO_CREATE_ACTION",
+      `channel ${id} has no create action (${actions.length} transaction(s)); there is no invoice to read`,
+    );
+  }
+
+  const p = dig(create.data, "parameters");
+  const currencyType = asString(dig(p, "currency", "type"));
+  if (currencyType !== "ERC20") {
+    throw new RequestError(
+      "WRONG_NETWORK",
+      `invoice ${id} is denominated in ${currencyType ?? "an unstated currency type"}, not ERC20`,
+    );
+  }
+  assertSepolia(id, "currency.network", asString(dig(p, "currency", "network")));
+
+  const extension = asArray(dig(p, "extensionsData")).find(
+    (e) => asString(dig(e, "id")) === FEE_PROXY_EXTENSION_ID,
+  );
+  if (!extension) {
+    const found = asArray(dig(p, "extensionsData")).map((e) => asString(dig(e, "id")) ?? "?");
+    throw new RequestError(
+      "NO_FEE_PROXY_EXTENSION",
+      `invoice ${id} carries no ${FEE_PROXY_EXTENSION_ID} extension (found: ${found.join(", ") || "none"}); ` +
+        "this settlement path only knows how to pay the ERC20 fee proxy",
+    );
+  }
+  const ep = dig(extension, "parameters");
+  assertSepolia(id, "paymentNetworkName", asString(dig(ep, "paymentNetworkName")));
+
+  const tokenAddress = assertAddress("currency.value", asString(dig(p, "currency", "value")));
+  const payee = assertAddress("paymentAddress", asString(dig(ep, "paymentAddress")));
+  const payeeOfRecord = assertAddress("payee.value", asString(dig(p, "payee", "value")));
+  const feeRecipient = assertAddress("feeAddress", asString(dig(ep, "feeAddress")));
+  const salt = assertBareHex("salt", asString(dig(ep, "salt")));
+  const invoiceBaseUnits = assertBaseUnits("expectedAmount", asString(dig(p, "expectedAmount")));
+  const feeBaseUnits = assertBaseUnits("feeAmount", asString(dig(ep, "feeAmount")));
+
+  return {
+    requestId: id,
+    chainId: SEPOLIA_CHAIN_ID,
+    tokenAddress,
+    payee,
+    payeeOfRecord,
+    invoiceBaseUnits,
+    feeBaseUnits,
+    feeRecipient,
+    salt,
+    paymentReference: derivePaymentReference(id, salt, payee),
+    ...storageAnchor(body, create.index),
+  };
+}
+
+/**
+ * The plain shape the rest of the codebase passes around (`plan.ts`'s `InvoiceFacts`),
+ * returned as a plain object rather than an import so this module stays independent of the
+ * plan and policy files.
+ *
+ * The mapping exists because this is exactly where a wiring slip is invisible: `payee` here
+ * must be the extension's payment address, and the ceiling is a human's number that has no
+ * safe default, so it is a required argument rather than something inferred from the invoice.
+ */
+export function toInvoiceFacts(
+  f: InvoiceFactsFromRequest,
+  maxTotalDebitBaseUnits: string,
+): {
+  requestId: string;
+  paymentReference: string;
+  payee: string;
+  amountBaseUnits: string;
+  feeAmount: string;
+  feeAddress: string;
+  maxTotalDebitBaseUnits: string;
+  tokenAddress: string;
+} {
+  return {
+    requestId: f.requestId,
+    paymentReference: f.paymentReference,
+    payee: f.payee,
+    amountBaseUnits: f.invoiceBaseUnits,
+    feeAmount: f.feeBaseUnits,
+    feeAddress: f.feeRecipient,
+    maxTotalDebitBaseUnits: assertBaseUnits("maxTotalDebitBaseUnits", maxTotalDebitBaseUnits),
+    tokenAddress: f.tokenAddress,
+  };
+}
+
+/**
+ * `meta.storageMeta` is an array aligned with `result.transactions`, and its entries carry the
+ * Sepolia block and transaction hash of the create. Absent or null while unconfirmed, which is
+ * reported by omission rather than by inventing a zero block.
+ */
+function storageAnchor(body: unknown, index: number): { anchor?: { blockNumber: number; transactionHash: string } } {
+  const metas = asArray(dig(body, "meta", "storageMeta"));
+  const eth = dig(metas[index], "ethereum") ?? metas.map((m) => dig(m, "ethereum")).find(Boolean);
+  const blockNumber = dig(eth, "blockNumber");
+  const transactionHash = asString(dig(eth, "transactionHash"));
+  if (typeof blockNumber !== "number" || !transactionHash) return {};
+  return { anchor: { blockNumber, transactionHash } };
+}
+
+function assertSepolia(id: string, field: string, network: string | undefined): void {
+  if (network !== "sepolia") {
+    throw new RequestError(
+      "WRONG_NETWORK",
+      `invoice ${id} states ${field}=${network ?? "nothing"}; this settlement is Sepolia ` +
+        `(chain ${SEPOLIA_CHAIN_ID}) only`,
+    );
+  }
+}
+
+/** Hex with no `0x`, the spelling requestIds and salts are recorded and hashed in. */
+function assertBareHex(field: string, value: string | undefined): string {
+  if (typeof value === "string" && /^[0-9a-fA-F]+$/.test(value)) return value;
+  const hint = typeof value === "string" && /^0x/i.test(value) ? " (drop the 0x: it is part of the preimage)" : "";
+  throw new RequestError("BAD_IDENTIFIER", `${field} must be bare hex${hint}, got ${JSON.stringify(value)}`);
+}
+
+function assertAddress(field: string, value: string | undefined): string {
+  // `0X` is accepted alongside `0x`: the preimage is lowercased, so the two spell one address.
+  // Contrast assertBareHex, where a prefix would change the hash and is therefore refused.
+  if (typeof value === "string" && /^0[xX][0-9a-fA-F]{40}$/.test(value)) return value;
+  throw new RequestError("BAD_IDENTIFIER", `${field} must be a 20-byte address, got ${JSON.stringify(value)}`);
+}
+
+/** Base units cross as a decimal string. See money.ts: no floats, ever. */
+function assertBaseUnits(field: string, value: string | undefined): string {
+  if (typeof value === "string" && /^\d+$/.test(value)) return value;
+  throw new RequestError(
+    "MALFORMED_TRANSACTION",
+    `${field} must be a base-unit decimal string, got ${JSON.stringify(value)}`,
+  );
+}
+
+/** Walk a path through unknown JSON without trusting any level of it to be an object. */
+function dig(value: unknown, ...path: string[]): unknown {
+  let cur = value;
+  for (const key of path) {
+    if (typeof cur !== "object" || cur === null) return undefined;
+    cur = (cur as Record<string, unknown>)[key];
+  }
+  return cur;
+}
+
+const asArray = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+const asString = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
+const asMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e));

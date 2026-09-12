@@ -97,8 +97,17 @@ async function findPaidReference(reference: string, expect?: PaymentExpectation)
   return seen.found && seen.txHash ? { txHash: seen.txHash, amount: seen.amount } : null;
 }
 
+/**
+ * The same read, with its uncertainty intact.
+ *
+ * `findPaidReference` collapses "the chain says no" and "I could not tell" into null, which is
+ * safe for recovering a hash and not safe for deciding whether a dead simulation executed.
+ */
+const sightPayment = (reference: string, expect?: PaymentExpectation) =>
+  findPaymentByReference(reference, { lookbackBlocks: 300_000, rpcUrl, expect });
+
 const results = await drainUntilQuiet(
-  { store, provider: { receipt }, sourceSaysPaid, findPaidReference },
+  { store, provider: { receipt }, sourceSaysPaid, findPaidReference, sightPayment },
   // Run by hand, this is an operator asking, not a timer polling: look past the retry
   // backoff rather than reporting "nothing moved" for work that is scheduled a moment out.
   { now: Date.now(), maxPasses: passes, stepMs: 0, lookaheadMs: 60_000 },

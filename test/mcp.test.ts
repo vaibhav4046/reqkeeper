@@ -12,13 +12,38 @@ const PAYEE = "0xc43d766cb7c48b9b198db87441b97c09e81717a1";
 const ONE = "1000000000000000000";
 const TWO = "2000000000000000000";
 
-function ctx(): McpContext & { provider: FixtureProvider } {
+/**
+ * The real invoice, as Request serves it, frozen.
+ *
+ * These tests use a genuine request id, so wiring the gateway into `propose_payment` silently
+ * turned the whole suite into a network test — 1s to 10s, and red on a plane. The facts below
+ * were read from the live gateway and match what `fetchInvoice` returns for that id, so the
+ * assertions are unchanged and the suite is offline again. The gate itself is exercised
+ * separately, with this stub bent on purpose.
+ */
+const INVOICE_AS_REQUEST_HOLDS_IT = {
+  requestId: REQUEST_ID,
+  chainId: 11155111,
+  tokenAddress: "0x370DE27fdb7D1Ff1e1BaA7D11c5820a324Cf623C",
+  payee: "0xc43d766CB7c48B9B198db87441b97c09e81717A1",
+  payeeOfRecord: "0xc43d766CB7c48B9B198db87441b97c09e81717A1",
+  invoiceBaseUnits: "1000000000000000000",
+  feeBaseUnits: "0",
+  feeRecipient: `0x${"0".repeat(40)}`,
+  salt: "8682e8e726d1b4f1",
+  paymentReference: REFERENCE,
+};
+
+function ctx(over: Partial<McpContext> = {}): McpContext & { provider: FixtureProvider } {
   const provider = new FixtureProvider();
   return {
     store: new Store(),
     provider,
     // No chain in tests. Nothing is paid until the fixture provider says so.
     findPayment: async () => ({ found: false }),
+    // No gateway in tests either — but the verification still runs, against this.
+    fetchInvoice: async () => INVOICE_AS_REQUEST_HOLDS_IT,
+    ...over,
   } as McpContext & { provider: FixtureProvider };
 }
 
@@ -306,4 +331,73 @@ test("a settled obligation is never re-entered, and its state never regresses", 
   const status = await call(paid, "obligation_status", { requestId: REQUEST_ID });
   assert.equal(status.json.state, "SETTLED");
   assert.equal(c.provider.totalSends(), 1);
+});
+
+// --- facts come from Request, not from the agent ----------------------------
+//
+// The cheapest attack in the audit: every guard in this system sits downstream of the facts
+// the caller supplies, and nothing re-derived the payment reference. Hand over a reference you
+// control and the whole machine — canonical id, policy gate, calldata seam, approval sentence,
+// exactly-once — protects the wrong debt perfectly. The payee check does not save you, because
+// the payee came from the same place.
+
+test("a payment reference the invoice does not derive is refused before any write", async () => {
+  const c = ctx();
+  const r = await call(c, "propose_payment", { ...INVOICE, paymentReference: "0xdeadbeefdeadbeef" });
+
+  assert.equal(r.json.refusal, "REFERENCE_MISMATCH");
+  assert.equal(r.json.providerWriteIssued, false);
+  assert.equal(c.provider.totalSends(), 0);
+  assert.match(r.json.detail, /0xdeadbeefdeadbeef/);
+  assert.match(r.json.detail, new RegExp(REFERENCE), "the refusal must name the reference the invoice actually derives");
+  assert.match(r.json.agentGuidance, /Do not retry/i);
+});
+
+test("a payee the invoice does not name is refused, even with the right reference", async () => {
+  const c = ctx();
+  const r = await call(c, "propose_payment", {
+    ...INVOICE,
+    payee: "0xdEAdBeef00000000000000000000000000000001",
+  });
+
+  assert.equal(r.json.refusal, "FACTS_DISAGREE_WITH_INVOICE");
+  assert.equal(r.json.providerWriteIssued, false);
+  assert.equal(c.provider.totalSends(), 0);
+  assert.match(r.json.detail, /payee/i);
+});
+
+test("an amount the invoice does not state is refused", async () => {
+  const c = ctx();
+  const r = await call(c, "propose_payment", { ...INVOICE, amountBaseUnits: "999999999999999999" });
+
+  assert.equal(r.json.refusal, "FACTS_DISAGREE_WITH_INVOICE");
+  assert.equal(c.provider.totalSends(), 0);
+  assert.match(r.json.detail, /amount 999999999999999999/);
+});
+
+test("an unreadable gateway refuses rather than falling back on the caller's word", async () => {
+  // Fails closed. A gateway that cannot be read is not permission to proceed on facts an agent
+  // supplied — that would make the whole check bypassable by breaking one HTTP request.
+  const c = ctx({
+    fetchInvoice: async () => {
+      throw new Error("gateway timed out");
+    },
+  });
+  const r = await call(c, "propose_payment", INVOICE);
+
+  assert.equal(r.json.refusal, "REQUEST_UNREADABLE");
+  assert.equal(r.json.providerWriteIssued, false);
+  assert.equal(c.provider.totalSends(), 0);
+});
+
+test("the offline escape hatch is explicit, and only opting in reaches the old behaviour", async () => {
+  // The control. Without it the four tests above could pass because propose_payment refuses
+  // everything, rather than because the verification works.
+  const c = ctx({ verifyAgainstRequest: false, fetchInvoice: async () => {
+    throw new Error("must not be called");
+  } });
+  const r = await call(c, "propose_payment", { ...INVOICE, paymentReference: "0xdeadbeefdeadbeef" });
+
+  assert.equal(r.json.state, "AWAITING_APPROVAL", "opting out skips the check entirely");
+  assert.equal(c.provider.totalSends(), 0);
 });

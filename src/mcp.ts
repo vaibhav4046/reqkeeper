@@ -17,7 +17,8 @@
  * An agent calling it before a human has decided gets `AWAITING_APPROVAL` and no send.
  */
 
-import { findPaymentByReference } from "./chain.ts";
+import { findPaymentByReference, type PaymentExpectation } from "./chain.ts";
+import { assertReferenceMatches, fetchInvoice } from "./request.ts";
 import { obligationId } from "./identity.ts";
 import type { ExecutionProvider } from "./provider.ts";
 import { buildPolicy, buildSourceFacts, buildSteps, FAU, NAMESPACE, type InvoiceFacts } from "./plan.ts";
@@ -34,6 +35,21 @@ export interface McpContext {
   readonly rpcUrl?: string;
   /** Injectable so tests do not need a chain. */
   readonly findPayment?: typeof findPaymentByReference;
+  /**
+   * Read the invoice from Request itself.
+   *
+   * Injectable so tests do not need the gateway, and nullable so an offline caller can opt out
+   * explicitly — `verifyAgainstRequest: false` — rather than by accident. Facts an agent supplies
+   * are a claim; facts Request serves are the invoice.
+   */
+  readonly fetchInvoice?: typeof fetchInvoice;
+  /**
+   * Set false ONLY for offline work, and expect the evidence to be tagged TEST.
+   *
+   * When true (the default) a supplied payment reference that does not equal the one derived
+   * from the invoice is refused before any write.
+   */
+  readonly verifyAgainstRequest?: boolean;
 }
 
 interface JsonRpcRequest {
@@ -114,7 +130,37 @@ export const TOOLS = [
 ] as const;
 
 /** Refusals an agent must never retry, because retrying cannot change the answer. */
+/**
+ * A refusal in the same shape the settle path returns, for the checks that happen before it.
+ *
+ * `providerWriteIssued: false` is the load-bearing field: it is the "zero gas burned" claim,
+ * and every refusal on this path is entitled to it because none of them has written anything.
+ */
+function refusedBeforeWrite(obligationId: string, refusal: string, detail: string) {
+  return {
+    obligationId,
+    state: "POLICY_DENIED" as const,
+    refusal,
+    detail,
+    planHash: null,
+    txHash: null,
+    providerWriteIssued: false,
+    approvalSentence: null,
+    agentGuidance:
+      TERMINAL_FOR_AGENTS[refusal] ??
+      "The invoice Request holds is not the one described. Do not retry with the same facts; re-read the invoice.",
+  };
+}
+
 const TERMINAL_FOR_AGENTS: Record<string, string> = {
+  REFERENCE_MISMATCH:
+    "The payment reference does not match the one derived from this invoice. Do not retry: a " +
+    "reference you supply is not evidence of a debt. Read the invoice from Request instead.",
+  FACTS_DISAGREE_WITH_INVOICE:
+    "The invoice Request holds describes a different payment. Do not retry with the same facts.",
+  REQUEST_UNREADABLE:
+    "The invoice could not be read from Request, so nothing was proposed. This is a read failure, " +
+    "not a refusal of the payment; try again when the gateway answers.",
   AWAITING_APPROVAL: "A human has not decided yet. Do not retry; wait to be told.",
   REVIEW_REJECTED: "A human refused this payment. Never retry.",
   ALREADY_DISPATCHED: "This obligation was already sent. Retrying cannot pay it again, and must not try.",
@@ -218,6 +264,10 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
         {
           store: ctx.store,
           provider: ctx.provider,
+          // Uncertainty intact, for the one decision that needs it: whether a simulation that
+          // never came back actually executed.
+          sightPayment: (reference: string, expect?: PaymentExpectation) =>
+            findPayment(reference, { rpcUrl: ctx.rpcUrl, lookbackBlocks: 300_000, expect }),
           sourceSaysPaid: async (requestId: string, txHash: string) => {
             const row = ctx.store.obligationForRecovery(obligationId(NAMESPACE, requestId));
             if (!row?.paymentReference) return false;
@@ -260,6 +310,67 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
       // A sighting only means "already paid" when it is not ours. Once this obligation has a
       // dispatched attempt, the same log entry is evidence of the payment we made, and the
       // earlier guards handle the replay. A read failure is not evidence, so it stays false.
+      // --- the invoice comes from Request, not from the agent -------------
+      //
+      // Every guard in this system used to sit downstream of facts the CALLER supplied: the
+      // payee, the amount, the fee and — worst of all — the payment reference. An agent that
+      // handed over a reference it controlled would be protected, perfectly, all the way to a
+      // send, on the wrong debt. Nothing re-derived it.
+      //
+      // So the invoice is read from Request's own gateway (unauthenticated, no key) and the
+      // reference is re-derived as `last8Bytes(keccak256(requestId + salt + paymentAddress))`.
+      // A supplied reference that does not equal the derived one is REFERENCE_MISMATCH, refused
+      // here, before any write. So is a payee, amount, token or fee the invoice disagrees with.
+      //
+      // It fails CLOSED: a gateway that cannot be read is not permission to proceed on the
+      // agent's word. Offline callers opt out explicitly with `verifyAgainstRequest: false`,
+      // and that is a TEST-tagged path by policy.
+      if (ctx.verifyAgainstRequest !== false) {
+        const read = ctx.fetchInvoice ?? fetchInvoice;
+        let invoice;
+        try {
+          invoice = await read(facts.requestId);
+        } catch (e) {
+          return refusedBeforeWrite(
+            oid,
+            "REQUEST_UNREADABLE",
+            `the invoice could not be read from Request (${(e as Error).message}). ` +
+              "Facts supplied by a caller are a claim, not an invoice, so nothing is proposed on them.",
+          );
+        }
+
+        try {
+          assertReferenceMatches(facts.paymentReference, invoice.paymentReference);
+        } catch (e) {
+          return refusedBeforeWrite(oid, "REFERENCE_MISMATCH", (e as Error).message);
+        }
+
+        const eq = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+        const disagreements: string[] = [];
+        if (!eq(facts.payee, invoice.payee)) {
+          disagreements.push(`payee ${facts.payee}, the invoice is payable to ${invoice.payee}`);
+        }
+        if (facts.amountBaseUnits !== invoice.invoiceBaseUnits) {
+          disagreements.push(`amount ${facts.amountBaseUnits}, the invoice is ${invoice.invoiceBaseUnits}`);
+        }
+        if (facts.feeAmount !== invoice.feeBaseUnits) {
+          disagreements.push(`fee ${facts.feeAmount}, the invoice fee is ${invoice.feeBaseUnits}`);
+        }
+        if (!eq(facts.feeAddress, invoice.feeRecipient)) {
+          disagreements.push(`fee recipient ${facts.feeAddress}, the invoice names ${invoice.feeRecipient}`);
+        }
+        if (!eq(FAU, invoice.tokenAddress)) {
+          disagreements.push(`token ${invoice.tokenAddress}, which this deployment does not settle`);
+        }
+        if (disagreements.length > 0) {
+          return refusedBeforeWrite(
+            oid,
+            "FACTS_DISAGREE_WITH_INVOICE",
+            `the caller described a different payment from the one Request holds: ${disagreements.join("; ")}`,
+          );
+        }
+      }
+
       // One statement of what paying this invoice looks like, shared by the pre-check and
       // the reconciler so the two cannot drift apart.
       const expectation = {

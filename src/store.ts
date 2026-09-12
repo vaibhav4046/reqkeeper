@@ -20,7 +20,15 @@ import { keccak256Hex } from "./keccak.ts";
 import type { PaymentExpectation } from "./chain.ts";
 import { ReplanError, assertTransition, canReplan, type State } from "./machine.ts";
 
-export type JobKind = "DISPATCH_STEP" | "OBSERVE_EXECUTION" | "RECONCILE_SOURCE";
+export type JobKind = "DISPATCH_STEP" | "OBSERVE_PREFLIGHT" | "OBSERVE_EXECUTION" | "RECONCILE_SOURCE";
+
+/**
+ * How long the preflight observation waits before it is due.
+ *
+ * Long enough that an uninterrupted settle has finished and cancelled it, short enough that a
+ * process killed inside `simulate` is picked up by the next drain rather than next week.
+ */
+const PREFLIGHT_OBSERVE_DELAY_MS = 30_000;
 
 export interface Job {
   readonly id: number;
@@ -520,16 +528,64 @@ export class Store {
   setState(obligationId: string, state: State, now = Date.now(), fence?: Fence): void {
     this.tx(() => {
       if (fence) this.#assertFencingInTx(fence);
-      const row = this.#db
-        .prepare("SELECT state FROM obligations WHERE obligation_id = ?")
-        .get(obligationId) as { state: State } | undefined;
-      if (!row) throw new Error(`unknown obligation ${obligationId}`);
-      if (row.state === state) return;
-      assertTransition(row.state, state);
-      this.#db
-        .prepare("UPDATE obligations SET state = ?, row_version = row_version + 1, updated_at = ? WHERE obligation_id = ?")
-        .run(state, now, obligationId);
+      this.#setStateInTx(obligationId, state, now);
     });
+  }
+
+  /** The body of setState, for callers that are already inside a transaction. */
+  #setStateInTx(obligationId: string, state: State, now: number): void {
+    const row = this.#db
+      .prepare("SELECT state FROM obligations WHERE obligation_id = ?")
+      .get(obligationId) as { state: State } | undefined;
+    if (!row) throw new Error(`unknown obligation ${obligationId}`);
+    if (row.state === state) return;
+    assertTransition(row.state, state);
+    this.#db
+      .prepare("UPDATE obligations SET state = ?, row_version = row_version + 1, updated_at = ? WHERE obligation_id = ?")
+      .run(state, now, obligationId);
+  }
+
+  /**
+   * Enter PAYMENT_PREFLIGHT and, in the same transaction, leave something behind that will come
+   * looking if this process never comes back.
+   *
+   * The attempt row — the outbox entry that makes every other risky step recoverable — is not
+   * written until AFTER the simulation, because the attempt means "intent to send" and nothing
+   * is being sent yet. That left one uncovered window, and a crash inside `simulate` fell into
+   * it: state PAYMENT_PREFLIGHT, no attempt, no job, and PAYMENT_PREFLIGHT is deliberately not
+   * replannable, so the invoice could never be paid by this system again. Zero sends and zero
+   * ways forward.
+   *
+   * The fix is not to make PAYMENT_PREFLIGHT replannable — a simulate can time out, and a
+   * timed-out dry run may have executed for real (#1959), so assuming nothing happened is
+   * exactly the assumption this project exists to refuse. The fix is to resolve the uncertainty
+   * the way every other uncertainty here is resolved: by looking at the chain. This job is that
+   * look, and it is committed before the risky call, which is the same discipline `openAttempt`
+   * applies one step later.
+   */
+  beginPreflight(obligationId: string, planHash: string, now = Date.now()): void {
+    this.tx(() => {
+      this.#setStateInTx(obligationId, "PAYMENT_PREFLIGHT", now);
+      this.#db
+        .prepare(
+          `INSERT OR IGNORE INTO jobs (kind, dedupe_key, obligation_id, attempt_id, due_at, created_at)
+           VALUES (?,?,?,?,?,?)`,
+        )
+        .run("OBSERVE_PREFLIGHT", `preflight:${planHash}`, obligationId, null, now + PREFLIGHT_OBSERVE_DELAY_MS, now);
+    });
+  }
+
+  /**
+   * Cancel the preflight observation: the question it exists to answer has been answered.
+   *
+   * Called when the settlement got past the simulation under its own power — either it opened
+   * an attempt, or it refused conclusively. Only the crash leaves the job behind, which is the
+   * point: on an uninterrupted run the outbox does not accumulate work nobody needs.
+   */
+  endPreflight(planHash: string): void {
+    this.#db
+      .prepare("UPDATE jobs SET status = 'done', lease_expires_at = 0 WHERE dedupe_key = ? AND status = 'pending'")
+      .run(`preflight:${planHash}`);
   }
 
   /**
@@ -800,6 +856,12 @@ export class Store {
         )
         .run("DISPATCH_STEP", `dispatch:${a.planHash}:${a.stepIndex}`, a.obligationId, attemptId, now, now);
 
+      // The attempt supersedes the preflight observation: from here the dispatch job is the
+      // thing that comes looking. Same transaction, so the hand-off cannot be interrupted.
+      this.#db
+        .prepare("UPDATE jobs SET status = 'done', lease_expires_at = 0 WHERE dedupe_key = ? AND status = 'pending'")
+        .run(`preflight:${a.planHash}`);
+
       return { attemptId, reused: false };
     });
   }
@@ -1015,6 +1077,13 @@ export class Store {
            ORDER BY id DESC LIMIT 1`,
       )
       .get(obligationId) as AttemptRow | undefined;
+  }
+
+  /** What kinds of work are still owed. Useful for diagnostics and for asserting on an outbox. */
+  pendingJobKinds(): JobKind[] {
+    return (
+      this.#db.prepare("SELECT kind FROM jobs WHERE status = 'pending' ORDER BY id").all() as Array<{ kind: JobKind }>
+    ).map((r) => r.kind);
   }
 
   pendingJobCount(): number {
