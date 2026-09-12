@@ -1,0 +1,25 @@
+{
+  "$comment": [
+    "Drop this in a project root and Claude Code or Cursor picks ReqKeeper up as an agent tool.",
+    "",
+    "Six tools. Three read. propose_payment writes locally but passes no approval, so it always",
+    "stops at AWAITING_APPROVAL. resolve_pending only drains the outbox and has no send path.",
+    "settle_obligation is the one tool that can dispatch, and it cannot supply its own authority:",
+    "the approval is read from the store by plan hash, and nothing on this surface can write one.",
+    "A human runs `npm run approve` at a CLI. That is the whole security model and it is a",
+    "structural absence, not a permission check.",
+    "",
+    "KEEPERHUB_API_KEY is the only credential the settle path needs. The server refuses to start",
+    "without it and writes only to stderr, so stdout stays clean for JSON-RPC."
+  ],
+  "mcpServers": {
+    "reqkeeper": {
+      "command": "node",
+      "args": ["--experimental-strip-types", "scripts/mcp-server.ts"],
+      "env": {
+        "KEEPERHUB_API_KEY": "${KEEPERHUB_API_KEY}",
+        "SEPOLIA_RPC": "https://ethereum-sepolia-rpc.publicnode.com"
+      }
+    }
+  }
+}
