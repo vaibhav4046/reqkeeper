@@ -6,7 +6,7 @@ still breaks or is unfinished?" and the last section is the source for that answ
 
 Reproduce any probe with `node --experimental-strip-types hackathon/audit/probes/<probe>.ts`.
 
-Gates: `npm test` 344 pass / 0 fail / 64 suites · `npm run typecheck` clean · `npm run build`
+Gates: `npm test` 349 pass / 0 fail / 66 suites · `npm run typecheck` clean · `npm run build`
 clean, and reproducible from a bare clone: the page is a function of the committed evidence and
 reads no environment at all, so `git diff --exit-code web api/_gen` passes on a machine that has
 never had a `.env` · `npm run gate-a` 10 ok / 0 failed / 2 blocked here, 9 ok / 0 failed / 3
@@ -20,6 +20,60 @@ tests is noted where it exists, because that is worth knowing.
 ---
 
 ## Closed
+
+### Two duplicate-payment paths, found by an adversarial pass on 2026-09-12
+
+Both were reachable from the shipped code. One was demonstrated end to end, with two physical
+sends for a single obligation. They are recorded here in full because this project's entire claim
+is the thing they broke, and because the way the first one hid is worth more than the fix.
+
+**1. The preflight fast path concluded on evidence it did not have.** `src/settle.ts` refused to
+re-plan after a failed dry run unless "no attempt on this obligation has ever been stamped
+`first_send_at`". That is the correct question. But `openAttempt` does not run until *after* the
+simulate returns, so on a first proposal there is no attempt row at all and the test was
+structurally false every single time. The condition collapsed to the provider's `retryable` flag
+-- which the comment directly above it correctly explains cannot separate a busy platform from a
+dry run that executed and lost its reply. It then cancelled the `OBSERVE_PREFLIGHT` job committed
+seconds earlier to ask exactly that question, released the reservation, and told the caller
+"nothing has ever been dispatched for this obligation, so no payment is in doubt".
+
+Measured, before the fix:
+
+```
+pass 1 state          : PREFLIGHT_UNAVAILABLE
+money already moved   : 1 leaked simulate execution(s)
+pending jobs after p1 : []
+pass 2 state          : SETTLED
+TOTAL PHYSICAL SENDS  : 2
+```
+
+A guard written against durable state, sited where that state does not exist yet, reads exactly
+like a guard that works. The tests missed it because they used the `RATE_LIMITED` fault, which
+throws *before* recording a send, so the dangerous half of the branch was never exercised.
+
+Fixed: a retryable preflight failure now decides nothing. The reservation is held, the observation
+stays queued, and the caller is told the outcome is unknown. The resolver reads the chain and
+either finds the leaked execution (`EVIDENCE_CONFLICT`, for a human) or establishes across the
+whole window that nothing carrying this reference paid this invoice, and only then releases. A
+truncated scan stays unresolved. Definite rejections are unchanged and still hand the reservation
+back. The cost is a resolver pass before a rate-limited proposal can be re-proposed, which is the
+price of not guessing.
+
+**2. The obligation id was trusted rather than derived.** `settle()` never checked the supplied
+`obligationId` against `obligationId(namespace, requestId)`, so a caller could pair one debt's id
+with another's invoice and open a second obligation for an invoice that already had one. Separately
+`importObligation` early-returned on an existing row without back-filling `payment_reference`, so a
+row imported once without a reference kept NULL for life -- and the UNIQUE index that stops one
+debt being paid twice is partial (`WHERE payment_reference IS NOT NULL`), so it looked straight
+through the row it existed to catch.
+
+Fixed: the id is re-derived and a mismatch is `OBLIGATION_ID_MISMATCH` at zero sends; the
+back-fill fills NULL only, never overwrites a stored reference.
+
+Tests: the three cases that pinned the old preflight behaviour asserted the unsafe outcome and were
+rewritten; the duplicate is now a test that fails if the release comes back. Reverting the fix turns
+three red and restoring turns them green. Four new cases cover the identity gate and the back-fill.
+
 
 ### The invoice is read from Request now (PROTOCOL 6a — was the largest gap)
 
