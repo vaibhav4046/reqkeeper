@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "gate-a": "node --experimental-strip-types scripts/gate-a.ts",
     "race": "node --experimental-strip-types scripts/race.ts",
+    "crash": "node --experimental-strip-types scripts/crash.ts",
     "verify:all": "node --experimental-strip-types scripts/verify-all.ts",
     "harness": "node --experimental-strip-types scripts/harness.ts",
     "verify:onchain": "node --experimental-strip-types scripts/verify-onchain.ts",

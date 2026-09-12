@@ -1,0 +1,203 @@
+{
+  "generatedAt": "2026-09-12T18:59:43.262Z",
+  "mode": "FIXTURE",
+  "chainId": 11155111,
+  "note": "One obligation and one database per checkpoint. The child is killed with a real SIGKILL at the named moment, then the outbox is drained by the shipped worker and the agent retries settlement with the real provider. Sends are counted by an out-of-process KeeperHub fixture, so the count survives the kill. End states differ by checkpoint and that is the result, not a defect; `duplicate` is the cell that must be false on every row.",
+  "checkpoints": [
+    "before_reservation",
+    "after_reservation",
+    "after_approval",
+    "after_open_attempt",
+    "after_mark_sent_before_execute",
+    "after_execute_before_receipt",
+    "while_polling",
+    "after_receipt_before_reconcile",
+    "after_reconcile"
+  ],
+  "totals": {
+    "checkpoints": 9,
+    "reached": 9,
+    "duplicates": 0,
+    "broadcasts": 7,
+    "settledAfterRecovery": 7,
+    "heldOpenForAHuman": 2,
+    "maxBroadcastsForOneObligation": 1
+  },
+  "rows": [
+    {
+      "checkpoint": "before_reservation",
+      "reached": true,
+      "childSaid": "CRASH@before_reservation",
+      "sendsBeforeRecovery": 0,
+      "stateAfterWorker": "VALIDATING",
+      "pendingJobs": 0,
+      "agentRetryResult": "SETTLED/-",
+      "finalState": "SETTLED",
+      "totalBroadcasts": 1,
+      "duplicate": false,
+      "proof": "killed at before_reservation before anything reached the provider; the debt was still owed, the retry answered SETTLED/- and it was paid exactly 1 time"
+    },
+    {
+      "checkpoint": "after_reservation",
+      "reached": true,
+      "childSaid": "CRASH@after_reservation",
+      "sendsBeforeRecovery": 0,
+      "stateAfterWorker": "VALIDATING",
+      "pendingJobs": 0,
+      "agentRetryResult": "SETTLED/-",
+      "finalState": "SETTLED",
+      "totalBroadcasts": 1,
+      "duplicate": false,
+      "proof": "killed at after_reservation before anything reached the provider; the debt was still owed, the retry answered SETTLED/- and it was paid exactly 1 time"
+    },
+    {
+      "checkpoint": "after_approval",
+      "reached": true,
+      "childSaid": "CRASH@after_approval",
+      "sendsBeforeRecovery": 0,
+      "stateAfterWorker": "APPROVED",
+      "pendingJobs": 0,
+      "agentRetryResult": "SETTLED/-",
+      "finalState": "SETTLED",
+      "totalBroadcasts": 1,
+      "duplicate": false,
+      "proof": "killed at after_approval before anything reached the provider; the debt was still owed, the retry answered SETTLED/- and it was paid exactly 1 time"
+    },
+    {
+      "checkpoint": "after_open_attempt",
+      "reached": true,
+      "childSaid": "CRASH@after_open_attempt",
+      "sendsBeforeRecovery": 0,
+      "stateAfterWorker": "PAYMENT_PREFLIGHT",
+      "pendingJobs": 1,
+      "agentRetryResult": "PAYMENT_PREFLIGHT/ALREADY_DISPATCHED",
+      "finalState": "PAYMENT_PREFLIGHT",
+      "totalBroadcasts": 0,
+      "duplicate": false,
+      "proof": "killed at after_open_attempt; the provider was never called and nothing was ever sent. Recovery ended at PAYMENT_PREFLIGHT and the retry answered PAYMENT_PREFLIGHT/ALREADY_DISPATCHED — uncertain, held open for reconciliation and a human, and never resolved by sending"
+    },
+    {
+      "checkpoint": "after_mark_sent_before_execute",
+      "reached": true,
+      "childSaid": "CRASH@after_mark_sent_before_execute",
+      "sendsBeforeRecovery": 0,
+      "stateAfterWorker": "EXECUTION_OUTCOME_UNKNOWN",
+      "pendingJobs": 1,
+      "agentRetryResult": "EXECUTION_OUTCOME_UNKNOWN/ALREADY_DISPATCHED",
+      "finalState": "EXECUTION_OUTCOME_UNKNOWN",
+      "totalBroadcasts": 0,
+      "duplicate": false,
+      "proof": "killed at after_mark_sent_before_execute; the provider was never called and nothing was ever sent. Recovery ended at EXECUTION_OUTCOME_UNKNOWN and the retry answered EXECUTION_OUTCOME_UNKNOWN/ALREADY_DISPATCHED — uncertain, held open for reconciliation and a human, and never resolved by sending"
+    },
+    {
+      "checkpoint": "after_execute_before_receipt",
+      "reached": true,
+      "childSaid": "CRASH@after_execute_before_receipt",
+      "sendsBeforeRecovery": 1,
+      "stateAfterWorker": "SETTLED",
+      "pendingJobs": 0,
+      "agentRetryResult": "SETTLED/ALREADY_SETTLED",
+      "finalState": "SETTLED",
+      "totalBroadcasts": 1,
+      "duplicate": false,
+      "proof": "killed at after_execute_before_receipt with the payment already on the record; recovery reached SETTLED off that payment and the retry answered SETTLED/ALREADY_SETTLED — still 1 payment"
+    },
+    {
+      "checkpoint": "while_polling",
+      "reached": true,
+      "childSaid": "CRASH@while_polling",
+      "sendsBeforeRecovery": 1,
+      "stateAfterWorker": "SETTLED",
+      "pendingJobs": 0,
+      "agentRetryResult": "SETTLED/ALREADY_SETTLED",
+      "finalState": "SETTLED",
+      "totalBroadcasts": 1,
+      "duplicate": false,
+      "proof": "killed at while_polling with the payment already on the record; recovery reached SETTLED off that payment and the retry answered SETTLED/ALREADY_SETTLED — still 1 payment"
+    },
+    {
+      "checkpoint": "after_receipt_before_reconcile",
+      "reached": true,
+      "childSaid": "CRASH@after_receipt_before_reconcile",
+      "sendsBeforeRecovery": 1,
+      "stateAfterWorker": "SETTLED",
+      "pendingJobs": 0,
+      "agentRetryResult": "SETTLED/ALREADY_SETTLED",
+      "finalState": "SETTLED",
+      "totalBroadcasts": 1,
+      "duplicate": false,
+      "proof": "killed at after_receipt_before_reconcile with the payment already on the record; recovery reached SETTLED off that payment and the retry answered SETTLED/ALREADY_SETTLED — still 1 payment"
+    },
+    {
+      "checkpoint": "after_reconcile",
+      "reached": true,
+      "childSaid": "CRASH@after_reconcile",
+      "sendsBeforeRecovery": 1,
+      "stateAfterWorker": "SETTLED",
+      "pendingJobs": 0,
+      "agentRetryResult": "SETTLED/ALREADY_SETTLED",
+      "finalState": "SETTLED",
+      "totalBroadcasts": 1,
+      "duplicate": false,
+      "proof": "killed at after_reconcile with the payment already on the record; recovery reached SETTLED off that payment and the retry answered SETTLED/ALREADY_SETTLED — still 1 payment"
+    }
+  ],
+  "executions": [
+    {
+      "executionId": "exec-fixture-1",
+      "transactionHash": "0x0001abababababababababababababababababababababababababababababab",
+      "blockNumber": 999994,
+      "reference": "0x00001a096fd57390",
+      "to": "0xc43d766cb7c48b9b198db87441b97c09e81717a1",
+      "amount": "1000000000000000000"
+    },
+    {
+      "executionId": "exec-fixture-2",
+      "transactionHash": "0x0002abababababababababababababababababababababababababababababab",
+      "blockNumber": 999994,
+      "reference": "0x00001a096fd586c1",
+      "to": "0xc43d766cb7c48b9b198db87441b97c09e81717a1",
+      "amount": "1000000000000000000"
+    },
+    {
+      "executionId": "exec-fixture-3",
+      "transactionHash": "0x0003abababababababababababababababababababababababababababababab",
+      "blockNumber": 999994,
+      "reference": "0x00001a096fd596c2",
+      "to": "0xc43d766cb7c48b9b198db87441b97c09e81717a1",
+      "amount": "1000000000000000000"
+    },
+    {
+      "executionId": "exec-fixture-4",
+      "transactionHash": "0x0004abababababababababababababababababababababababababababababab",
+      "blockNumber": 999994,
+      "reference": "0x00001a096fd5cb15",
+      "to": "0xc43d766cb7c48b9b198db87441b97c09e81717a1",
+      "amount": "1000000000000000000"
+    },
+    {
+      "executionId": "exec-fixture-5",
+      "transactionHash": "0x0005abababababababababababababababababababababababababababababab",
+      "blockNumber": 999994,
+      "reference": "0x00001a096fd5df16",
+      "to": "0xc43d766cb7c48b9b198db87441b97c09e81717a1",
+      "amount": "1000000000000000000"
+    },
+    {
+      "executionId": "exec-fixture-6",
+      "transactionHash": "0x0006abababababababababababababababababababababababababababababab",
+      "blockNumber": 999994,
+      "reference": "0x00001a096fd5f377",
+      "to": "0xc43d766cb7c48b9b198db87441b97c09e81717a1",
+      "amount": "1000000000000000000"
+    },
+    {
+      "executionId": "exec-fixture-7",
+      "transactionHash": "0x0007abababababababababababababababababababababababababababababab",
+      "blockNumber": 999994,
+      "reference": "0x00001a096fd60e78",
+      "to": "0xc43d766cb7c48b9b198db87441b97c09e81717a1",
+      "amount": "1000000000000000000"
+    }
+  ]
+}

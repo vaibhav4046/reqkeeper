@@ -1,13 +1,13 @@
 {
-  "generatedAt": "2026-09-12T18:53:40.243Z",
+  "generatedAt": "2026-09-12T18:57:24.450Z",
   "chainId": 11155111,
   "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
   "credentialsUsed": "none",
   "totals": {
     "checks": 14,
-    "ok": 13,
+    "ok": 14,
     "failed": 0,
-    "blocked": 1
+    "blocked": 0
   },
   "checks": [
     {
@@ -41,10 +41,10 @@
       "detail": "no worker threw or produced no output"
     },
     {
-      "id": "crash",
+      "id": "crash.no-duplicates",
       "claim": "no crash checkpoint produces a duplicate payment",
-      "status": "BLOCKED",
-      "detail": "docs/evidence/crash.json is absent — run `npm run crash`"
+      "status": "ok",
+      "detail": "9 checkpoint(s) reached, zero duplicates"
     },
     {
       "id": "live.one-send-per-settlement",
