@@ -1043,7 +1043,7 @@
   const CMDS = [
     ["npm test", "every unit test in the tree", `<span class="zero">${D.tests}</span> passed when this page was built`],
     ["npm run typecheck", "tsc --noEmit over src, scripts and api", none],
-    ["npm run build", "rebuilds this page from the evidence files, and refuses to write it if any test fails", `built ${String(D.builtAt).slice(0, 19).replace("T", " ")}Z`],
+    ["npm run build", "rebuilds this page from the evidence files, and refuses to write it if any test fails", `newest evidence ${String(D.builtAt).slice(0, 10)}`],
     ["npm run gate-a", "the public claims that need no credentials", none],
     [
       "npm run race",

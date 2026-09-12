@@ -91,7 +91,19 @@ const tests = testCount();
 const payee = (env("PAYEE_BURNER") || "0x0000000000000000000000000000000000000000").toLowerCase();
 
 const data = {
-  builtAt: new Date().toISOString(),
+  /**
+   * The newest evidence this page was built from — NOT the wall clock.
+   *
+   * `new Date()` here made every build produce different bytes, so the deployed page could
+   * never be byte-identical to any commit. That is precisely the defect the baseline audit
+   * raised: a judge could not check out a revision and reproduce what is served. Deriving the
+   * stamp from the artifacts makes a rebuild of the same commit deterministic, and says
+   * something more useful than when a file was written: how fresh the evidence behind it is.
+   */
+  builtAt: [live?.generatedAt, refusals?.generatedAt, race?.generatedAt, crash?.generatedAt]
+    .filter(Boolean)
+    .sort()
+    .pop() ?? "unknown",
   tests,
   refusals,
   live,
