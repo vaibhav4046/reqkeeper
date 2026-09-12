@@ -31,6 +31,7 @@ export type State =
   | "PLAN_CHANGED"
   | "CALLDATA_MISMATCH"
   | "SIMULATION_BLOCKED"
+  | "PREFLIGHT_UNAVAILABLE"
   | "EXECUTION_OUTCOME_UNKNOWN"
   | "EXECUTION_REVERTED"
   | "RECONCILIATION_PENDING"
@@ -47,6 +48,7 @@ export const PRE_DISPATCH_REFUSALS: readonly State[] = [
   "PLAN_CHANGED",
   "CALLDATA_MISMATCH",
   "SIMULATION_BLOCKED",
+  "PREFLIGHT_UNAVAILABLE",
   "CANCELLED_BEFORE_PAYMENT",
 ];
 
@@ -66,6 +68,7 @@ export const TERMINAL: readonly State[] = [
   "PLAN_CHANGED",
   "CALLDATA_MISMATCH",
   "SIMULATION_BLOCKED",
+  "PREFLIGHT_UNAVAILABLE",
   "EXECUTION_REVERTED",
   "CANCELLED_BEFORE_PAYMENT",
 ];
@@ -99,9 +102,14 @@ const TRANSITIONS: Readonly<Record<State, readonly State[]>> = {
   // will not simulate. The allowance exists on chain; the UI must say so.
   // EVIDENCE_CONFLICT because a dry run that returns a transaction hash has executed (#1959):
   // the safe reading is that money moved, never that the simulation was harmless.
+  // PREFLIGHT_UNAVAILABLE is the platform being busy, not the payment being wrong. It is a
+  // separate state from SIMULATION_BLOCKED because their agent guidance is opposite —
+  // "this would revert, fix the plan" versus "try again shortly" — and because only one of
+  // them is safe to replan from. See REPLANNABLE below for the condition that gates entry.
   PAYMENT_PREFLIGHT: [
     "PAYMENT_EXECUTING",
     "SIMULATION_BLOCKED",
+    "PREFLIGHT_UNAVAILABLE",
     "PLAN_EXPIRED",
     "PLAN_CHANGED",
     "EVIDENCE_CONFLICT",
@@ -140,6 +148,7 @@ const TRANSITIONS: Readonly<Record<State, readonly State[]>> = {
   PLAN_CHANGED: [],
   CALLDATA_MISMATCH: [],
   SIMULATION_BLOCKED: [],
+  PREFLIGHT_UNAVAILABLE: [],
   EXECUTION_REVERTED: [],
   CANCELLED_BEFORE_PAYMENT: [],
 };
@@ -153,6 +162,16 @@ const TRANSITIONS: Readonly<Record<State, readonly State[]>> = {
  * stands": SOURCE_ALREADY_PAID is excluded because there is nothing left to pay, and every
  * state from PAYMENT_EXECUTING onward is excluded because a second plan over a live payment
  * is the exact thing this project exists to refuse.
+ *
+ * PREFLIGHT_UNAVAILABLE is in this set, and it is the one member whose safety does not follow
+ * from the state name alone. PAYMENT_PREFLIGHT is not replannable, and deliberately so: a
+ * simulate can TIME OUT, and a timed-out dry run may have executed for real (#1959). The
+ * provider's own `retryable` flag cannot separate the two — `rate_limited` and `timeout` are
+ * both retryable — so it is not the discriminator. The discriminator is durable local state:
+ * this state may only be entered when NO attempt on the obligation carries `first_send_at`,
+ * i.e. nothing has ever been handed to the provider under this obligation. `settleObligation`
+ * enforces that with `store.sentAttemptFor` before the transition, and the test
+ * "PREFLIGHT_UNAVAILABLE is unreachable once anything has been sent" pins it.
  */
 export const REPLANNABLE: readonly State[] = [
   "IMPORTED",
@@ -166,6 +185,7 @@ export const REPLANNABLE: readonly State[] = [
   "PLAN_CHANGED",
   "CALLDATA_MISMATCH",
   "SIMULATION_BLOCKED",
+  "PREFLIGHT_UNAVAILABLE",
   "CANCELLED_BEFORE_PAYMENT",
 ];
 

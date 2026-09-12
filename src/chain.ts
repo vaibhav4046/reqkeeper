@@ -6,7 +6,29 @@
 import { keccak256Hex } from "./keccak.ts";
 import { ERC20_FEE_PROXY } from "./plan.ts";
 
-export const DEFAULT_RPC = "https://ethereum-sepolia-rpc.publicnode.com";
+export const DEFAULT_RPC = process.env.SEPOLIA_RPC ?? "https://ethereum-sepolia-rpc.publicnode.com";
+
+/**
+ * Public Sepolia endpoints prune receipts. publicnode answers `eth_getTransactionReceipt`
+ * with `result: null` for transactions it still returns in full from `eth_getTransactionByHash`,
+ * which reads downstream exactly like "this payment never landed" — the one conclusion this
+ * module exists to get right. A null here is therefore treated as "this endpoint does not know",
+ * not as an answer, and the question is put to another endpoint before we believe it.
+ *
+ * Order matters: publicnode stays first because its `eth_getLogs` range cap is what MAX_RANGE
+ * below is tuned against.
+ */
+const RPC_FALLBACKS = [
+  "https://ethereum-sepolia-rpc.publicnode.com",
+  "https://sepolia.gateway.tenderly.co",
+  "https://sepolia.drpc.org",
+];
+
+/** Methods where a null result may mean "pruned" rather than "absent". */
+const NULLABLE_IS_UNKNOWN = new Set([
+  "eth_getTransactionReceipt",
+  "eth_getTransactionByHash",
+]);
 
 /**
  * `TransferWithReferenceAndFee`'s `paymentReference` is an INDEXED bytes parameter, so the
@@ -25,11 +47,11 @@ function referenceTopic(reference: string): string {
   return keccak256Hex(bytes);
 }
 
-export async function rpcCall(
+async function rpcCallOnce(
   rpcUrl: string,
   method: string,
   params: unknown[],
-  timeoutMs = 30_000,
+  timeoutMs: number,
 ): Promise<unknown> {
   const res = await fetch(rpcUrl, {
     method: "POST",
@@ -40,6 +62,30 @@ export async function rpcCall(
   const body = (await res.json()) as { result?: unknown; error?: { message: string } };
   if (body.error) throw new Error(`${method}: ${body.error.message}`);
   return body.result;
+}
+
+export async function rpcCall(
+  rpcUrl: string,
+  method: string,
+  params: unknown[],
+  timeoutMs = 30_000,
+): Promise<unknown> {
+  const result = await rpcCallOnce(rpcUrl, method, params, timeoutMs);
+  if (result !== null && result !== undefined) return result;
+  if (!NULLABLE_IS_UNKNOWN.has(method)) return result;
+
+  // The endpoint disclaimed knowledge of a transaction. Ask the others before
+  // concluding it does not exist; only agreement across endpoints is evidence.
+  for (const alt of RPC_FALLBACKS) {
+    if (alt === rpcUrl) continue;
+    try {
+      const second = await rpcCallOnce(alt, method, params, timeoutMs);
+      if (second !== null && second !== undefined) return second;
+    } catch {
+      // an unreachable fallback tells us nothing; keep asking
+    }
+  }
+  return result;
 }
 
 export interface PaymentSighting {
@@ -77,13 +123,41 @@ export async function findPaymentByReference(
   } = {},
 ): Promise<PaymentSighting> {
   const rpcUrl = opts.rpcUrl ?? DEFAULT_RPC;
-  const topics = [EVENT_TOPIC, referenceTopic(reference)];
   const head = await currentBlock(rpcUrl);
   const floor =
     opts.fromBlock !== undefined
       ? Math.max(0, opts.fromBlock)
       : Math.max(0, head - (opts.lookbackBlocks ?? DEFAULT_LOOKBACK));
 
+  const first = await scanForReference(reference, rpcUrl, head, floor);
+  if (first.found) return first;
+
+  /**
+   * A negative is the dangerous answer: it is the one that reads as "this invoice is
+   * unpaid, go ahead and pay it". publicnode has been observed returning an empty
+   * `eth_getLogs` for a fee-proxy log that demonstrably exists and that other endpoints
+   * return, with no error — so a single endpoint's silence is not evidence of absence.
+   * Only re-scan on a negative, so the common path still costs one pass.
+   */
+  for (const alt of RPC_FALLBACKS) {
+    if (alt === rpcUrl) continue;
+    try {
+      const second = await scanForReference(reference, alt, head, floor);
+      if (second.found) return second;
+    } catch {
+      // an unreachable endpoint is not a second opinion; keep asking
+    }
+  }
+  return first;
+}
+
+async function scanForReference(
+  reference: string,
+  rpcUrl: string,
+  head: number,
+  floor: number,
+): Promise<PaymentSighting> {
+  const topics = [EVENT_TOPIC, referenceTopic(reference)];
   let to = head;
   while (to >= floor) {
     const from = Math.max(floor, to - MAX_RANGE + 1);

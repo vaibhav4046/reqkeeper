@@ -144,7 +144,21 @@ const outcome = await settleObligation(
     provider,
     policy,
     // Independent reconciliation: the chain's own record, not a provider status string.
-    sourceSaysPaid: async () => (await proxySawPayment(startBlock)).found,
+    //
+    // Three questions, the same three every other caller asks (src/mcp.ts:221,
+    // scripts/resolve.ts:77, scripts/live-harness.ts:202): our reference, our
+    // transaction, our amount. Answering only the first — `.found` alone — accepts a
+    // different transaction's log as proof that THIS obligation settled, which is the
+    // exact defect the SettleDeps contract documents at src/settle.ts:55-58. This is
+    // the live-money path, so it is the last place that shortcut belongs.
+    sourceSaysPaid: async (_requestId: string, txHash: string) => {
+      const seen = await proxySawPayment(startBlock);
+      return (
+        seen.found &&
+        seen.txHash?.toLowerCase() === txHash.toLowerCase() &&
+        seen.amount === AMOUNT
+      );
+    },
   },
   {
     namespace: NS,

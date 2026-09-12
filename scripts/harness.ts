@@ -11,7 +11,7 @@
  * against a provider that counts physical sends rather than reporting a status string.
  */
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { FixtureProvider, type Fault } from "../src/provider.ts";
 import { Store } from "../src/store.ts";
 import { settleObligation } from "../src/settle.ts";
@@ -201,7 +201,10 @@ await run("same key, different body", "IDEMPOTENCY_CONFLICT", () => ({ facts: fa
 await run("dry run actually executed (#1959)", "SIMULATE_EXECUTED", () => ({ facts: facts(), fault: "SIMULATE_IGNORED" }));
 await run("receipt says reverted", "EXECUTION_REVERTED", () => ({ facts: facts(), fault: "RECEIPT_REVERTED" }));
 await run("provider claims success, chain has no receipt", "EVIDENCE_CONFLICT", () => ({ facts: facts(), fault: "COMPLETE_BUT_RECEIPT_MISSING" }));
-await run("provider rate limits the preflight", "rate_limited", () => ({ facts: facts(), fault: "RATE_LIMITED" }));
+// A rate limit is the platform being busy, not the payment being wrong. It used to leave the
+// obligation stranded in PAYMENT_PREFLIGHT holding its reservation, at zero sends and with no
+// way forward; it now lands in PREFLIGHT_UNAVAILABLE, which is replannable.
+await run("provider rate limits the preflight", "PREFLIGHT_UNAVAILABLE", () => ({ facts: facts(), fault: "RATE_LIMITED" }));
 
 // ---- the headline: replay after the 24h window lapses ---------------------
 // Same obligation, same plan, same key, provider cache gone. The registry must still refuse.
@@ -334,8 +337,29 @@ for (const r of rows) {
   );
 }
 
-const summary = {
-  generatedAt: new Date().toISOString(),
+/**
+ * The timestamp moves only when the evidence does.
+ *
+ * `new Date().toISOString()` on every run made this file dirty after every command that
+ * touched it, which meant `git diff --exit-code` could never be a CI gate and a reviewer could
+ * not tell a real change from a re-run. The rows are deterministic — the whole point of a
+ * fixture harness — so the only honest reason for the date to move is that a row moved.
+ */
+function generatedAt(previousPath: string, nextWithoutDate: unknown): string {
+  const now = new Date().toISOString();
+  if (!existsSync(previousPath)) return now;
+  try {
+    const previous = JSON.parse(readFileSync(previousPath, "utf8")) as Record<string, unknown>;
+    const { generatedAt: previousDate, ...previousRest } = previous;
+    if (typeof previousDate !== "string") return now;
+    return JSON.stringify(previousRest) === JSON.stringify(nextWithoutDate) ? previousDate : now;
+  } catch {
+    // An unreadable or malformed previous file is not evidence of anything. Date it now.
+    return now;
+  }
+}
+
+const body = {
   mode: "FIXTURE" as const,
   note:
     "Deterministic fault injection against an in-memory provider that counts physical sends. " +
@@ -351,8 +375,11 @@ const summary = {
   rows,
 };
 
+const OUT = "docs/refusals.json";
+const summary = { generatedAt: generatedAt(OUT, body), ...body };
+
 mkdirSync("docs", { recursive: true });
-writeFileSync("docs/refusals.json", `${JSON.stringify(summary, null, 2)}\n`);
+writeFileSync(OUT, `${JSON.stringify(summary, null, 2)}\n`);
 
 console.log(
   `\n${passed}/${rows.length} cases behaved as specified.\n` +

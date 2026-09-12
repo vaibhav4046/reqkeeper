@@ -22,6 +22,7 @@
  */
 
 import { type CallStep, decodeAllowedCall } from "./calldata-gate.ts";
+import { rpcCall } from "./chain.ts";
 import type { ExecuteResult, ExecutionProvider, Receipt, SimulateResult } from "./provider.ts";
 import { ProviderError } from "./provider.ts";
 
@@ -125,6 +126,14 @@ export class KeeperHubProvider implements ExecutionProvider {
     if (res.status >= 500) {
       throw new ProviderError("provider_error", `HTTP ${res.status}: ${parsed.error ?? text.slice(0, 200)}`, true);
     }
+    // Anything else non-2xx — 400, 401, 403, 404 — was falling through and being returned as
+    // a normal body. For simulate() that is the dangerous direction: a response with no
+    // `wouldRevert` and no `success` reads as `wouldRevert: false`, i.e. a clean dry run, and
+    // the preflight gate then lets a real payment through. A non-2xx is never evidence that a
+    // simulation passed. 4xx is the caller's fault, so it is not retryable.
+    if (!res.ok) {
+      throw new ProviderError("bad_response", `HTTP ${res.status}: ${parsed.error ?? text.slice(0, 200)}`, false);
+    }
     return parsed;
   }
 
@@ -135,7 +144,11 @@ export class KeeperHubProvider implements ExecutionProvider {
     const hash = res.transactionHash ?? res.txHash ?? res.hash;
     return {
       status: "simulated",
-      wouldRevert: res.wouldRevert === true || res.success === false,
+      // An HTTP 200 carrying an error body is not a clean simulation. Absent this, such a
+      // response has neither `wouldRevert` nor `success`, both comparisons are false, and the
+      // gate reads "would not revert" from what is actually a failure to simulate at all.
+      // Unknown must mean unsafe here, because the next step spends money.
+      wouldRevert: res.wouldRevert === true || res.success === false || res.error !== undefined,
       gasEstimate: res.gasEstimate ?? "0",
       // Passed through deliberately. A hash here means the dry run executed, and settle.ts
       // treats that as a real send rather than a simulation.
@@ -173,20 +186,20 @@ export class KeeperHubProvider implements ExecutionProvider {
    * provider reporting on its own success is not evidence of anything.
    */
   async receipt(hash: string): Promise<Receipt> {
-    let body: { result?: { status?: string; gasUsed?: string } | null; error?: { message: string } };
+    // Deliberately the shared rpcCall, not a private fetch. A public endpoint can prune a
+    // receipt and answer `result: null` for a transaction that demonstrably succeeded
+    // (observed on publicnode and drpc for 0xb90a0771…, which tenderly returns in full).
+    // Through a private fetch that lands here as `not_found`, which settle reads as
+    // EVIDENCE_CONFLICT — a real settlement reported as missing. rpcCall asks the other
+    // endpoints before believing a null.
+    let r: { status?: string; gasUsed?: string } | null | undefined;
     try {
-      const res = await fetch(this.#cfg.rpcUrl, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getTransactionReceipt", params: [hash] }),
-        signal: AbortSignal.timeout(this.#timeout),
-      });
-      body = (await res.json()) as typeof body;
+      r = (await rpcCall(this.#cfg.rpcUrl, "eth_getTransactionReceipt", [hash], this.#timeout)) as
+        | { status?: string; gasUsed?: string }
+        | null;
     } catch {
       return { hash, verified: false, receiptStatus: "timeout", gasUsed: "0" };
     }
-    if (body.error) return { hash, verified: false, receiptStatus: "timeout", gasUsed: "0" };
-    const r = body.result;
     if (!r) return { hash, verified: false, receiptStatus: "not_found", gasUsed: "0" };
 
     const gasUsed = r.gasUsed ? BigInt(r.gasUsed).toString(10) : "0";

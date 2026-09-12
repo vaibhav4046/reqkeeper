@@ -17,7 +17,7 @@
 
 import { isTerminal, type State } from "./machine.ts";
 import type { ExecutionProvider } from "./provider.ts";
-import type { Job, Store } from "./store.ts";
+import type { Fence, Job, Store } from "./store.ts";
 
 export interface WorkerDeps {
   readonly store: Store;
@@ -102,6 +102,26 @@ interface Resolution {
   readonly advanced: ReadonlyArray<{ obligationId: string; from: State; to: State }>;
 }
 
+/**
+ * Find the transaction for an obligation whose attempt has no recorded hash.
+ *
+ * The reference is the identifier that survives a lost reply — it is derived from the invoice,
+ * it is in the fee-proxy log, and it is the same question Request's own detection asks. The
+ * amount is checked as well as the reference, because a log carrying this reference for a
+ * different value is somebody else's transaction, and accepting it here is how an obligation
+ * ends up citing a payment it never made.
+ */
+async function findByReference(
+  deps: WorkerDeps,
+  obligation: { readonly paymentReference: string | null; readonly invoiceBaseUnits: string | null },
+): Promise<string | undefined> {
+  if (!deps.findPaidReference || !obligation.paymentReference) return undefined;
+  const seen = await deps.findPaidReference(obligation.paymentReference);
+  if (!seen?.txHash) return undefined;
+  if (obligation.invoiceBaseUnits !== null && seen.amount !== obligation.invoiceBaseUnits) return undefined;
+  return seen.txHash;
+}
+
 async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Resolution> {
   const { store } = deps;
   const obligation = store.obligationForRecovery(job.obligationId);
@@ -113,11 +133,19 @@ async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Reso
   // that finished correctly.
   if (isTerminal(obligation.state)) return { done: true, advanced: [] };
 
+  // Every write below carries the lease this worker holds. Fencing used to protect the job row
+  // and nothing else, so a worker whose lease expired could still rewrite the obligation's
+  // state and the attempt's recorded evidence while another worker owned the job — it could not
+  // finish the job, but it could corrupt what the job was about. The generation now travels
+  // with the write and is checked inside the same transaction, so a stale worker writes nothing
+  // and `drainOnce` catches STALE_FENCE and moves on.
+  const fence: Fence = { jobId: job.id, generation: job.fencingGeneration };
+
   const advanced: Array<{ obligationId: string; from: State; to: State }> = [];
   const move = (to: State): void => {
     const from = store.obligationForRecovery(job.obligationId)?.state;
     if (from === undefined || from === to) return;
-    store.setState(job.obligationId, to, now);
+    store.setState(job.obligationId, to, now, fence);
     advanced.push({ obligationId: job.obligationId, from, to });
   };
 
@@ -134,18 +162,12 @@ async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Reso
         move("EXECUTION_OUTCOME_UNKNOWN");
         return { done: false, reason: "CANNOT_OBSERVE", advanced };
       }
-      const seen = await deps.findPaidReference(obligation.paymentReference);
-      if (seen?.txHash && (obligation.invoiceBaseUnits === null || seen.amount === obligation.invoiceBaseUnits)) {
-        store.recordOutcome(attempt.id, { outcome: "SENT", txHash: seen.txHash });
+      const recovered = await findByReference(deps, obligation);
+      if (recovered) {
+        // Recording the send enqueues OBSERVE_EXECUTION in the same transaction, so the
+        // hand-off cannot be lost between these two writes.
+        store.recordOutcome(attempt.id, { outcome: "SENT", txHash: recovered, now, fence });
         move("CHAIN_PENDING");
-        store.enqueue({
-          kind: "OBSERVE_EXECUTION",
-          dedupeKey: `observe:${attempt.planHash}:${attempt.stepIndex}`,
-          obligationId: job.obligationId,
-          attemptId: attempt.id,
-          dueAt: now,
-          now,
-        });
         return { done: true, advanced };
       }
       // Nothing on chain yet. Not "unpaid" — unknown, and it stays unknown until it is seen.
@@ -161,7 +183,45 @@ async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Reso
 
   // --- OBSERVE_EXECUTION: the chain is the authority on what happened -----
   if (job.kind === "OBSERVE_EXECUTION") {
-    if (!attempt.txHash) return { done: false, reason: "NO_TX_HASH", advanced };
+    if (!attempt.txHash) {
+      // Sent, but no hash was ever recorded: the provider answered success without one, or the
+      // reply was lost. There is nothing to read a receipt for, so without this the job defers
+      // forever and a real payment sits unobserved. The reference is the way back to the hash.
+      const recovered = await findByReference(deps, obligation);
+      if (!recovered) return { done: false, reason: "NO_TX_HASH", advanced };
+      store.recordOutcome(attempt.id, { outcome: "SENT", txHash: recovered, now, fence });
+      move("CHAIN_PENDING");
+      // Deferred rather than completed: the next pass reads the receipt with the hash in hand.
+      return { done: false, reason: "HASH_RECOVERED", advanced };
+    }
+
+    // A crash between recording the send and recording CHAIN_PENDING leaves the obligation one
+    // step behind its own evidence. Catch it up before reading the receipt.
+    if (obligation.state === "PAYMENT_EXECUTING") move("CHAIN_PENDING");
+
+    // This job is enqueued in the same transaction that records the send, so on an uninterrupted
+    // run it exists while the settle path is still going and reads the receipt inline. By the
+    // time the job is claimed the obligation can already be past the point this job exists to
+    // reach. The job asks that SOMEBODY observe the execution, not that this worker be the one
+    // who does, so a state beyond observation completes it rather than driving an illegal move.
+    const current = store.obligationForRecovery(job.obligationId)?.state;
+    const awaitingObservation =
+      current === "CHAIN_PENDING" || current === "EXECUTION_OUTCOME_UNKNOWN" || current === "CHAIN_CONFIRMED";
+    if (!awaitingObservation) {
+      // Past observation but not finished. A crash between the receipt read and the
+      // reconciliation answer lands here — RECONCILING with an empty outbox, a real payment,
+      // and nothing left that would ever look again. Hand off instead of closing the loop.
+      store.enqueue({
+        kind: "RECONCILE_SOURCE",
+        dedupeKey: `reconcile:${attempt.planHash}`,
+        obligationId: job.obligationId,
+        dueAt: now,
+        now,
+        fence,
+      });
+      return { done: true, reason: "ALREADY_OBSERVED", advanced };
+    }
+
     const receipt = await deps.provider.receipt(attempt.txHash);
     if (receipt.receiptStatus === "reverted") {
       move("EXECUTION_REVERTED");
@@ -178,6 +238,7 @@ async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Reso
       obligationId: job.obligationId,
       dueAt: now,
       now,
+      fence,
     });
     return { done: true, advanced };
   }

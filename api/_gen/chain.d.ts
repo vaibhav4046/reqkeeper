@@ -2,7 +2,7 @@
  * Independent chain reads. Nothing here talks to the execution provider, deliberately:
  * these are the functions that get to contradict it.
  */
-export declare const DEFAULT_RPC = "https://ethereum-sepolia-rpc.publicnode.com";
+export declare const DEFAULT_RPC: string;
 export declare function rpcCall(rpcUrl: string, method: string, params: unknown[], timeoutMs?: number): Promise<unknown>;
 export interface PaymentSighting {
     readonly found: boolean;

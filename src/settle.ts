@@ -435,26 +435,76 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
   } catch (e) {
     const code = e instanceof ProviderError ? e.code : "simulate_failed";
     const retryable = e instanceof ProviderError && e.retryable;
-    store.releaseObligation(input.obligationId, planHash);
 
     // A 429 is not a revert. Funnelling every preflight error into SIMULATION_BLOCKED — a
-    // TERMINAL state whose agent guidance reads "the payment would revert" — turns the
-    // platform's rate limit into a permanent refusal and a support ticket blaming the
-    // platform for a revert that never happened. A retryable failure leaves the obligation in
-    // PAYMENT_PREFLIGHT, which is replannable, so proposing again later is the right move and
-    // is the move the agent is told to make.
-    if (retryable) {
-      store.audit(input.obligationId, "system", "PREFLIGHT_UNAVAILABLE", { code });
+    // state whose agent guidance reads "the payment would revert" — turns the platform's rate
+    // limit into a permanent refusal and a support ticket blaming the platform for a revert
+    // that never happened. But the obvious repair, adding PAYMENT_PREFLIGHT to REPLANNABLE, is
+    // a trap: it would also admit a re-plan after a simulate TIMEOUT, and a timed-out dry run
+    // may have executed for real (#1959, handled above when the hash comes back). The
+    // provider's `retryable` flag cannot separate the two — rate_limited and timeout are both
+    // retryable:true — so it is not the discriminator.
+    //
+    // Durable local state is. PREFLIGHT_UNAVAILABLE is entered only when no attempt on this
+    // obligation has ever been stamped `first_send_at`, which is the same question as "has
+    // anything ever been handed to the provider under this obligation". If something has, the
+    // uncertainty is about a payment and the reservation must stay held; if nothing has, the
+    // debt is simply unattempted and re-proposing is both safe and correct.
+    const everSent = store.sentAttemptFor(input.obligationId);
+    if (retryable && !everSent) {
+      // The state moves BEFORE the release, not after. Releasing first was the bug: the
+      // obligation was still PAYMENT_PREFLIGHT, which is not replannable, so releaseObligation
+      // answered { released: false } and the return value was discarded. The reservation stuck
+      // to a plan that never ran, and a corrected plan was refused OBLIGATION_RESERVED forever.
+      store.setState(input.obligationId, "PREFLIGHT_UNAVAILABLE", input.now);
+      const release = store.releaseObligation(input.obligationId, planHash);
+      store.audit(input.obligationId, "system", "PREFLIGHT_UNAVAILABLE", {
+        code,
+        released: release.released,
+        reason: release.reason ?? null,
+      });
+      return out({
+        state: "PREFLIGHT_UNAVAILABLE",
+        refusal: "PREFLIGHT_UNAVAILABLE",
+        detail:
+          `preflight unavailable: ${code}. The platform was busy and nothing has ever been ` +
+          `dispatched for this obligation, so no payment is in doubt. ` +
+          (release.released
+            ? "The reservation has been released; propose again when the platform recovers."
+            : `The reservation could not be released (${release.reason ?? "unknown"}); propose the same plan again.`),
+        providerWriteIssued: false,
+        planHash,
+      });
+    }
+
+    // Either a definite rejection, or retryable with a send already on the record. Both keep
+    // the reservation: the first because the plan is wrong, the second because a payment may
+    // be in flight and handing the claim back is how a second one gets authorised.
+    if (retryable && everSent) {
+      store.audit(input.obligationId, "system", "PREFLIGHT_RESERVATION_HELD", {
+        code,
+        reason: "an attempt on this obligation has already been dispatched",
+      });
       return out({
         state: "PAYMENT_PREFLIGHT",
         refusal: code,
-        detail: `preflight unavailable: ${code}. This is the platform being busy, not the payment being wrong — propose again later. Nothing was sent.`,
+        detail:
+          `preflight unavailable: ${code}, and this obligation already has a dispatched attempt ` +
+          `(first sent at ${everSent.firstSendAt}). The reservation is held deliberately — ` +
+          `poll its status and let reconciliation finish it. No new payment was submitted.`,
         providerWriteIssued: false,
         planHash,
       });
     }
 
     store.setState(input.obligationId, "SIMULATION_BLOCKED", input.now);
+    const release = store.releaseObligation(input.obligationId, planHash);
+    if (!release.released) {
+      store.audit(input.obligationId, "system", "PREFLIGHT_RESERVATION_HELD", {
+        code,
+        reason: release.reason ?? "unknown",
+      });
+    }
     return out({ state: "SIMULATION_BLOCKED", refusal: code, detail: `preflight unavailable: ${code}`, providerWriteIssued: false, planHash });
   }
 
@@ -476,8 +526,14 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
   // has lapsed (>24h) re-enters here, reuses the same attempt row, calls execute() again,
   // and the provider — having forgotten the key — pays a second time. Local durable state,
   // not the provider's cache, is what makes this exactly-once.
-  const priorAttempt = store.getAttempt(attemptId);
-  if (priorAttempt && priorAttempt.firstSendAt !== null) {
+  //
+  // It is one statement, deliberately. Reading `firstSendAt` and then stamping it is a
+  // test-and-set across two statements: both callers read null, both pass, and the only thing
+  // stopping the second send is that SQLite serialises writers and Node happened not to yield
+  // between the two. `markSent` now carries `WHERE first_send_at IS NULL` and reports whether
+  // it changed a row, so the claim is decided by the database, not by the scheduler.
+  if (!store.markSent(attemptId, input.now)) {
+    const priorAttempt = store.getAttempt(attemptId);
     store.enqueue({
       kind: "OBSERVE_EXECUTION",
       dedupeKey: `observe:${planHash}:${stepIndex}`,
@@ -487,24 +543,23 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
     });
     store.audit(input.obligationId, "system", "REFUSED_RESEND", {
       attemptId,
-      firstSendAt: priorAttempt.firstSendAt,
-      outcome: priorAttempt.outcome,
+      firstSendAt: priorAttempt?.firstSendAt ?? null,
+      outcome: priorAttempt?.outcome ?? null,
     });
     return out({
       state: "EXECUTION_OUTCOME_UNKNOWN",
       refusal: "ALREADY_DISPATCHED",
       detail:
-        `step ${stepIndex} of this plan was already dispatched at ${priorAttempt.firstSendAt}` +
-        ` (execution ${priorAttempt.executionId ?? "unknown"}); checking that execution,` +
+        `step ${stepIndex} of this plan was already dispatched at ${priorAttempt?.firstSendAt}` +
+        ` (execution ${priorAttempt?.executionId ?? "unknown"}); checking that execution,` +
         " no new payment submitted",
       providerWriteIssued: false,
-      txHash: priorAttempt.txHash ?? undefined,
+      txHash: priorAttempt?.txHash ?? undefined,
       planHash,
     });
   }
 
   store.setState(input.obligationId, "PAYMENT_EXECUTING", input.now);
-  store.markSent(attemptId, input.now);
   let executed;
   try {
     executed = await provider.execute(body, key);
@@ -512,11 +567,11 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
     const code = e instanceof ProviderError ? e.code : "unknown";
     if (code === "idempotency_conflict") {
       // Same key, different body. An integrity incident: never rotate the key to succeed.
-      store.recordOutcome(attemptId, { outcome: "INTEGRITY_CONFLICT" });
+      store.recordOutcome(attemptId, { outcome: "INTEGRITY_CONFLICT", now: input.now });
       store.setState(input.obligationId, "EVIDENCE_CONFLICT", input.now);
       return out({ state: "EVIDENCE_CONFLICT", refusal: "IDEMPOTENCY_CONFLICT", detail: "provider holds a different body for this key", providerWriteIssued: true, planHash });
     }
-    store.recordOutcome(attemptId, { outcome: "UNKNOWN" });
+    store.recordOutcome(attemptId, { outcome: "UNKNOWN", now: input.now });
     store.setState(input.obligationId, "EXECUTION_OUTCOME_UNKNOWN", input.now);
     store.enqueue({ kind: "OBSERVE_EXECUTION", dedupeKey: `observe:${planHash}:${stepIndex}`, obligationId: input.obligationId, attemptId, dueAt: input.now + 5_000 });
     return out({
@@ -530,7 +585,18 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
 
   if (executed.status === "failed") {
     // #1840: a cached failure replays forever. A new payment needs a new approved plan.
-    store.recordOutcome(attemptId, { outcome: "FAILED", executionId: executed.executionId });
+    //
+    // The hash is recorded when there is one. KeeperHub returns a transaction hash on `failed`
+    // whenever the transaction actually reached the chain, so dropping it — which this call
+    // used to do — threw away the only identifier that says whether gas was spent and whether
+    // the fee proxy was touched. Recording it also enqueues the observation that reads the
+    // receipt, so "failed" is checked against the chain rather than believed.
+    store.recordOutcome(attemptId, {
+      outcome: "FAILED",
+      executionId: executed.executionId,
+      txHash: executed.transactionHash,
+      now: input.now,
+    });
     store.setState(input.obligationId, "EXECUTION_OUTCOME_UNKNOWN", input.now);
     return out({
       state: "EXECUTION_OUTCOME_UNKNOWN",
@@ -543,7 +609,12 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
     });
   }
 
-  store.recordOutcome(attemptId, { outcome: "SENT", executionId: executed.executionId, txHash: executed.transactionHash });
+  store.recordOutcome(attemptId, {
+    outcome: "SENT",
+    executionId: executed.executionId,
+    txHash: executed.transactionHash,
+    now: input.now,
+  });
   store.setState(input.obligationId, "CHAIN_PENDING", input.now);
 
   // --- 9. independent chain evidence -------------------------------------

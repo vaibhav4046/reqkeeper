@@ -259,7 +259,12 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
       if (!ctx.store.sentAttemptFor(oid)) {
         try {
           const sighting = await findPayment(facts.paymentReference);
-          alreadyPaid = sighting?.found === true;
+          // The amount has to agree too. Nothing has been dispatched yet, so there is no
+          // transaction of ours to match against — but a dust transfer carrying this
+          // reference does not satisfy the invoice, and accepting it as settlement lets
+          // anyone who knows the reference permanently refuse payment of that invoice.
+          // Fails closed either way; this keeps it from failing closed on a stranger's log.
+          alreadyPaid = sighting?.found === true && sighting.amount === facts.amountBaseUnits;
         } catch {
           alreadyPaid = false;
         }

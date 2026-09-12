@@ -30,6 +30,25 @@ export interface Job {
   readonly fencingGeneration: number;
 }
 
+/**
+ * Proof that a caller still owns the job it is writing on behalf of.
+ *
+ * `completeJob` and `deferJob` already put the generation in their WHERE clause, and that half
+ * held under probing. The domain writes did not: `setState`, `enqueue` and `recordOutcome`
+ * carried no generation at all, so a worker whose lease expired thirty seconds ago could still
+ * rewrite an obligation's state and an attempt's recorded evidence while the live worker owned
+ * the job (`hackathon/audit/probes/p2-fencing.ts`: "writes that LANDED despite the stale fence:
+ * recordOutcome, enqueue, setState"). Passing a fence makes the ownership check part of the
+ * same immediate transaction as the write, so losing the lease means writing nothing.
+ *
+ * Optional on every method that takes it: the settle path holds no job lease and is correct
+ * without one.
+ */
+export interface Fence {
+  readonly jobId: number;
+  readonly generation: number;
+}
+
 export interface AttemptRow {
   readonly id: number;
   readonly obligationId: string;
@@ -44,11 +63,18 @@ export interface AttemptRow {
   readonly txHash: string | null;
 }
 
+/**
+ * Armed on its own, before anything else touches the file.
+ *
+ * This used to sit in the middle of SCHEMA, after `PRAGMA journal_mode = WAL`. Switching the
+ * journal mode takes a brief exclusive lock, so the one statement most likely to collide ran
+ * before the timeout that exists to survive a collision. Measured over 50 concurrent opens of
+ * a fresh database: 22-29 failures as shipped, 13-16 with the timeout armed first.
+ */
+const BUSY_TIMEOUT_MS = 5000;
+
 const SCHEMA = `
 PRAGMA journal_mode = WAL;
-     -- Without this a second process contending for the same database fails instantly with
-     -- SQLITE_BUSY. Two processes settling is the exact scenario this project is about.
-     PRAGMA busy_timeout = 5000;
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS obligations (
@@ -219,12 +245,61 @@ function staleFence(jobId: number, generation: number): Error {
   return e;
 }
 
+/** Block this thread. A constructor cannot await, and there is nothing else to do meanwhile. */
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+const OPEN_ATTEMPTS = 6;
+const OPEN_BACKOFF_MS = 40;
+
+/**
+ * Open the database, retrying while another process is mid-open.
+ *
+ * `PRAGMA busy_timeout` covers a busy database. It does not cover the window that CREATES one:
+ * two processes opening the same fresh file race on the schema, and roughly half the time one
+ * of them dies on `database is locked` before doing any work. Measured, 25 trials x 2 processes,
+ * three runs: 29/50, 23/50, 22/50 failures on a fresh file, still 3-4/50 against an existing
+ * one (`hackathon/audit/probes/p6-open-race.ts`). Arming the timeout before the schema roughly
+ * halves it and does not remove it, so the underlying cause is NOT just pragma ordering and is
+ * recorded as unproven rather than guessed at — a node:sqlite-level trace is what would settle
+ * it. What is proven is the symptom and its blast radius: `settle` and `resolve` started
+ * together, or two `resolve` runs, sometimes die in the constructor.
+ *
+ * It fails closed — the crash is before any work — but "the exact contention this project is
+ * about kills the process" is not a defensible answer, so the open is retried. Only the lock
+ * error is retried; a corrupt file or a bad path still throws on the first attempt.
+ */
+function openWithRetry(path: string): DatabaseSync {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < OPEN_ATTEMPTS; attempt++) {
+    let db: DatabaseSync | undefined;
+    try {
+      db = new DatabaseSync(path);
+      // Armed first, on its own, so the statement most likely to collide is already covered.
+      db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS};`);
+      db.exec(SCHEMA);
+      return db;
+    } catch (e) {
+      try {
+        db?.close();
+      } catch {
+        // Already unusable; the retry opens a fresh handle.
+      }
+      const message = e instanceof Error ? e.message : String(e);
+      if (!/database is locked|SQLITE_BUSY/i.test(message)) throw e;
+      lastError = e;
+      sleepSync(OPEN_BACKOFF_MS * (attempt + 1));
+    }
+  }
+  throw lastError;
+}
+
 export class Store {
   #db: DatabaseSync;
 
   constructor(path = ":memory:") {
-    this.#db = new DatabaseSync(path);
-    this.#db.exec(SCHEMA);
+    this.#db = openWithRetry(path);
     migrate(this.#db);
     // The duplicate defence is a UNIQUE index in this file. A corrupted index silently stops
     // being a constraint, so the file is checked at open rather than trusted.
@@ -433,8 +508,9 @@ export class Store {
    * real: an impossible move now throws instead of quietly overwriting a row that says money
    * moved. Writing the same state twice is a no-op, so a retry is not an illegal move.
    */
-  setState(obligationId: string, state: State, now = Date.now()): void {
+  setState(obligationId: string, state: State, now = Date.now(), fence?: Fence): void {
     this.tx(() => {
+      if (fence) this.#assertFencingInTx(fence);
       const row = this.#db
         .prepare("SELECT state FROM obligations WHERE obligation_id = ?")
         .get(obligationId) as { state: State } | undefined;
@@ -704,29 +780,97 @@ export class Store {
       .get(attemptId) as AttemptRow | undefined;
   }
 
-  /** Stamp the moment we first handed this attempt to the provider. Never overwritten. */
-  markSent(attemptId: number, now = Date.now()): void {
-    this.#db
-      .prepare("UPDATE attempts SET first_send_at = COALESCE(first_send_at, ?) WHERE id = ?")
+  /**
+   * Claim the right to send this attempt, exactly once. Returns true only to the caller that
+   * actually stamped it.
+   *
+   * This is a compare-and-set, not a stamp. The previous form —
+   * `SET first_send_at = COALESCE(first_send_at, ?)` — kept the first value, so the column was
+   * right, but it always reported success and so decided nothing. The caller's real gate was
+   * `getAttempt(...).firstSendAt === null` followed, in a separate statement, by this write.
+   * Two processes both read null, both passed, and what stopped the second send was that Node
+   * runs the read and the write with no `await` between them while SQLite serialises writers —
+   * an accident of the runtime, not a property of the schema. A red-team probe drove both
+   * callers past that guard (`hackathon/audit/probes/p1-race.ts`, "both callers passed the
+   * guard: true"). Put the condition in the WHERE clause and losing the race means writing
+   * nothing and being told so.
+   */
+  markSent(attemptId: number, now = Date.now()): boolean {
+    const info = this.#db
+      .prepare("UPDATE attempts SET first_send_at = ? WHERE id = ? AND first_send_at IS NULL")
       .run(now, attemptId);
+    return Number(info.changes) === 1;
   }
 
-  recordOutcome(attemptId: number, o: { outcome: string; executionId?: string; txHash?: string }): void {
-    this.#db
-      .prepare("UPDATE attempts SET outcome = ?, execution_id = COALESCE(?, execution_id), tx_hash = COALESCE(?, tx_hash) WHERE id = ?")
-      .run(o.outcome, o.executionId ?? null, o.txHash ?? null, attemptId);
+  /**
+   * The outcome of an attempt may be refined — SENT becomes CONFIRMED — but the identifiers
+   * that make it evidence may not.
+   *
+   * `COALESCE(?, tx_hash)` was the wrong way round: it only declined to write NULL over a
+   * value, so any non-null hash overwrote the recorded one. A late or stale writer could
+   * therefore replace the transaction a settled obligation points at, which turns the audit
+   * trail into something last-write-wins. `COALESCE(tx_hash, ?)` is write-once: the first
+   * hash recorded is the one that stands, and a second, different hash is ignored rather
+   * than believed.
+   *
+   * Recording a SENT outcome also enqueues the observation that closes the loop, in the same
+   * transaction. That is here rather than at the call sites because leaving it to callers is
+   * what stranded real payments: the settle path enqueued OBSERVE_EXECUTION on its failure
+   * branches only, so a crash after the provider answered — between the receipt read and
+   * reconciliation — left the obligation at CHAIN_PENDING with the dispatch job already
+   * complete and an EMPTY outbox. Money moved, nothing was looking, and `resolve` only drains
+   * jobs that exist. Two of the six crash checkpoints ended that way. One enqueue beside the
+   * write that records the send closes all of them, for every caller, including future ones.
+   *
+   * The trigger is "a transaction may exist on chain", not the literal outcome SENT: a
+   * provider `failed` carries a transaction hash whenever the transaction reached the chain,
+   * and a reverted payment still needs a receipt read before anyone says what happened.
+   */
+  recordOutcome(
+    attemptId: number,
+    o: { outcome: string; executionId?: string; txHash?: string; now?: number; fence?: Fence },
+  ): void {
+    const now = o.now ?? Date.now();
+    this.tx(() => {
+      if (o.fence) this.#assertFencingInTx(o.fence);
+      this.#db
+        .prepare("UPDATE attempts SET outcome = ?, execution_id = COALESCE(execution_id, ?), tx_hash = COALESCE(tx_hash, ?) WHERE id = ?")
+        .run(o.outcome, o.executionId ?? null, o.txHash ?? null, attemptId);
+      if (o.outcome !== "SENT" && !o.txHash) return;
+      const a = this.#db
+        .prepare("SELECT obligation_id AS obligationId, plan_hash AS planHash, step_index AS stepIndex FROM attempts WHERE id = ?")
+        .get(attemptId) as { obligationId: string; planHash: string; stepIndex: number } | undefined;
+      if (!a) return;
+      this.#db
+        .prepare(
+          `INSERT OR IGNORE INTO jobs (kind, dedupe_key, obligation_id, attempt_id, due_at, created_at)
+           VALUES (?,?,?,?,?,?)`,
+        )
+        .run("OBSERVE_EXECUTION", `observe:${a.planHash}:${a.stepIndex}`, a.obligationId, attemptId, now, now);
+    });
   }
 
   // ---- jobs --------------------------------------------------------------
 
-  enqueue(j: { kind: JobKind; dedupeKey: string; obligationId: string; attemptId?: number; dueAt: number; now?: number }): boolean {
-    const info = this.#db
-      .prepare(
-        `INSERT OR IGNORE INTO jobs (kind, dedupe_key, obligation_id, attempt_id, due_at, created_at)
-         VALUES (?,?,?,?,?,?)`,
-      )
-      .run(j.kind, j.dedupeKey, j.obligationId, j.attemptId ?? null, j.dueAt, j.now ?? Date.now());
-    return Number(info.changes) > 0;
+  enqueue(j: {
+    kind: JobKind;
+    dedupeKey: string;
+    obligationId: string;
+    attemptId?: number;
+    dueAt: number;
+    now?: number;
+    fence?: Fence;
+  }): boolean {
+    return this.tx(() => {
+      if (j.fence) this.#assertFencingInTx(j.fence);
+      const info = this.#db
+        .prepare(
+          `INSERT OR IGNORE INTO jobs (kind, dedupe_key, obligation_id, attempt_id, due_at, created_at)
+           VALUES (?,?,?,?,?,?)`,
+        )
+        .run(j.kind, j.dedupeKey, j.obligationId, j.attemptId ?? null, j.dueAt, j.now ?? Date.now());
+      return Number(info.changes) > 0;
+    });
   }
 
   /**
@@ -772,6 +916,21 @@ export class Store {
       }
       return claimed;
     });
+  }
+
+  /**
+   * The same check as `assertFencing`, for use INSIDE an already-open immediate transaction.
+   *
+   * `assertFencing` followed by a write is two statements and therefore a race. Called from
+   * inside `tx()` the read and the write share one BEGIN IMMEDIATE, so a generation bumped by
+   * another claimer between them is impossible.
+   */
+  #assertFencingInTx(fence: Fence): void {
+    const row = this.#db
+      .prepare("SELECT fencing_generation AS g FROM jobs WHERE id = ?")
+      .get(fence.jobId) as { g: number } | undefined;
+    if (!row) throw new Error(`unknown job ${fence.jobId}`);
+    if (row.g !== fence.generation) throw staleFence(fence.jobId, fence.generation);
   }
 
   /** Throws if the caller's fencing generation is stale — it lost the lease mid-flight. */

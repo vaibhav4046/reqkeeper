@@ -22,11 +22,11 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { findPaymentByReference } from "../src/chain.ts";
+import { DEFAULT_RPC, findPaymentByReference, rpcCall } from "../src/chain.ts";
 import { selector } from "../src/keccak.ts";
 
 const SEPOLIA = 11155111;
-const RPC = "https://ethereum-sepolia-rpc.publicnode.com";
+const RPC = DEFAULT_RPC;
 const REQUEST_API = "https://api.request.network/v2";
 /** The protocol gateway. Unauthenticated, and the only Request endpoint this project needs. */
 const REQUEST_GATEWAY = "https://sepolia.gateway.request.network/";
@@ -74,16 +74,14 @@ function record(step: string, status: Status, detail: string): void {
   console.log(`${tag} ${step}${detail ? ` — ${detail}` : ""}`);
 }
 
+/**
+ * Deliberately the same `rpcCall` the settlement path uses, rather than a private copy.
+ * A second implementation here would drift from the one under test, and the earlier copy
+ * did: it had no fallback, so a receipt pruned by one endpoint was reported as "no receipt"
+ * — indistinguishable from a payment that never landed.
+ */
 async function rpc(method: string, params: unknown[]): Promise<unknown> {
-  const res = await fetch(RPC, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-    signal: AbortSignal.timeout(20_000),
-  });
-  const body = (await res.json()) as { result?: unknown; error?: { message: string } };
-  if (body.error) throw new Error(body.error.message);
-  return body.result;
+  return rpcCall(RPC, method, params, 20_000);
 }
 
 console.log("\nGate A — Request Network x KeeperHub on Sepolia\n");

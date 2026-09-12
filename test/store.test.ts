@@ -155,6 +155,128 @@ describe("the transactional outbox", () => {
     assert.equal(s.getAttempt(attemptId)?.firstSendAt, 5000);
     s.close();
   });
+
+  test("markSent tells exactly one caller it may send", () => {
+    // The column being right is not the same as the guard being right. The old form —
+    // SET first_send_at = COALESCE(first_send_at, ?) — kept the first value and so passed the
+    // test above, but it returned nothing and therefore decided nothing: the real gate was a
+    // separate read of firstSendAt, and two processes could both read null and both pass it.
+    // What must be true is that the SECOND caller is told no.
+    const s = seeded();
+    const { attemptId } = s.openAttempt({
+      obligationId: OID, planHash: PLAN, stepIndex: 0, idempotencyKey: idempotencyKey(OID, PLAN, 0),
+      endpoint: "/e", bodyJson: "{}",
+    });
+
+    assert.equal(s.markSent(attemptId, 5000), true, "the first caller claims the send");
+    assert.equal(s.markSent(attemptId, 9999), false, "the second caller must be refused");
+    assert.equal(s.markSent(attemptId, 9999), false, "and refused every time after that");
+    assert.equal(s.getAttempt(attemptId)?.firstSendAt, 5000);
+    s.close();
+  });
+
+  test("two callers that both read firstSendAt as null still produce only one send", () => {
+    // The race shape from hackathon/audit/probes/p1-race.ts, Part A: "A read firstSendAt =
+    // null -> A would send: true / B read firstSendAt = null -> B would send: true / both
+    // callers passed the guard: true". Reading first must not entitle either of them to send.
+    const s = seeded();
+    const { attemptId } = s.openAttempt({
+      obligationId: OID, planHash: PLAN, stepIndex: 0, idempotencyKey: idempotencyKey(OID, PLAN, 0),
+      endpoint: "/e", bodyJson: "{}",
+    });
+
+    const aRead = s.getAttempt(attemptId)?.firstSendAt;
+    const bRead = s.getAttempt(attemptId)?.firstSendAt;
+    assert.equal(aRead, null);
+    assert.equal(bRead, null, "both callers genuinely observe an unsent attempt");
+
+    const winners = [s.markSent(attemptId, 100), s.markSent(attemptId, 200)].filter(Boolean);
+    assert.equal(winners.length, 1, "exactly one caller may proceed to the provider");
+    s.close();
+  });
+
+  test("recording a send enqueues the observation that closes the loop", () => {
+    // The settle path used to enqueue OBSERVE_EXECUTION on its failure branches only, so a
+    // crash after the provider answered left a real payment with an empty outbox: the dispatch
+    // job completes as soon as an outcome exists, and nothing else was ever queued. The
+    // enqueue belongs in the same transaction as the write that records the send.
+    const s = seeded();
+    const { attemptId } = s.openAttempt({
+      obligationId: OID, planHash: PLAN, stepIndex: 0, idempotencyKey: idempotencyKey(OID, PLAN, 0),
+      endpoint: "/e", bodyJson: "{}",
+    });
+    const before = s.pendingJobCount();
+
+    s.recordOutcome(attemptId, { outcome: "SENT", txHash: `0x${"1".repeat(64)}`, now: 1000 });
+
+    assert.equal(s.pendingJobCount(), before + 1, "a recorded send must leave something looking");
+    s.close();
+  });
+
+  test("a failure carrying a transaction hash is also observed, not just believed", () => {
+    // KeeperHub returns a hash on `failed` whenever the transaction reached the chain. A
+    // status string is not evidence; the receipt is.
+    const s = seeded();
+    const { attemptId } = s.openAttempt({
+      obligationId: OID, planHash: PLAN, stepIndex: 0, idempotencyKey: idempotencyKey(OID, PLAN, 0),
+      endpoint: "/e", bodyJson: "{}",
+    });
+    const before = s.pendingJobCount();
+
+    s.recordOutcome(attemptId, { outcome: "FAILED", txHash: `0x${"2".repeat(64)}`, now: 1000 });
+
+    assert.equal(s.pendingJobCount(), before + 1);
+    s.close();
+  });
+
+  test("an outcome with no hash and no send queues nothing", () => {
+    // The control for the two above: the enqueue is triggered by evidence that a transaction
+    // may exist, not by every write.
+    const s = seeded();
+    const { attemptId } = s.openAttempt({
+      obligationId: OID, planHash: PLAN, stepIndex: 0, idempotencyKey: idempotencyKey(OID, PLAN, 0),
+      endpoint: "/e", bodyJson: "{}",
+    });
+    const before = s.pendingJobCount();
+
+    s.recordOutcome(attemptId, { outcome: "INTEGRITY_CONFLICT", now: 1000 });
+
+    assert.equal(s.pendingJobCount(), before);
+    s.close();
+  });
+
+  test("the recorded transaction is evidence, so a second, different hash cannot replace it", () => {
+    // The outcome may be refined as the chain answers, but the identifiers it points at
+    // must not move. A writer that can overwrite tx_hash can make a settled obligation
+    // cite a transaction it never sent, which is the audit trail rewriting itself.
+    const s = seeded();
+    const { attemptId } = s.openAttempt({
+      obligationId: OID, planHash: PLAN, stepIndex: 0, idempotencyKey: idempotencyKey(OID, PLAN, 0),
+      endpoint: "/e", bodyJson: "{}",
+    });
+
+    s.recordOutcome(attemptId, { outcome: "SENT", executionId: "exec-real", txHash: `0x${"1".repeat(64)}` });
+    s.recordOutcome(attemptId, { outcome: "CONFIRMED", executionId: "exec-EVIL", txHash: `0x${"f".repeat(64)}` });
+
+    const a = s.getAttempt(attemptId);
+    assert.equal(a?.txHash, `0x${"1".repeat(64)}`, "the first recorded hash must stand");
+    assert.equal(a?.executionId, "exec-real", "the first recorded execution id must stand");
+    assert.equal(a?.outcome, "CONFIRMED", "the outcome itself is still allowed to advance");
+    s.close();
+  });
+
+  test("a hash still lands when none was recorded yet", () => {
+    // Write-once must not mean write-never: the recovery path records a hash it found later.
+    const s = seeded();
+    const { attemptId } = s.openAttempt({
+      obligationId: OID, planHash: PLAN, stepIndex: 0, idempotencyKey: idempotencyKey(OID, PLAN, 0),
+      endpoint: "/e", bodyJson: "{}",
+    });
+    s.recordOutcome(attemptId, { outcome: "SENT" });
+    s.recordOutcome(attemptId, { outcome: "CONFIRMED", txHash: `0x${"a".repeat(64)}` });
+    assert.equal(s.getAttempt(attemptId)?.txHash, `0x${"a".repeat(64)}`);
+    s.close();
+  });
 });
 
 describe("job leasing and fencing", () => {
