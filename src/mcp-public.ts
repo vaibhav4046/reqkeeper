@@ -116,7 +116,8 @@ const PROTOCOL = [
   "7  The attempt row and its job are committed in one transaction BEFORE anything is sent.",
   "8  Sent only if this attempt has never been sent. Local state, not the provider's cache.",
   "9  A receipt is read from a public RPC. A provider status string is never sufficient.",
-  "10 Request must independently confirm this transaction, for this amount. Only then: SETTLED.",
+  "10 The fee-proxy event for THAT transaction must carry this reference, token, payee and amount.",
+  "   That is the query Request's own detection runs, run here -- not Request's word for it.",
 ];
 
 export interface PublicDeps {

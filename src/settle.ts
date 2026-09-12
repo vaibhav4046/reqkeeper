@@ -663,7 +663,7 @@ async function settleOrRefuse(deps: SettleDeps, input: SettleInput): Promise<Set
     //
     // The cost is a resolver pass before a rate-limited proposal can be proposed again. That is
     // the price of not guessing, and it is not the payer who should be charged it.
-    if (retryable) {
+    {
       store.audit(input.obligationId, "system", "PREFLIGHT_OUTCOME_UNKNOWN", {
         code,
         reason: "the simulate did not answer; whether it executed is a question for the chain",
@@ -682,19 +682,19 @@ async function settleOrRefuse(deps: SettleDeps, input: SettleInput): Promise<Set
       });
     }
 
-    // A definite rejection. The provider refused the plan rather than failing to answer about
-    // it, so nothing executed and the debt is unattempted: end the observation, hand the
-    // reservation back, and let a corrected plan be proposed.
-    store.setState(input.obligationId, "SIMULATION_BLOCKED", input.now);
-    store.endPreflight(planHash);
-    const release = store.releaseObligation(input.obligationId, planHash);
-    if (!release.released) {
-      store.audit(input.obligationId, "system", "PREFLIGHT_RESERVATION_HELD", {
-        code,
-        reason: release.reason ?? "unknown",
-      });
-    }
-    return out({ state: "SIMULATION_BLOCKED", refusal: code, detail: `preflight unavailable: ${code}`, providerWriteIssued: false, planHash });
+    // There is deliberately no second branch. The first fix here kept one: a NON-retryable error
+    // was treated as "the provider refused the plan, so nothing executed", which released the
+    // reservation into SIMULATION_BLOCKED -- a replannable state -- and a red-team pass walked
+    // straight through it to a second payment. Both transports raise non-retryable for any 4xx,
+    // including a 409 and a 4xx whose body is not even JSON (an edge or WAF HTML page), and none
+    // of those can distinguish a plan the provider rejected from a plan it executed before the
+    // reply was lost. `retryable` was never the discriminator -- that was the original finding,
+    // and keeping one branch that still consulted it kept the original bug on one side.
+    //
+    // A dry run that ANSWERS is different, and still handled: `sim.wouldRevert` above is the
+    // provider telling us it simulated and the payment would revert, which is a real answer and
+    // conclusive. Only a throw -- no answer at all -- lands here, and an absence of an answer is
+    // never evidence of an absence of an execution.
   }
 
   // --- 7. commit the attempt BEFORE sending -------------------------------

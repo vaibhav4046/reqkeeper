@@ -13,7 +13,7 @@
 
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 const [transcriptPath, outPath = "docs/demo.mp4"] = process.argv.slice(2);
 if (!transcriptPath) {
@@ -24,7 +24,18 @@ if (!transcriptPath) {
 const WIDTH = 1920;
 const HEIGHT = 1080;
 const ROWS = 23; // visible terminal rows; 164 + ROWS*(PT+LEADING) must stay under HEIGHT
-const FONT = "C:/Windows/Fonts/consola.ttf";
+// Whichever of these the machine actually has. The hardcoded Windows path made
+// `npm run demo:video` a Windows-only command in a repository that otherwise runs anywhere
+// Node 24 does.
+const FONT =
+  [
+    "C:/Windows/Fonts/consola.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+    "/System/Library/Fonts/Menlo.ttc",
+  ].find((f) => existsSync(f)) ??
+  (() => {
+    throw new Error("no monospace font found; name one in tools/video/render.mjs");
+  })();
 const PT = 24;
 const LEADING = 8;
 

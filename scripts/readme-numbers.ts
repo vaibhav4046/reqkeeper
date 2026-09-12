@@ -71,6 +71,18 @@ function testCount(): number {
   return Number(pass[1]);
 }
 
+function suiteCount(): number {
+  const out = execFileSync("node", ["--experimental-strip-types", "--test", "--test-reporter=tap"], {
+    cwd: new URL("..", import.meta.url),
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+    maxBuffer: 32 * 1024 * 1024,
+  });
+  const m = /^# suites (\d+)$/m.exec(out);
+  if (!m) throw new Error("no suite count in the TAP output");
+  return Number(m[1]);
+}
+
 const facts = {
   settlements: fromCheck("live.one-send-per-settlement", /^(\d+) settled/),
   physicalSends: fromCheck("live.one-send-per-settlement", /(\d+) physical send/),
@@ -86,7 +98,11 @@ const facts = {
   liveDuplicates: fromCheck("race.live", /(\d+) duplicate/),
   crashCheckpoints: fromCheck("crash.no-duplicates", /^(\d+) checkpoint/),
   mcpSettlements: fromCheck("keeperhub.mcp", /^(\d+) settlement/),
+  verifyOk: verify.totals.ok,
+  verifyFailed: verify.totals.failed,
+  verifyBlocked: verify.totals.blocked,
   tests: CHECK ? testCount() : Number.NaN,
+  suites: CHECK ? suiteCount() : Number.NaN,
 };
 
 /**
@@ -95,6 +111,12 @@ const facts = {
  */
 const claims: Array<{ file: string; what: string; re: RegExp; expected: number }> = [
   { file: "README.md", what: "unit tests", re: /(\d+) tests\b/, expected: facts.tests },
+  { file: "README.md", what: "test suites", re: /(\d+) suites/, expected: facts.suites },
+  { file: "README.md", what: "verify:all ok", re: /\*\*(\d+) ok · \d+ failed · \d+ blocked/, expected: facts.verifyOk },
+  { file: "README.md", what: "verify:all failed", re: /\*\*\d+ ok · (\d+) failed · \d+ blocked/, expected: facts.verifyFailed },
+  { file: "README.md", what: "verify:all blocked", re: /\*\*\d+ ok · \d+ failed · (\d+) blocked/, expected: facts.verifyBlocked },
+  { file: "README.md", what: "refusals (prose)", re: /(\d+) recorded refusals happened before/, expected: facts.refusals },
+  { file: "README.md", what: "settlements (limitations)", re: /(\d+) recorded settlements predate/, expected: facts.settlements },
   { file: "README.md", what: "race workers (headline)", re: /(\d+) workers\. 1 payment/, expected: facts.raceWorkers },
   { file: "README.md", what: "race workers (command)", re: /npm run race +# (\d+) processes/, expected: facts.raceWorkers },
   { file: "README.md", what: "REST settlements", re: /(\d+) settlements through the REST/, expected: facts.settlements },

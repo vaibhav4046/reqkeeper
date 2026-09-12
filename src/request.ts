@@ -15,7 +15,7 @@
  * to it. `assertReferenceMatches` is the refusal the settle path uses when a caller supplies
  * one anyway.
  *
- * Verified against the live gateway: every one of the 41 references recorded in
+ * Verified against the live gateway: every one of the 46 references recorded in
  * `docs/live-invoices.json` is reproduced by `derivePaymentReference` from its own
  * requestId/salt/paymentAddress.
  */
@@ -121,7 +121,11 @@ export function derivePaymentReference(requestId: string, salt: string, paymentA
  * debt and refusing there would be theatre, not safety.
  */
 export function assertReferenceMatches(supplied: string, derived: string): void {
-  if (supplied.toLowerCase() === derived.toLowerCase()) return;
+  // Compared in the canonical spelling, because Request's own PaymentReferenceCalculator returns
+  // the bare 16 hex characters while this project stores the 0x form. Comparing the raw strings
+  // answered REFERENCE_MISMATCH -- "these are different debts" -- for two spellings of one debt.
+  const canon = (r: string) => (/^[0-9a-fA-F]{16}$/.test(r) ? `0x${r}` : r).toLowerCase();
+  if (canon(supplied) === canon(derived)) return;
   throw new RequestError(
     "REFERENCE_MISMATCH",
     `supplied payment reference ${supplied} is not the one this invoice derives (${derived}); ` +

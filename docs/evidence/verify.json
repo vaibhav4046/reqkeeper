@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-12T23:01:54.347Z",
+  "generatedAt": "2026-09-12T23:38:23.557Z",
   "chainId": 11155111,
   "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
   "credentialsUsed": "none",
@@ -132,7 +132,7 @@
     },
     {
       "id": "chain.reference",
-      "claim": "Request's own detection finds that payment by its reference",
+      "claim": "the payment is found again by the event query Request's own detection uses",
       "status": "ok",
       "detail": "reference 0x050562a52ec69fa2 → 0xb90a077185858154…, single endpoint"
     }

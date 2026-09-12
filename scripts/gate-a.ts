@@ -15,7 +15,9 @@
  *   5  fetch payment calldata + fee metadata               (needs step 4)
  *   6  land it through KeeperHub's generic web3 write       (needs steps 2 and 5)
  *   7  eth_getTransactionReceipt says success               (independent read)
- *   8  Request says hasBeenPaid                             (independent read)
+ *   8  the fee-proxy event carries this reference           (independent read; the query
+ *      Request's detection runs, run here. For Request's own SDK verdict instead, run
+ *      node tools/invoice/check-paid.mjs, which needs no credential either.)
  *
  * Usage: node --experimental-strip-types scripts/gate-a.ts
  * Secrets come from the environment or .env. Nothing is printed but a masked prefix.
@@ -328,6 +330,10 @@ if (blocked > 0) {
       "payment calldata is encoded locally and proved byte-identical to KeeperHub's own encoder by\n" +
       "`npm run verify:seam`. Nothing is claimed on their behalf.\n",
   );
-  process.exit(2);
+  // Blocked is not failed. Every other command here treats a missing credential as something it
+  // could not check rather than something that is wrong, and this one exiting 2 on a clean clone
+  // was the first hard failure a stranger hit -- on a page whose whole argument is that its
+  // numbers are checked. The tally still prints, and blocked is still never counted as a pass.
+  process.exit(0);
 }
 console.log("Gate A passed. The composed integration is real.\n");

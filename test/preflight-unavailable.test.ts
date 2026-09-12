@@ -101,6 +101,19 @@ class HardRefusalProvider extends FixtureProvider {
   }
 }
 
+/**
+ * The same leak, reported as a DEFINITE failure. Both transports raise non-retryable for any
+ * 4xx -- a 409, or a 4xx whose body is not JSON at all, which is what an edge or WAF HTML page
+ * looks like. None of those can tell a plan the provider rejected from a plan it executed
+ * before the reply was lost.
+ */
+class LeakyHardFailureProvider extends FixtureProvider {
+  override async simulate(): Promise<SimulateResult> {
+    this.sendCounts.set("leaked-simulate", (this.sendCounts.get("leaked-simulate") ?? 0) + 1);
+    throw new ProviderError("bad_response", "400 from provider", false);
+  }
+}
+
 /** The #1959 hazard in its dangerous shape: the dry run executes, and then the reply is lost. */
 class LeakyTimeoutProvider extends FixtureProvider {
   override async simulate(): Promise<SimulateResult> {
@@ -213,22 +226,53 @@ describe("a retryable preflight failure, with nothing ever dispatched", () => {
     store.close();
   });
 
-  test("a NON-retryable preflight error blocks the plan but still hands the reservation back", async () => {
-    // Same ordering bug, other branch: the release must happen after the state moves, or a
-    // definitively bad plan also bricks the invoice.
+  test("a NON-retryable preflight error does not conclude anything either", async () => {
+    // This test used to assert that a definite rejection hands the reservation back, and that
+    // assertion was the second duplicate-payment path. A red-team pass walked through it: both
+    // transports raise non-retryable for any 4xx, the branch released into SIMULATION_BLOCKED,
+    // which is replannable, and the next proposal paid an invoice whose dry run had already
+    // executed. "The provider said no" and "the provider never answered" are the same sentence
+    // to this code, because a 4xx can arrive after the execution as easily as before it.
     const store = new Store();
     const provider = new HardRefusalProvider();
     const requestId = "01req-hard-refusal";
 
     const first = await propose(store, provider, requestId, "50", 1_000);
-    assert.equal(first.state, "SIMULATION_BLOCKED");
+    assert.equal(first.state, "PAYMENT_PREFLIGHT");
+    assert.equal(first.refusal, "EXECUTION_OUTCOME_UNKNOWN");
     assert.equal(provider.totalSends(), 0);
+    assert.ok(store.pendingJobKinds().includes("OBSERVE_PREFLIGHT"));
+
+    // Once the chain has been read and says nothing paid, the debt is payable again.
+    await drain(store, unpaid);
+    assert.equal(store.getObligation(obligationId(NAMESPACE, requestId))?.state, "PREFLIGHT_UNAVAILABLE");
 
     const healthy = new FixtureProvider("NONE");
     const corrected = await propose(store, healthy, requestId, "40", 2_000);
     assert.notEqual(corrected.refusal, "OBLIGATION_RESERVED");
     assert.equal(corrected.state, "SETTLED");
     assert.equal(healthy.totalSends(), 1);
+    store.close();
+  });
+
+  test("a dry run that executed and then returned 4xx never pays twice", async () => {
+    // The red-team repro, kept. The leak is the premise; the duplicate is what must not happen.
+    const store = new Store();
+    const provider = new LeakyHardFailureProvider();
+    const requestId = "01req-leaked-hard-failure";
+
+    const first = await propose(store, provider, requestId, "50", 1_000);
+    assert.equal(first.refusal, "EXECUTION_OUTCOME_UNKNOWN");
+    assert.equal(provider.totalSends(), 1, "the dry run moved money; that is the premise");
+
+    // A human approves again and the agent proposes again, which is the realistic sequence.
+    const second = await propose(store, provider, requestId, "50", 2_000);
+    assert.notEqual(second.state, "SETTLED");
+    assert.equal(provider.totalSends(), 1, "TWO SENDS HERE IS THE DUPLICATE PAYMENT");
+
+    await drain(store, paid);
+    assert.equal(store.getObligation(obligationId(NAMESPACE, requestId))?.state, "EVIDENCE_CONFLICT");
+    assert.equal(provider.totalSends(), 1);
     store.close();
   });
 });

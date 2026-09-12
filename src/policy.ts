@@ -89,7 +89,7 @@ function refuse(code: RefusalCode, detail: string): Decision {
  */
 export function checkPolicy(policy: Policy, facts: SourceFacts): Decision {
   if (facts.hasBeenPaid) {
-    return refuse("SOURCE_ALREADY_PAID", "Request reports this obligation is already paid");
+    return refuse("SOURCE_ALREADY_PAID", "the invoice facts say this obligation is already paid");
   }
 
   // The README says mainnet is disabled in code, and this is the code. It used to be a single

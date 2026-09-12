@@ -105,7 +105,7 @@ payee came from the same place.
 `src/request.ts` reads the invoice from Request's own Sepolia gateway (no credential) and
 re-derives `last8Bytes(keccak256(requestId + salt + paymentAddress))` over the UTF-8 text of
 those concatenated hex strings, lowercased. Verified against four live invoices and, offline,
-against every reference in `docs/live-invoices.json` — **41/41 reproduce**. Those recorded
+against every reference in `docs/live-invoices.json` — **46/46 reproduce**. Those recorded
 references are therefore correct; the point is that they no longer have to be trusted.
 
 `propose_payment` and `settle_obligation` refuse `REFERENCE_MISMATCH` and

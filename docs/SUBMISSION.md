@@ -171,12 +171,12 @@ writes `docs/TRUTH.md`.
 - **46 of 46 payment references** re-derive from `keccak256(requestId + salt + paymentAddress)`.
 - `npm run harness` — 26 fault-injection cases, asserted against a provider that counts physical
   sends rather than reporting a status string.
-- 377 unit tests, `tsc --noEmit` clean, CI runs typecheck, tests and a build with a clean-tree
+- 378 unit tests, `tsc --noEmit` clean, CI runs typecheck, tests and a build with a clean-tree
   check on every push.
 
 ## What is honest about it
 
-The README concedes, in its first screen, that **MetaMask's Delegation Framework already ships both
+The README concedes, in its own "When you should not use this" section, that **MetaMask's Delegation Framework already ships both
 of these gates on-chain and that is better**: `IdEnforcer` keeps a BitMap of used ids,
 `ExactCalldataEnforcer` requires `keccak256(termsCallData) == keccak256(callData)`. If your payer
 can be an ERC-7710 delegator smart account, use those. This exists for the payer that cannot be: a

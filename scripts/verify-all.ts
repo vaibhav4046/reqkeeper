@@ -146,6 +146,9 @@ if (!liveRace) {
 
 interface McpRow {
   transport?: string;
+  token?: string;
+  payee?: string;
+  amountBaseUnits?: string;
   keeperhubExecutionId?: string;
   txHash?: string;
   paymentReference?: string;
@@ -173,11 +176,38 @@ if (!mcp?.rows?.length) {
     withExecId.map((r) => r.keeperhubExecutionId).join(", ") || "none",
   );
 
+  // Built from the row itself, so a row that lies about what it paid fails the chain read that
+  // is supposed to corroborate it. A row missing any of these cannot be corroborated at all, and
+  // says so rather than quietly falling back to a weaker check.
+  // Fails closed. The first attempt at this read `row.tokenAddress`, which is not what the
+  // artifact calls the field, so the expectation came back undefined and the check quietly went
+  // back to matching on the reference alone -- green, and proving nothing. A row that cannot be
+  // corroborated must say so.
+  const expectationFor = (row: McpRow): PaymentExpectation | null =>
+    row.token && row.payee && row.amountBaseUnits
+      ? { tokenAddress: row.token, to: row.payee, amount: row.amountBaseUnits }
+      : null;
+
   // Counted from the chain, not from the artifact: one fee-proxy event per reference.
   for (const r of viaMcp) {
     if (!r.paymentReference || !r.txHash) continue;
     try {
-      const seen = await findPaymentByReference(r.paymentReference, { rpcUrl: RPC, lookbackBlocks: 60_000 });
+      // With an expectation, `found` means the fee-proxy event matched emitter, token, payee,
+      // amount and fee -- not just the reference. Without one this check was reference-to-hash
+      // only, and every other field in the row was written to the artifact and never compared to
+      // anything: a review inflated an amount 999x and set the payee to 0x...dEaD and still got
+      // `21 ok - 0 failed`. The file a judge is invited to trust has to be the file this checks.
+      const expect = expectationFor(r);
+      if (!expect) {
+        record(
+          `keeperhub.mcp.onchain.${r.paymentReference}`,
+          `the MCP settlement for ${r.paymentReference} is on chain`,
+          "FAIL",
+          "the row does not state token, payee and amount, so nothing can corroborate it",
+        );
+        continue;
+      }
+      const seen = await findPaymentByReference(r.paymentReference, { rpcUrl: RPC, lookbackBlocks: 60_000, expect });
       const ok = seen.found && seen.txHash?.toLowerCase() === r.txHash.toLowerCase();
       record(
         `keeperhub.mcp.onchain.${r.paymentReference}`,
@@ -325,7 +355,7 @@ if (!sample) {
     const sighting = await findPaymentByReference(sample.payment_reference as string, { rpcUrl: RPC, lookbackBlocks: 300_000, expect: expectation.to ? expectation : undefined });
     record(
       "chain.reference",
-      "Request's own detection finds that payment by its reference",
+      "the payment is found again by the event query Request's own detection uses",
       sighting.found && sighting.txHash?.toLowerCase() === sample.tx_hash?.toLowerCase() ? "ok" : "FAIL",
       sighting.found
         ? `reference ${sample.payment_reference} → ${sighting.txHash?.slice(0, 18)}…${sighting.corroborated ? ", corroborated by a second endpoint" : ", single endpoint"}`

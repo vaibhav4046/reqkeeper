@@ -152,6 +152,12 @@ const facts: SourceFacts = {
   invoiceBaseUnits: AMOUNT,
   feeBaseUnits: FEE_AMOUNT,
   feeRecipient: FEE_ADDRESS,
+  // Not a typed-in assertion any more: these facts are only ever consumed by the settle call
+  // below, which is now unreachable if the fee proxy already carries a payment for this
+  // reference -- the script exits 2 before it. The residual is stated rather than hidden: a
+  // reference-only sighting is not proof THIS invoice was paid by us, which is why the exit
+  // sends a human to `npm run resolve` instead of deciding. Request's own SDK verdict, if you
+  // want it before running this, is `node tools/invoice/check-paid.mjs`.
   hasBeenPaid: false,
 };
 
@@ -190,6 +196,20 @@ console.log(`obligationId     : ${oid}`);
 
 const before = await proxySawPayment(startBlock);
 console.log(`\nproxy log before : ${before.found ? `ALREADY PAID in ${before.txHash}` : "no payment seen"}`);
+
+// And then it used to settle anyway. Printing "ALREADY PAID" and proceeding is the duplicate
+// payment this whole project exists to refuse, written into the script that moves real money.
+// The fee proxy is permissionless, so a sighting is not proof this invoice was paid by us --
+// but it is more than enough reason to stop and make a human look.
+if (before.found) {
+  console.error(
+    `\nREFUSED before any write: the fee proxy already carries a payment for ${REFERENCE} ` +
+      `in ${before.txHash}.\nIf that payment is this invoice's, the debt is settled and there is ` +
+      `nothing to do. If it is not, reconcile it before paying: npm run resolve\n`,
+  );
+  store.close();
+  process.exit(2);
+}
 
 const outcome = await settleObligation(
   {

@@ -36,7 +36,7 @@ function refuse(code, detail) {
  */
 export function checkPolicy(policy, facts) {
     if (facts.hasBeenPaid) {
-        return refuse("SOURCE_ALREADY_PAID", "Request reports this obligation is already paid");
+        return refuse("SOURCE_ALREADY_PAID", "the invoice facts say this obligation is already paid");
     }
     // The README says mainnet is disabled in code, and this is the code. It used to be a single
     // equality check against whatever the policy happened to name, so a caller constructing a

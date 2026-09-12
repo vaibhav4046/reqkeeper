@@ -102,10 +102,12 @@ dependencies. `typecheck` and `build` call `tsc`, so those two want `npm install
 ```bash
 npm install           # only for typecheck and build; everything above runs without it
 
-npm test              # 377 tests, 73 suites
+npm test              # 378 tests, 73 suites
 npm run typecheck     # tsc --noEmit
 npm run build         # console + api; the tree must stay clean afterwards
-npm run gate-a        # Request <-> KeeperHub <-> Sepolia end to end (10 ok, 0 failed, 2 blocked)
+npm run gate-a        # Request <-> KeeperHub <-> Sepolia end to end
+                      #   9 ok, 0 failed, 3 blocked with no credential; 10/0/2 with a
+                      #   KEEPERHUB_API_KEY in .env. Blocked is never counted as a pass.
 npm run race          # 50 processes, one obligation, one payment
 npm run crash         # kill the process at nine checkpoints; zero duplicates at every one
 npm run probe:mcp     # KeeperHub's own MCP server, read-only by default
@@ -154,7 +156,7 @@ No, and the reason is specific.
 
 Request solves **attribution**: the payment reference ties an on-chain `TransferWithReferenceAndFee`
 event to an invoice, and the balance is computed from the matching events, net of refunds. That
-matching is not loose — `ERC20ProxyInfoRetriever` keeps only logs whose token and `to` also match
+matching is not loose — `ProxyERC20InfoRetriever` keeps only logs whose token and `to` also match
 the request, and the TheGraph retriever filters on the proxy contract as well, so the reference
 alone is not what Request trusts either. What Request does not solve is **submission control**. `ERC20FeeProxy.transferFromWithReferenceAndFee` is a stateless
 forwarder with no uniqueness on the reference; `GET /v2/request/{id}/pay` returns calldata with no
