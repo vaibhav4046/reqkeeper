@@ -126,6 +126,9 @@
   /* --- panels ------------------------------------------------------------ */
   .grid { display: grid; gap: 12px; }
   .g3 { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  /* Four counters read as one set or not at all: a 240px floor left the fourth card
+     orphaned on its own row at common widths. */
+  .g4 { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
   .g2 { grid-template-columns: minmax(0, 1fr) minmax(0, 380px); }
   @media (max-width: 1000px) { .g2 { grid-template-columns: minmax(0,1fr) } }
 
@@ -223,6 +226,51 @@
   .empty { color: var(--faint); font-size: 11px; padding: 22px 13px; text-align: center; }
   .mut { color: var(--faint); font-size: 11px; }
 
+  /* --- proof ------------------------------------------------------------- */
+  /* The claim, at the size a claim deserves. Each clause is its own flex item so the line
+     breaks between clauses instead of mid-word: Press Start 2P has no narrow glyphs, and one
+     unbroken 33-character string is ~460px at the smallest legible size — wider than a 320px
+     phone. Clauses are ~11 characters, which fits. */
+  .headline {
+    display: flex; flex-wrap: wrap; gap: .3em .75em;
+    font-family: var(--pixel); font-size: clamp(13px, 4.4vw, 30px);
+    line-height: 1.4; margin: 0 0 14px;
+  }
+  .headline .n { color: var(--signal); }
+  .prov { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-bottom: 16px; }
+  .prov .when { color: var(--faint); font-size: 11px; }
+  .cmd {
+    display: inline-flex; align-items: center; gap: 8px;
+    border: 1px solid var(--line-2); background: var(--panel-2); padding: 4px 6px 4px 9px;
+    max-width: 100%; min-width: 0;
+  }
+  .cmd code { color: var(--text); font-size: 12px; overflow-wrap: anywhere; }
+  .cmd button { background: none; border: 1px solid var(--line); color: var(--dim); font-size: 10px; padding: 3px 7px; flex: none; }
+  .cmd button:hover { color: var(--signal); border-color: var(--signal); }
+
+  .fig { font-family: var(--pixel); font-size: clamp(17px, 2.6vw, 24px); line-height: 1.3; }
+  .fig.good { color: var(--signal); }
+  .fig.alarm { color: var(--alarm); }
+  .fig.none { color: var(--faint); }
+  .card .body .why { color: var(--faint); font-size: 11px; margin-top: 9px; }
+
+  /* The sentence that decides whether any of this is worth reading. Amber rule, body size,
+     not a footnote. */
+  .honest { border-left: 2px solid var(--amber); padding: 9px 0 9px 12px; margin: 14px 0 0; font-size: 12px; }
+  .honest b { color: var(--amber); font-weight: 500; }
+
+  .pstrip { list-style: none; margin: 0; padding: 0; }
+  .pstep {
+    display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 11px;
+    padding: 11px 0; border-bottom: 1px solid var(--line);
+  }
+  .pstep:last-child { border-bottom: 0; }
+  .pstep .i { font-family: var(--pixel); font-size: 8px; color: var(--signal); padding-top: 3px; }
+  .pstep b { display: block; color: var(--text); font-weight: 500; font-size: 12px; }
+  .pstep .id { font-size: 11px; margin-top: 4px; overflow-wrap: anywhere; }
+  .pstep .note { color: var(--faint); font-size: 11px; margin-top: 3px; }
+  td.wrap { white-space: normal; min-width: 180px; }
+
   @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important } }
   @media (max-width: 760px) {
     .app { grid-template-columns: 1fr }
@@ -233,6 +281,9 @@
        words mid-syllable ("11155111 se / polia"). Stack label over value instead. */
     .kv { grid-template-columns: minmax(0, 1fr); gap: 2px 0 }
     .kv dd { margin-bottom: 7px }
+    /* Phone is one column, counters included: two 200px cards do fit side by side at 430px,
+       but the four counters are meant to be read in order, not scanned as a 2x2. */
+    .g4 { grid-template-columns: minmax(0, 1fr) }
   }
 </style>
 </head>
@@ -247,10 +298,12 @@
       <div class="sub">EXACTLY-ONCE SETTLEMENT</div>
     </div>
     <nav id="nav">
-      <button data-v="dash" aria-current="true"><span class="dot"></span>Overview</button>
+      <button data-v="proof" aria-current="true"><span class="dot"></span>Proof</button>
+      <button data-v="dash"><span class="dot"></span>Overview</button>
       <button data-v="obl"><span class="dot"></span>Obligations</button>
       <button data-v="flow"><span class="dot"></span>Settle</button>
       <button data-v="surf"><span class="dot"></span>Surfaces</button>
+      <button data-v="verify"><span class="dot"></span>Verify</button>
     </nav>
     <div class="rail-foot">
       <div>SEPOLIA 11155111</div>
@@ -262,8 +315,39 @@
   <main>
     <div class="strip" id="strip"></div>
 
+    <!-- proof -->
+    <section class="view" id="v-proof">
+      <div class="h"><h1>PROOF</h1><span id="proof-sub"></span></div>
+
+      <p class="headline" id="headline"></p>
+      <div class="prov" id="proof-prov"></div>
+
+      <div class="grid g4" id="counters"></div>
+
+      <div class="grid g2" style="margin-top:12px">
+        <div class="card">
+          <header>The race<span class="mut" id="race-when"></span></header>
+          <div class="body">
+            <dl class="kv" id="race-kv"></dl>
+            <p class="honest" id="race-honest"></p>
+          </div>
+        </div>
+        <div class="card">
+          <header>Crash lottery<span class="mut">npm run crash</span></header>
+          <div class="body" id="crash-body"></div>
+        </div>
+      </div>
+
+      <div class="grid g3" style="margin-top:12px">
+        <div class="card" style="grid-column:1/-1">
+          <header>One obligation, end to end<span class="mut" id="strip-src"></span></header>
+          <div class="body"><ol class="pstrip" id="pstrip"></ol></div>
+        </div>
+      </div>
+    </section>
+
     <!-- overview -->
-    <section class="view" id="v-dash">
+    <section class="view" id="v-dash" hidden>
       <div class="h"><h1>OVERVIEW</h1><span id="dash-sub"></span></div>
       <div class="grid g3">
         <div class="card">
@@ -348,6 +432,15 @@
           </tr></thead><tbody></tbody></table></div>
         </div>
       </div>
+    </section>
+
+    <!-- verify -->
+    <section class="view" id="v-verify" hidden>
+      <div class="h"><h1>VERIFY</h1><span>clone the repo and run these; nothing here needs a credential unless the row says so</span></div>
+      <div class="tw" style="max-height:none"><table id="cmds"><thead><tr>
+        <th>Command</th><th>What it proves</th><th>Recorded result</th>
+      </tr></thead><tbody></tbody></table></div>
+      <p class="mut" id="cmds-note" style="margin-top:10px"></p>
     </section>
   </main>
 </div>
@@ -737,10 +830,262 @@
     .map(([s, o, h]) => `<tr><td><span class="tag ${s === "MCP" ? "ok" : "no"}">${s}</span></td><td>${o}</td><td class="mut">${h}</td></tr>`)
     .join("");
 
+  // --- proof --------------------------------------------------------------
+  //
+  // Everything on this view is read out of an evidence file. Nothing here is typed: change
+  // docs/evidence/race.json, rebuild, and the headline changes with it. That is the only
+  // reason a number on a page like this is worth anything.
+  const R = D.race;
+  const raceDate = String(R?.generatedAt || "").slice(0, 10);
+  const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+  const good = (n) => `<span class="zero">${n}</span>`;
+  // A count that must be zero is rendered in the alarm colour the moment it is not. The point
+  // of the panel is to show the bad number, not to be a place where a bad number can hide.
+  const mustBeZero = (n) => (n === 0 ? `<span class="zero">${n}</span>` : `<span style="color:var(--alarm)">${n}</span>`);
+
+  // Copy without a clipboard permission prompt where it works, selection where it does not
+  // (file:// and other non-secure contexts have no navigator.clipboard at all).
+  let cmdSeq = 0;
+  const cmd = (text) => {
+    const id = `cmd-${cmdSeq++}`;
+    return `<span class="cmd"><code id="${id}">${text}</code><button type="button" data-copy="${id}" aria-label="Copy ${text}">copy</button></span>`;
+  };
+  addEventListener("click", async (e) => {
+    const b = e.target.closest("button[data-copy]");
+    if (!b) return;
+    const code = el(b.dataset.copy);
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code.textContent);
+      b.textContent = "copied";
+    } catch {
+      const range = document.createRange();
+      range.selectNodeContents(code);
+      const sel = getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      b.textContent = "selected";
+    }
+    setTimeout(() => { b.textContent = "copy"; }, 1400);
+  });
+
+  if (!R) {
+    el("headline").innerHTML = '<span class="mut">docs/evidence/race.json was not present when this page was built.</span>';
+    el("proof-prov").innerHTML = cmd("npm run race");
+    el("race-kv").innerHTML = '<div class="empty">No race artifact. Nothing is claimed here.</div>';
+    el("race-honest").remove();
+  } else {
+    // One obligation is what the race is about, so count it rather than assert it: every
+    // execution the fixture recorded carries the payment reference it paid against.
+    const invoices = new Set((R.executions ?? []).map((e) => e.reference)).size;
+    const workers = R.workers;
+    const payments = R.totals.distinctTransactions;
+
+    el("proof-sub").textContent = `${R.mode.toLowerCase()} race · chain ${R.chainId}`;
+    el("headline").innerHTML = [
+      [invoices, "invoice"],
+      [workers, "worker"],
+      [payments, "payment"],
+    ]
+      .map(([n, w]) => `<span><span class="n" id="hl-${w}">${n}</span> ${w}${n === 1 ? "" : "s"}.</span>`)
+      .join("");
+
+    el("proof-prov").innerHTML =
+      `<span class="tag rec" title="a run that finished on ${raceDate}">RECORDED</span>` +
+      '<span class="tag test">FIXTURE</span>' +
+      `<span class="when">run ${raceDate} · counting KeeperHub fixture, no chain</span>` +
+      cmd("npm run race");
+    el("race-when").textContent = raceDate;
+
+    kv(el("race-kv"), [
+      ["workers", `<span id="rk-workers">${workers}</span>`],
+      ["payments broadcast", `<span id="rk-broadcasts">${good(R.totals.broadcasts)}</span>`],
+      ["posts that reached the provider", `<span id="rk-posts">${R.totals.postsReachingTheProvider}</span>`],
+      ["deduped by key", `<span id="rk-deduped">${R.totals.dedupedByKey}</span>`],
+      ["duplicates", `<span id="rk-duplicates">${mustBeZero(R.totals.duplicates)}</span>`],
+      ["second-wave broadcasts", `<span id="rk-second">${mustBeZero(R.totals.secondWaveBroadcasts)}</span>`],
+      ["settled", `<span id="rk-settled">${R.totals.settled}</span>`],
+      ["distinct transactions", `<span id="rk-distinct">${payments}</span>`],
+    ]);
+
+    // The sentence that decides whether the race proved anything. The idempotency key is
+    // derived from the obligation and the plan with no session input, so every worker computes
+    // the same one — which means KeeperHub's own cache could have produced this result and the
+    // page would look identical. The two counters that tell the cases apart are posts reaching
+    // the provider and deduped by key, so state what each would read under the other story.
+    const posts = R.totals.postsReachingTheProvider;
+    const cacheDeduped = workers - R.totals.broadcasts;
+    const refusedShort = workers - posts;
+    el("race-honest").innerHTML =
+      "<b>Read this before the numbers.</b> The idempotency key is derived from the obligation and the plan, " +
+      "with no session input, so all " + workers + " workers compute the same key. " +
+      (posts >= workers
+        ? `Every one of them reached the provider (posts ${posts}) and ${R.totals.dedupedByKey} were absorbed by key — ` +
+          "on this run the exactly-once result is KeeperHub's cache doing the work, not a refusal before the write."
+        : `If the cache were doing the work, posts that reached the provider would read ${workers} and deduped by key ` +
+          `would read ${cacheDeduped}. They read ${posts} and ${R.totals.dedupedByKey}: the other ` +
+          `${plural(refusedShort, "worker")} never reached the provider at all.`);
+  }
+
+  // --- the four counters --------------------------------------------------
+  // Every one is a computation over the recorded artifact, with its derivation printed under
+  // it. "Unexplained sends" is the one that matters: a send this page recorded that cannot be
+  // pointed at a transaction. It is subtraction, not a claim.
+  const recordedSends = liveRows.reduce((a, r) => a + r.physical_sends, 0);
+  const sendsWithTx = liveRows.filter((r) => r.physical_sends > 0 && r.tx_hash).length;
+  const unexplained = recordedSends - sendsWithTx;
+  const preWrite = liveRows.filter((r) => r.refused_before_provider_write).length;
+
+  el("counters").innerHTML = [
+    ["Real payments", settled, "good", "recorded rows carrying a Sepolia transaction hash", "pf-payments"],
+    ["Replays refused", replays.length, "good", `rows that asked again for an obligation already settled · ${replaySends} sends between them`, "pf-replays"],
+    ["Refused before write", preWrite, "good", "refusals decided before any provider write, so they cost zero sends", "pf-prewrite"],
+    [
+      "Unexplained sends",
+      unexplained,
+      unexplained === 0 ? "good" : "alarm",
+      `${recordedSends} sends recorded &minus; ${sendsWithTx} sends carrying a transaction`,
+      "pf-unexplained",
+    ],
+  ]
+    .map(
+      ([k, v, c, why, id]) => `<div class="card"><header>${k}</header><div class="body">
+        <div class="fig ${c}" id="${id}">${v}</div>
+        <div class="why">${why}</div>
+      </div></div>`,
+    )
+    .join("");
+
+  // --- crash lottery ------------------------------------------------------
+  // A file another harness writes. Absent is a fact about this build, not a reason to render
+  // zeros: zeros here would read as "no duplicates found", which nobody checked.
+  // The second pass is for a single-letter word inside a camelCase key: heldOpenForAHuman
+  // splits to "…for A Human" only if a run of capitals is cut before its final capital too.
+  const spaced = (k) =>
+    k.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2").toLowerCase();
+  if (!D.crash) {
+    el("crash-body").innerHTML =
+      '<div class="empty">docs/evidence/crash.json was not present when this page was built,' +
+      " so there is nothing to show and nothing is being claimed.<br><br>" +
+      `Run ${cmd("npm run crash")} and rebuild.</div>`;
+  } else {
+    const c = D.crash;
+    const totals = c.totals && typeof c.totals === "object" ? c.totals : {};
+    el("crash-body").innerHTML = `<dl class="kv" id="crash-kv"></dl>`;
+    kv(el("crash-kv"), [
+      ["provenance", `<span class="tag rec">RECORDED</span> ${String(c.mode ?? "").toLowerCase() || "mode not stated"}`],
+      ["run", String(c.generatedAt ?? "").slice(0, 10) || "—"],
+      ...Object.entries(totals).map(([k, v]) => [
+        spaced(k),
+        typeof v === "number" && /duplicate|unexplained|lost|extra/i.test(k) ? mustBeZero(v) : String(v),
+      ]),
+    ]);
+  }
+
+  // --- five steps, one real obligation ------------------------------------
+  // A RECORDED row off Sepolia, never a fixture row: the strip links out, and a placeholder
+  // hash sends a reader to a dead explorer page from the one view that exists to be checked.
+  const proofRow = liveRows.find((r) => r.tx_hash);
+  const proofTwin = liveRows.find((r) => r.expected === "ALREADY_SETTLED" && r.request_id === proofRow?.request_id);
+  const execId = proofRow?.keeperhub_execution_id ?? proofRow?.keeperhubExecutionId ?? null;
+
+  if (!proofRow) {
+    el("pstrip").innerHTML = '<div class="empty">No recorded payment in docs/refusals-live.json.</div>';
+  } else {
+    el("strip-src").textContent = `row ${proofRow.case_id} · recorded ${runDate}`;
+    const steps = [
+      [
+        "Request invoice",
+        `<div class="id"><a href="https://scan.request.network/request/${proofRow.request_id}" target="_blank" rel="noopener"><code>${proofRow.request_id}</code></a></div>`,
+        "the obligation as Request stored it; identity, amount and payee are read from here, never from the agent",
+      ],
+      [
+        "Approved plan",
+        `<div class="id"><code>${proofRow.payment_reference}</code></div>`,
+        "payment reference derived from the invoice, the salt and the payee — a caller-supplied one that differs is REFERENCE_MISMATCH",
+      ],
+      [
+        "KeeperHub execution",
+        execId
+          ? `<div class="id"><code>${execId}</code></div>`
+          : '<div class="id mut">&mdash;</div>',
+        execId
+          ? "the provider write, as KeeperHub recorded it (plain text: it is an id, not a URL)"
+          : "docs/refusals-live.json does not carry a KeeperHub execution id for this row, so none is shown. The fixture race records one; a recorded execution id needs the live artifact to carry the field.",
+      ],
+      [
+        "Chain transaction",
+        `<div class="id"><a href="https://sepolia.etherscan.io/tx/${proofRow.tx_hash}" target="_blank" rel="noopener"><code>${proofRow.tx_hash}</code></a></div>`,
+        `one send · physical_sends ${proofRow.physical_sends} · chain ${D.live?.chainId ?? "11155111"}`,
+      ],
+      [
+        "Request paid",
+        `<div class="id">${proofRow.independently_verified ? '<span class="zero">independently re-read: yes</span>' : '<span class="mut">not independently re-read</span>'}</div>`,
+        proofTwin
+          ? `asked again for the same obligation → ${proofTwin.actual}, ${plural(proofTwin.physical_sends, "send")}`
+          : "no replay recorded for this obligation",
+      ],
+    ];
+    el("pstrip").innerHTML = steps
+      .map(
+        ([t, id, note], i) => `<li class="pstep">
+          <div class="i">${String(i + 1).padStart(2, "0")}</div>
+          <div><b>${t}</b>${id}<div class="note">${note}</div></div>
+        </li>`,
+      )
+      .join("");
+  }
+
+  // --- verify -------------------------------------------------------------
+  // The commands, what each one settles, and — only where an artifact exists — what it
+  // actually produced. A row with no artifact says so rather than implying a pass.
+  const none = '<span class="mut">no artifact in the repo — run it</span>';
+  const CMDS = [
+    ["npm test", "every unit test in the tree", `<span class="zero">${D.tests}</span> passed when this page was built`],
+    ["npm run typecheck", "tsc --noEmit over src, scripts and api", none],
+    ["npm run build", "rebuilds this page from the evidence files, and refuses to write it if any test fails", `built ${String(D.builtAt).slice(0, 19).replace("T", " ")}Z`],
+    ["npm run gate-a", "the public claims that need no credentials", none],
+    [
+      "npm run race",
+      "N processes race one obligation from a barrier; counts every non-simulate POST, deduplicated ones separately",
+      R ? `${R.workers} workers → ${plural(R.totals.distinctTransactions, "transaction")}, ${R.totals.duplicates} duplicates · ${raceDate}` : none,
+    ],
+    [
+      "npm run crash",
+      "kills a worker at each step of the settle path and resumes it",
+      D.crash ? `recorded ${String(D.crash.generatedAt ?? "").slice(0, 10)}` : '<span class="mut">docs/evidence/crash.json absent at build time</span>',
+    ],
+    [
+      "npm run verify:live",
+      "re-reads Sepolia for every recorded payment in docs/refusals-live.json",
+      T ? `${T.asSpecified}/${T.rows} rows as specified, ${T.payments} payments · recorded ${runDate}` : none,
+    ],
+    ["npm run verify:onchain", "reads the settlement transaction back off the chain", none],
+    ["npm run verify:seam", "the KeeperHub REST seam against the real API", none],
+    ["npm run probe:mcp", "the KeeperHub MCP handshake and tool list", none],
+  ];
+  // A command that is not wired in package.json yet must not be printed as if it ran.
+  const wired = Array.isArray(D.scripts) ? new Set(D.scripts) : null;
+  const missing = [];
+  el("cmds").tBodies[0].innerHTML = CMDS.map(([c, why, res]) => {
+    const name = c.replace(/^npm (run )?/, "");
+    const off = wired && !wired.has(name);
+    if (off) missing.push(c);
+    return `<tr><td class="wrap">${cmd(c)}${off ? ' <span class="tag no">not in package.json</span>' : ""}</td>
+      <td class="wrap">${why}</td><td class="wrap">${off ? '<span class="mut">script not wired at build time</span>' : res}</td></tr>`;
+  }).join("");
+  el("cmds-note").innerHTML =
+    "docs/refusals-live.json is written by <code>npm run harness:live</code> (credentials required) and re-checked against the chain by <code>npm run verify:live</code> (no credentials). " +
+    (wired
+      ? missing.length
+        ? `${plural(missing.length, "command")} above ${missing.length === 1 ? "is" : "are"} not in package.json as of this build: ${missing.join(", ")}.`
+        : "Every command above is wired in package.json as of this build."
+      : "package.json could not be read at build time, so no command is flagged as wired or not.");
+
   // --- routing ------------------------------------------------------------
-  const VIEWS = ["dash", "obl", "flow", "surf"];
+  const VIEWS = ["proof", "dash", "obl", "flow", "surf", "verify"];
   function show(v) {
-    const name = VIEWS.includes(v) ? v : "dash";
+    const name = VIEWS.includes(v) ? v : "proof";
     for (const x of VIEWS) el("v-" + x).hidden = x !== name;
     for (const b of el("nav").querySelectorAll("button")) {
       b.setAttribute("aria-current", String(b.dataset.v === name));
@@ -752,7 +1097,7 @@
     if (b) show(b.dataset.v);
   });
   addEventListener("hashchange", () => show(location.hash.replace(/^#/, "")));
-  show(location.hash.replace(/^#/, "") || "dash");
+  show(location.hash.replace(/^#/, "") || "proof");
 </script>
 </body>
 </html>

@@ -138,10 +138,16 @@ Nothing here is a duplicate-payment path. Each was checked for that specifically
    however it was imported, and narrowing the index would reopen the double-pay door it was
    added to shut. It becomes wrong the day `namespace` becomes a caller-supplied argument.
 
-8. **Not built, and out of scope for this pass:** the multi-process race script (`scripts/race.ts`),
-   the crash-lottery runner (`scripts/crash.ts`), `scripts/verify-all.ts`, and `docs/TRUTH.md`.
-   The behaviours they would demonstrate are covered by the probes and the test suite; the
-   one-command judge experience they were meant to provide is not there.
+8. **The recorded live artifact carries no KeeperHub execution id.** `docs/refusals-live.json`
+   has `tx_hash` and `payment_reference` on all 38 settled rows but no `keeperhub_execution_id`,
+   which `CLAUDE.md` specifies for LIVE rows. The console's proof strip therefore shows `—` at
+   the KeeperHub step and says why, rather than borrowing the fixture race's id. Closing it means
+   re-running `npm run harness:live` with credentials against fresh invoices — real money on
+   Sepolia — so it is recorded rather than faked.
+
+9. **Not built, and out of scope for this pass:** `scripts/mcp-e2e.ts` (piping JSON-RPC through the
+   stdio server as a test rather than by hand), and a live `--live` mode for the race. The race,
+   the crash matrix, `verify:all` and a generated `docs/TRUTH.md` all now exist and run.
 
 ---
 

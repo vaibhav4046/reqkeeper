@@ -32,6 +32,37 @@ const livePath = path("docs/refusals-live.json");
 const live = existsSync(livePath) ? JSON.parse(readFileSync(livePath, "utf8")) : null;
 
 /**
+ * Evidence files that other harnesses write. A missing one is a fact about this build, not a
+ * reason to omit the panel: the page says the file was absent and names the command that
+ * writes it, rather than rendering zeros that look like a measured result.
+ */
+function evidence(name) {
+  const p = path(`docs/evidence/${name}.json`);
+  if (!existsSync(p)) return null;
+  try {
+    return JSON.parse(readFileSync(p, "utf8"));
+  } catch (e) {
+    console.error(`docs/evidence/${name}.json is present but unreadable: ${e.message}`);
+    return null;
+  }
+}
+const race = evidence("race");
+const crash = evidence("crash");
+
+/**
+ * Which npm scripts actually exist right now. The verify view lists the commands a judge can
+ * run, and a command that is not wired yet must say so instead of being printed as if it
+ * worked. package.json belongs to another owner and may be mid-write, hence the try.
+ */
+function scriptNames() {
+  try {
+    return Object.keys(JSON.parse(readFileSync(path("package.json"), "utf8")).scripts ?? {});
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Test count taken from an actual run, not from counting `test(` with a regex — that
  * undercounted by more than a hundred because it only matched declarations at the start of a
  * line. A number on a page that nobody re-derives is a number that goes stale silently.
@@ -60,9 +91,13 @@ const tests = testCount();
 const payee = (env("PAYEE_BURNER") || "0x0000000000000000000000000000000000000000").toLowerCase();
 
 const data = {
+  builtAt: new Date().toISOString(),
   tests,
   refusals,
   live,
+  race,
+  crash,
+  scripts: scriptNames(),
   settlement: {
     requestId: env("REQUEST_ID", "(not settled yet)"),
     paymentReference: env("PAYMENT_REFERENCE", "-"),
@@ -85,5 +120,7 @@ writeFileSync(path("web/index.html"), template.replace("__DATA__", payload), "ut
 console.log(
   `web/index.html written — ${refusals.rows.length} fixture rows, ` +
     `${live ? `${live.rows.length} live rows, ${live.totals.payments} real payments, ` : "no live artifact, "}` +
+    `${race ? `race ${race.workers} workers / ${race.totals.distinctTransactions} transactions, ` : "no race artifact, "}` +
+    `${crash ? "crash artifact present, " : "no crash artifact, "}` +
     `${tests} tests`,
 );
