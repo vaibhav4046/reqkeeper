@@ -26,6 +26,19 @@ about this project. The fixture counts *every* call that reaches it regardless o
 the deduplicated ones separately — the losers were stopped locally, by the reservation and the
 compare-and-set, before the provider was ever called.
 
+### And once for real
+
+The same race, three workers, against real KeeperHub and real Sepolia:
+**one payment**, transaction
+[`0x41b01a14…353f52`](https://sepolia.etherscan.io/tx/0x41b01a14cbdb8dd65c41eeb13285bfe9d47e1dc95990e33b0486ca5e5e353f52),
+block 11,691,069. Exactly one `TransferWithReferenceAndFee` event carries that invoice's
+reference. Artifact: [`docs/evidence/race-live.json`](docs/evidence/race-live.json).
+
+Live, the payment count comes from the chain, not from a counter we own — and the two fields a
+fixture can measure and a live run cannot (`postsReachingTheProvider`, `dedupedByKey`) are
+recorded as `-1` rather than `0`, because `0` would read as the strongest claim on the page and
+this run cannot make it.
+
 - **Console:** <https://reqkeeper.vercel.app> · **Agent surface:** <https://reqkeeper.vercel.app/api/mcp>
 - **Demo video:** a release asset, not committed — see [Releases](https://github.com/vaibhav4046/reqkeeper/releases)
 - **Every claim, with its evidence:** [`docs/TRUTH.md`](docs/TRUTH.md) (generated, never typed)

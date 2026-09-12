@@ -39,7 +39,8 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { DEFAULT_RPC, findPaymentByReference } from "../src/chain.ts";
+import { DEFAULT_RPC, EVENT_TOPIC, findPaymentByReference, referenceTopic } from "../src/chain.ts";
+import { ERC20_FEE_PROXY } from "../src/plan.ts";
 import { fetchInvoice } from "../src/request.ts";
 import { KeeperHubFixture, type FixtureCounters } from "./fixture-keeperhub.ts";
 
@@ -77,6 +78,29 @@ interface WorkerLine {
   providerWriteIssued: boolean;
   txHash: string | null;
   planHash?: string | null;
+}
+
+/** Every fee-proxy event carrying this reference. One event is one payment. */
+async function countPaymentsOnChain(reference: string, fromBlock?: number): Promise<number> {
+  const res = await fetch(DEFAULT_RPC, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "eth_getLogs",
+      params: [
+        {
+          address: ERC20_FEE_PROXY,
+          topics: [EVENT_TOPIC, referenceTopic(reference)],
+          fromBlock: `0x${Math.max(0, fromBlock ?? 0).toString(16)}`,
+          toBlock: "latest",
+        },
+      ],
+    }),
+  });
+  const body = (await res.json()) as { result?: unknown[] };
+  return Array.isArray(body.result) ? body.result.length : -1;
 }
 
 function runWorker(db: string, fx: KeeperHubFixture, requestId: string, reference: string, startAt: number, order: number): Promise<WorkerLine> {
@@ -123,6 +147,71 @@ async function wave(db: string, fx: KeeperHubFixture, requestId: string, referen
   };
 }
 
+/**
+ * Recompute a live artifact's totals from the chain, without re-racing.
+ *
+ *   npm run race -- --recount
+ *
+ * The first live run shipped with the FIXTURE's counters, which are all zero live because
+ * nothing reaches the fixture — so a correct run was described by numbers that meant nothing,
+ * and the gate failed on its own bookkeeping. The obvious repair is to run it again, and that
+ * is not available: the invoice is now paid, and paying a second one to fix a reporting bug
+ * would be this project doing the exact thing it exists to prevent.
+ *
+ * So the totals are recomputed from the chain and the worker lines are preserved verbatim. The
+ * artifact records that this happened and why. Hand-editing the file would have produced the
+ * same bytes and none of the accountability.
+ */
+if (argv.includes("--recount")) {
+  const prior = JSON.parse(readFileSync(OUT, "utf8")) as {
+    generatedAt: string;
+    workers: number;
+    reference?: string;
+    invoice?: { reference?: string; anchorBlock?: number };
+    totals: Record<string, number>;
+    waves: Array<{ label: string; workers: WorkerLine[] }>;
+  };
+  const ref = prior.invoice?.reference ?? prior.reference;
+  if (!ref) {
+    console.error("--recount needs a reference in the artifact.");
+    process.exit(2);
+  }
+  const from = prior.invoice?.anchorBlock ? prior.invoice.anchorBlock - 10 : undefined;
+  const payments = await countPaymentsOnChain(ref, from);
+  const hashesSeen = new Set(prior.waves.flatMap((w) => w.workers.map((x) => x.txHash).filter(Boolean) as string[]));
+  const recounted = {
+    ...prior,
+    // The run predates the LIVE mode tag as well; it raced against the real platform.
+    mode: "LIVE" as const,
+    chainId: 11155111,
+    recountedAt: new Date().toISOString(),
+    recountNote:
+      "Totals recomputed from the chain. The original run recorded the fixture's counters, " +
+      "which are zero in live mode because no call reaches the fixture. The worker lines below " +
+      "are exactly as the processes reported them and have not been touched.",
+    totals: {
+      ...prior.totals,
+      broadcasts: payments,
+      duplicates: Math.max(0, payments - 1),
+      distinctTransactions: hashesSeen.size,
+      postsReachingTheProvider: -1,
+      dedupedByKey: -1,
+    },
+  };
+  writeFileSync(OUT, `${JSON.stringify(recounted, null, 2)}
+`);
+  console.log(`
+  recounted from the chain: ${payments} payment(s) carrying ${ref}
+  written to ${OUT}
+`);
+  // Let libuv finish closing the fetch handles before exiting. Calling process.exit while one
+  // is mid-close trips an assertion in src/win/async.c on Windows — after the work is done and
+  // the file is written, so it is noise, but noise on a verification tool reads as a failure.
+  process.exitCode = payments === 1 ? 0 : 1;
+  await new Promise((r) => setTimeout(r, 50));
+  process.exit(process.exitCode);
+}
+
 const fx = new KeeperHubFixture();
 await fx.start();
 
@@ -132,6 +221,7 @@ const db = join(dir, "race.sqlite");
 let requestId: string;
 let reference: string;
 let payee = PAYEE;
+let liveAnchorBlock = 0;
 
 if (LIVE) {
   // --- the live run, and the four things it refuses to do without --------------
@@ -162,7 +252,8 @@ if (LIVE) {
 
   // 2. it is UNPAID, scanned from its own anchor block — an invoice cannot have been paid
   //    before it existed, so that window is complete for this question.
-  const from = (invoice.anchor?.blockNumber ?? 0) - 10;
+  liveAnchorBlock = invoice.anchor?.blockNumber ?? 0;
+  const from = liveAnchorBlock - 10;
   const seen = await findPaymentByReference(reference, { fromBlock: from > 0 ? from : undefined });
   if (seen.found) {
     console.error(`refusing: ${reference} already paid by ${seen.txHash}.`);
@@ -184,29 +275,57 @@ if (LIVE) {
 }
 
 const first = await wave(db, fx, requestId, reference, "first wave");
+// Live, the chain is the counter, so it is read between the waves as well — otherwise the
+// second-wave claim ("same plan, same key, after every process exited, sends nothing") would be
+// carried by a fixture counter that saw no traffic at all.
+const paymentsAfterFirstWave = LIVE ? await countPaymentsOnChain(reference, liveAnchorBlock - 10) : -1;
 const second = await wave(db, fx, requestId, reference, "second wave");
 
 const settled = first.workers.filter((w) => w.state === "SETTLED" && w.refusal === null).length;
 const hashes = new Set(first.workers.map((w) => w.txHash).filter(Boolean) as string[]);
-const totalBroadcasts = first.counters.broadcasts + second.counters.broadcasts;
+
+/**
+ * How many payments actually happened.
+ *
+ * In fixture mode the server counted every call that reached it, which is the strongest
+ * available answer. Live, there is no such counter — the calls go to KeeperHub — and the first
+ * live run shipped with the fixture's counters, which were all zero because nothing reached the
+ * fixture. The run itself was correct; the number describing it was meaningless.
+ *
+ * The chain is the counter. One fee-proxy event carrying this reference is one payment, and it
+ * is the same question Request's own detection asks. A worker claiming `providerWriteIssued` is
+ * corroborating evidence, never the count: a process that died mid-send would not be there to
+ * claim anything, and the payment would still have happened.
+ */
+let onChainPayments = -1;
+if (LIVE) {
+  const anchorFrom = liveAnchorBlock > 0 ? liveAnchorBlock - 10 : undefined;
+  const events = await countPaymentsOnChain(reference, anchorFrom);
+  onChainPayments = events;
+}
+const totalBroadcasts = LIVE ? onChainPayments : first.counters.broadcasts + second.counters.broadcasts;
 
 const artifact = {
   generatedAt: new Date().toISOString(),
-  mode: "FIXTURE" as const,
+  mode: LIVE ? ("LIVE" as const) : ("FIXTURE" as const),
   chainId: 11155111,
   note:
     "N independent processes, one SQLite file, one Request obligation, released from a barrier. " +
     "The fixture counts every non-simulate POST regardless of idempotency key, and reports the " +
     "deduplicated ones separately, so the result cannot be KeeperHub's cache taking the credit.",
   workers: WORKERS,
+  invoice: { requestId, reference, payee, anchorBlock: liveAnchorBlock },
   totals: {
     broadcasts: totalBroadcasts,
-    postsReachingTheProvider: first.counters.posts + second.counters.posts,
-    dedupedByKey: first.counters.dedupedByKey + second.counters.dedupedByKey,
+    // Live, these are not measurable from here: the calls go to KeeperHub, not to a counter we
+    // own. Reported as -1 rather than 0, because 0 would read as "nothing reached the provider"
+    // — a claim this run cannot make and which would be the strongest claim on the page.
+    postsReachingTheProvider: LIVE ? -1 : first.counters.posts + second.counters.posts,
+    dedupedByKey: LIVE ? -1 : first.counters.dedupedByKey + second.counters.dedupedByKey,
     settled,
     distinctTransactions: hashes.size,
     duplicates: Math.max(0, totalBroadcasts - 1),
-    secondWaveBroadcasts: second.counters.broadcasts,
+    secondWaveBroadcasts: LIVE ? Math.max(0, onChainPayments - paymentsAfterFirstWave) : second.counters.broadcasts,
   },
   waves: [first, second],
   executions: fx.executions,

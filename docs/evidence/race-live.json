@@ -1,0 +1,105 @@
+{
+  "generatedAt": "2026-09-12T19:53:17.832Z",
+  "mode": "LIVE",
+  "chainId": 11155111,
+  "note": "N independent processes, one SQLite file, one Request obligation, released from a barrier. The fixture counts every non-simulate POST regardless of idempotency key, and reports the deduplicated ones separately, so the result cannot be KeeperHub's cache taking the credit.",
+  "workers": 3,
+  "totals": {
+    "broadcasts": 1,
+    "postsReachingTheProvider": -1,
+    "dedupedByKey": -1,
+    "settled": 0,
+    "distinctTransactions": 1,
+    "duplicates": 0,
+    "secondWaveBroadcasts": 0
+  },
+  "waves": [
+    {
+      "label": "first wave",
+      "workers": [
+        {
+          "pid": 11016,
+          "startOrder": 0,
+          "state": "RECONCILIATION_PENDING",
+          "refusal": null,
+          "providerWriteIssued": true,
+          "txHash": "0x41b01a14cbdb8dd65c41eeb13285bfe9d47e1dc95990e33b0486ca5e5e353f52",
+          "planHash": "3cd590582d4de1ee73fdf45104611be3604ba1b00c4e94086e4f5140f6ec692f"
+        },
+        {
+          "pid": 14456,
+          "startOrder": 1,
+          "state": "OBLIGATION_RESERVED",
+          "refusal": "REFERENCE_ALREADY_CLAIMED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 18284,
+          "startOrder": 2,
+          "state": "OBLIGATION_RESERVED",
+          "refusal": "REFERENCE_ALREADY_CLAIMED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        }
+      ],
+      "counters": {
+        "posts": 0,
+        "dedupedByKey": 0,
+        "broadcasts": 0,
+        "simulates": 0,
+        "distinctKeys": 0
+      }
+    },
+    {
+      "label": "second wave",
+      "workers": [
+        {
+          "pid": 11212,
+          "startOrder": 0,
+          "state": "RECONCILIATION_PENDING",
+          "refusal": "ALREADY_DISPATCHED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 28440,
+          "startOrder": 1,
+          "state": "RECONCILIATION_PENDING",
+          "refusal": "ALREADY_DISPATCHED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 14104,
+          "startOrder": 2,
+          "state": "RECONCILIATION_PENDING",
+          "refusal": "ALREADY_DISPATCHED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        }
+      ],
+      "counters": {
+        "posts": 0,
+        "dedupedByKey": 0,
+        "broadcasts": 0,
+        "simulates": 0,
+        "distinctKeys": 0
+      }
+    }
+  ],
+  "executions": [],
+  "invoice": {
+    "requestId": "016ff0225b1dd706b7ad8b2461f09e09c4ac9c662f1e919a1eeb71a8705f03b48e",
+    "reference": "0xd9e6ee9360a89ed9",
+    "payee": "0xc43d766CB7c48B9B198db87441b97c09e81717A1",
+    "anchorBlock": 11666747
+  },
+  "recountedAt": "2026-09-12T19:56:43.320Z",
+  "recountNote": "Totals recomputed from the chain. The original run recorded the fixture's counters, which are zero in live mode because no call reaches the fixture. The worker lines below are exactly as the processes reported them and have not been touched."
+}

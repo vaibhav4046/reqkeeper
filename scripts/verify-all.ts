@@ -103,6 +103,44 @@ if (!race) {
   );
 }
 
+// ---- 1b. the live race -----------------------------------------------------
+
+interface LiveRace {
+  mode?: string;
+  workers: number;
+  invoice?: { requestId?: string; reference?: string; payee?: string };
+  totals: Record<string, number>;
+  waves: Array<{ label: string; workers: Array<{ state: string; refusal: string | null; txHash: string | null }> }>;
+}
+const liveRace = readJson<LiveRace>("docs/evidence/race-live.json");
+if (!liveRace) {
+  record("race.live", "the race, once, against the real platform", "BLOCKED", "docs/evidence/race-live.json is absent");
+} else {
+  const ref = liveRace.invoice?.reference;
+  record(
+    "race.live",
+    `${liveRace.workers} concurrent workers against real KeeperHub and real Sepolia`,
+    liveRace.totals.broadcasts === 1 && liveRace.totals.duplicates === 0 ? "ok" : "FAIL",
+    `${liveRace.totals.broadcasts} payment(s) carrying ${ref ?? "?"}, ${liveRace.totals.duplicates} duplicate(s)`,
+  );
+
+  // Counted again here, from the chain, rather than read from the artifact. The artifact says
+  // it was recounted from the chain; this is what makes that checkable.
+  if (ref) {
+    try {
+      const seen = await findPaymentByReference(ref, { rpcUrl: RPC, lookbackBlocks: 300_000 });
+      record(
+        "race.live.onchain",
+        "that live payment is on chain, exactly once",
+        seen.found ? "ok" : "FAIL",
+        seen.found ? `${seen.txHash?.slice(0, 20)}… amount ${seen.amount}` : "no payment found for the reference it raced for",
+      );
+    } catch (e) {
+      record("race.live.onchain", "that live payment is on chain, exactly once", "BLOCKED", (e as Error).message.slice(0, 80));
+    }
+  }
+}
+
 // ---- 2. the crash matrix ---------------------------------------------------
 
 interface CrashArtifact {

@@ -156,7 +156,17 @@ Nothing here is a duplicate-payment path. Each was checked for that specifically
    lifetime total, and this is why it should not. Found by the project's own verification
    disagreeing with the project's own evidence file, which is the behaviour that was wanted.
 
-10. **Not built, and out of scope for this pass:** `scripts/mcp-e2e.ts` (piping JSON-RPC through the
+10. **The first live race shipped with meaningless totals, and the fix is visible.** It reported
+    the FIXTURE's counters, which are zero live because nothing reaches the fixture — so a
+    correct run (one payment, two workers refused `REFERENCE_ALREADY_CLAIMED`, second wave zero)
+    was described by numbers that meant nothing and the gate failed on its own bookkeeping. The
+    obvious repair — run it again — was not available: the invoice was now paid, and paying a
+    second one to fix a reporting bug is the exact thing this project exists to prevent. So
+    `npm run race -- --live --recount` recomputes the totals from the chain, preserves the worker
+    lines verbatim, and records in the artifact that it happened and why. `verify:all` then counts
+    the payment from the chain independently rather than believing the artifact.
+
+11. **Not built, and out of scope for this pass:** `scripts/mcp-e2e.ts` (piping JSON-RPC through the
    stdio server as a test rather than by hand), and a live `--live` mode for the race. The race,
    the crash matrix, `verify:all` and a generated `docs/TRUTH.md` all now exist and run.
 
