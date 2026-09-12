@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-12T17:08:12.937Z",
+  "generatedAt": "2026-09-12T23:01:39.980Z",
   "mode": "FIXTURE",
   "note": "Deterministic fault injection against an in-memory provider that counts physical sends. These rows prove the refusal logic, not the live integration. Live rows require Gate A and are tagged LIVE_TESTNET when present.",
   "totals": {
@@ -286,8 +286,8 @@
     {
       "case_id": "C22",
       "scenario": "provider rate limits the preflight",
-      "expected": "PREFLIGHT_UNAVAILABLE",
-      "actual": "PREFLIGHT_UNAVAILABLE",
+      "expected": "EXECUTION_OUTCOME_UNKNOWN",
+      "actual": "EXECUTION_OUTCOME_UNKNOWN",
       "refused_before_provider_write": true,
       "physical_sends": 0,
       "tx_hash": null,

@@ -201,10 +201,13 @@ await run("same key, different body", "IDEMPOTENCY_CONFLICT", () => ({ facts: fa
 await run("dry run actually executed (#1959)", "SIMULATE_EXECUTED", () => ({ facts: facts(), fault: "SIMULATE_IGNORED" }));
 await run("receipt says reverted", "EXECUTION_REVERTED", () => ({ facts: facts(), fault: "RECEIPT_REVERTED" }));
 await run("provider claims success, chain has no receipt", "EVIDENCE_CONFLICT", () => ({ facts: facts(), fault: "COMPLETE_BUT_RECEIPT_MISSING" }));
-// A rate limit is the platform being busy, not the payment being wrong. It used to leave the
-// obligation stranded in PAYMENT_PREFLIGHT holding its reservation, at zero sends and with no
-// way forward; it now lands in PREFLIGHT_UNAVAILABLE, which is replannable.
-await run("provider rate limits the preflight", "PREFLIGHT_UNAVAILABLE", () => ({ facts: facts(), fault: "RATE_LIMITED" }));
+// A rate limit is the platform being busy, not the payment being wrong -- but from here the two
+// are indistinguishable from a dry run that executed and lost its reply, and this case used to
+// specify PREFLIGHT_UNAVAILABLE, which is replannable. That expectation was the duplicate: the
+// path released the reservation on the strength of the provider's `retryable` flag and the next
+// proposal paid the invoice again. The outcome is now honestly unknown, the reservation is held,
+// and the queued chain observation is what decides. Still zero sends, still refused pre-write.
+await run("provider rate limits the preflight", "EXECUTION_OUTCOME_UNKNOWN", () => ({ facts: facts(), fault: "RATE_LIMITED" }));
 
 // ---- the headline: replay after the 24h window lapses ---------------------
 // Same obligation, same plan, same key, provider cache gone. The registry must still refuse.
