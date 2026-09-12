@@ -30,7 +30,7 @@ const NULLABLE_IS_UNKNOWN = new Set([
  * topic is the keccak hash of the reference bytes, not the bytes themselves. Getting this
  * wrong returns zero logs and looks exactly like "not paid yet".
  */
-const EVENT_TOPIC = keccak256Hex("TransferWithReferenceAndFee(address,address,uint256,bytes,uint256,address)");
+export const EVENT_TOPIC = keccak256Hex("TransferWithReferenceAndFee(address,address,uint256,bytes,uint256,address)");
 /**
  * Sepolia. Hardcoded rather than configurable, because every address, selector and piece of
  * recorded evidence in this repository is Sepolia's, and "it read the wrong chain" is not a
@@ -73,7 +73,7 @@ function ensureChain(rpcUrl) {
     });
     return check;
 }
-function referenceTopic(reference) {
+export function referenceTopic(reference) {
     let hex = reference.replace(/^0x/, "");
     if (hex.length % 2 !== 0)
         hex = "0" + hex;

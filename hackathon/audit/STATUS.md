@@ -145,7 +145,18 @@ Nothing here is a duplicate-payment path. Each was checked for that specifically
    re-running `npm run harness:live` with credentials against fresh invoices — real money on
    Sepolia — so it is recorded rather than faked.
 
-9. **Not built, and out of scope for this pass:** `scripts/mcp-e2e.ts` (piping JSON-RPC through the
+9. **The recorded run under-counts this system's payments.** Building the live race needed a
+   provably-unpaid invoice, so all three invoices absent from `docs/refusals-live.json` were
+   checked against the chain rather than against the file. Two of them are paid: references
+   `0xfaac1220a314c4a9` and `0xd2a39f9e7e8e6a7b`, transactions `0x8ad0ce96…` and `0x08af9292…`,
+   at blocks 11,665,974 and 11,665,976 — both genuine KeeperHub executions through the same
+   forwarder, both immediately BEFORE the recorded run's first block (11,665,983). So at least
+   40 payments have gone through KeeperHub; the artifact captures the 38 of one harness run.
+   Everything the console says about "the recorded run" is true of that run. Nothing claims a
+   lifetime total, and this is why it should not. Found by the project's own verification
+   disagreeing with the project's own evidence file, which is the behaviour that was wanted.
+
+10. **Not built, and out of scope for this pass:** `scripts/mcp-e2e.ts` (piping JSON-RPC through the
    stdio server as a test rather than by hand), and a live `--live` mode for the race. The race,
    the crash matrix, `verify:all` and a generated `docs/TRUTH.md` all now exist and run.
 

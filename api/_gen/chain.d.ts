@@ -4,12 +4,19 @@
  */
 export declare const DEFAULT_RPC: string;
 /**
+ * `TransferWithReferenceAndFee`'s `paymentReference` is an INDEXED bytes parameter, so the
+ * topic is the keccak hash of the reference bytes, not the bytes themselves. Getting this
+ * wrong returns zero logs and looks exactly like "not paid yet".
+ */
+export declare const EVENT_TOPIC: string;
+/**
  * Sepolia. Hardcoded rather than configurable, because every address, selector and piece of
  * recorded evidence in this repository is Sepolia's, and "it read the wrong chain" is not a
  * failure mode worth leaving open for a convenience nobody asked for.
  */
 export declare const EXPECTED_CHAIN_ID = 11155111;
 export declare function assertChainId(rpcUrl: string, expected?: number): Promise<void>;
+export declare function referenceTopic(reference: string): string;
 export declare function rpcCall(rpcUrl: string, method: string, params: unknown[], timeoutMs?: number): Promise<unknown>;
 /**
  * Every non-indexed field of `TransferWithReferenceAndFee`.

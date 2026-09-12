@@ -34,11 +34,13 @@
  */
 
 import { spawn } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { DEFAULT_RPC, findPaymentByReference } from "../src/chain.ts";
+import { fetchInvoice } from "../src/request.ts";
 import { KeeperHubFixture, type FixtureCounters } from "./fixture-keeperhub.ts";
 
 const argv = process.argv.slice(2);
@@ -46,9 +48,22 @@ const flag = (name: string, fallback: number): number => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] ? Number(argv[i + 1]) : fallback;
 };
-const WORKERS = flag("workers", 10);
+const SPLIT_LINES = new RegExp(String.fromCharCode(13) + "?" + String.fromCharCode(10));
+const LIVE = argv.includes("--live");
+
+// `.env` is read only for a live run, and only for the credential. The fixture path must stay
+// runnable on a clean clone with no file and no key — that is what makes it the CI mode.
+if (LIVE && existsSync(".env")) {
+  for (const line of readFileSync(".env", "utf8").split(SPLIT_LINES)) {
+    const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*)$/.exec(line);
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim().replace(/^["']|["']$/g, "");
+  }
+}
+// Fewer workers live, deliberately. If the invariant ever failed, every extra worker is another
+// real payment, so the blast radius of a bug is bounded by the smallest N that still races.
+const WORKERS = flag("workers", LIVE ? 3 : 10);
 const JSON_ONLY = argv.includes("--json");
-const OUT = "docs/evidence/race.json";
+const OUT = LIVE ? "docs/evidence/race-live.json" : "docs/evidence/race.json";
 
 const PAYEE = "0xc43d766CB7c48B9B198db87441b97c09e81717A1";
 const AMOUNT = "1000000000000000000";
@@ -68,7 +83,7 @@ function runWorker(db: string, fx: KeeperHubFixture, requestId: string, referenc
   return new Promise((resolve) => {
     const kid = spawn(
       process.execPath,
-      ["--experimental-strip-types", CHILD, db, fx.baseUrl, fx.rpcUrl, requestId, reference, PAYEE, AMOUNT, String(startAt), String(order)],
+      ["--experimental-strip-types", CHILD, db, LIVE ? "LIVE" : fx.baseUrl, LIVE ? DEFAULT_RPC : fx.rpcUrl, requestId, reference, payee, AMOUNT, String(startAt), String(order)],
       { env: { ...process.env, NODE_NO_WARNINGS: "1" } },
     );
     let out = "";
@@ -113,9 +128,60 @@ await fx.start();
 
 const dir = mkdtempSync(join(tmpdir(), "rk-race-"));
 const db = join(dir, "race.sqlite");
-const stamp = Date.now().toString(16);
-const requestId = `01race${stamp}`;
-const reference = `0x${stamp.padStart(16, "0").slice(-16)}`;
+
+let requestId: string;
+let reference: string;
+let payee = PAYEE;
+
+if (LIVE) {
+  // --- the live run, and the four things it refuses to do without --------------
+  //
+  // This spends. Every precondition below is checked against Request and against the chain
+  // rather than against a file, because the file being wrong is precisely the failure this
+  // project exists to catch, and "the artifact said it was unpaid" is not a reason to pay.
+  if (!process.env.KEEPERHUB_API_KEY) {
+    console.error("--live needs KEEPERHUB_API_KEY.");
+    process.exit(2);
+  }
+  const wanted = argv[argv.indexOf("--request-id") + 1];
+  if (!wanted || wanted.startsWith("--")) {
+    console.error("--live needs --request-id <id>.");
+    console.error("It will not pick an invoice for you.");
+    process.exit(2);
+  }
+
+  // 1. the invoice is real, and its reference is DERIVED, not taken from anywhere
+  const invoice = await fetchInvoice(wanted);
+  requestId = invoice.requestId;
+  reference = invoice.paymentReference;
+  payee = invoice.payee;
+  if (invoice.invoiceBaseUnits !== AMOUNT) {
+    console.error(`refusing: invoice is ${invoice.invoiceBaseUnits}, not ${AMOUNT}.`);
+    process.exit(2);
+  }
+
+  // 2. it is UNPAID, scanned from its own anchor block — an invoice cannot have been paid
+  //    before it existed, so that window is complete for this question.
+  const from = (invoice.anchor?.blockNumber ?? 0) - 10;
+  const seen = await findPaymentByReference(reference, { fromBlock: from > 0 ? from : undefined });
+  if (seen.found) {
+    console.error(`refusing: ${reference} already paid by ${seen.txHash}.`);
+    process.exit(2);
+  }
+
+  console.log(`
+  LIVE — real KeeperHub, real Sepolia, real money.`);
+  console.log(`  invoice   ${requestId.slice(0, 30)}…`);
+  console.log(`  reference ${reference}  (derived from the invoice, not read from a file)`);
+  console.log(`  payee     ${payee}`);
+  console.log(`  unpaid    scanned ${seen.scannedBlocks} blocks from its anchor, no payment found`);
+  console.log(`  workers   ${WORKERS} — if the invariant fails, that is ${WORKERS} FAU, not ${WORKERS * 10}
+`);
+} else {
+  const stamp = Date.now().toString(16);
+  requestId = `01race${stamp}`;
+  reference = `0x${stamp.padStart(16, "0").slice(-16)}`;
+}
 
 const first = await wave(db, fx, requestId, reference, "first wave");
 const second = await wave(db, fx, requestId, reference, "second wave");

@@ -7,7 +7,8 @@
 
 import { obligationId } from "../src/identity.ts";
 import { KeeperHubProvider } from "../src/keeperhub.ts";
-import { buildPolicy, buildSourceFacts, buildSteps, NAMESPACE, type InvoiceFacts } from "../src/plan.ts";
+import { findPaymentByReference } from "../src/chain.ts";
+import { buildPolicy, buildSourceFacts, buildSteps, FAU, NAMESPACE, type InvoiceFacts } from "../src/plan.ts";
 import { settleObligation } from "../src/settle.ts";
 import { Store } from "../src/store.ts";
 
@@ -33,11 +34,19 @@ try {
   // Opening is itself contended — two processes creating one schema at the same instant is the
   // exact scenario, and the constructor retries rather than dying on `database is locked`.
   store = new Store(dbPath);
+
+  // `baseUrl === "LIVE"` means the real platform and the real chain. Everything else is the
+  // counting fixture. The provider, the calldata gate and the settle path are identical either
+  // way — only where the bytes go changes, which is the point: a live run that exercised a
+  // different code path would prove nothing about the fixture runs.
+  const live = baseUrl === "LIVE";
+  const apiKey = process.env.KEEPERHUB_API_KEY ?? "";
+  if (live && !apiKey) throw new Error("--live needs KEEPERHUB_API_KEY");
   const provider = new KeeperHubProvider({
-    apiKey: "kh_fixture",
+    apiKey: live ? apiKey : "kh_fixture",
     chainId: 11155111,
     rpcUrl,
-    baseUrl,
+    ...(live ? {} : { baseUrl }),
   });
 
   // Barrier. Both processes are already warm; they enter settleObligation on the same tick.
@@ -53,6 +62,16 @@ try {
       // Reconciliation asks the fixture the same three questions the real path asks the chain:
       // our reference, our transaction, our amount.
       sourceSaysPaid: async (_requestId: string, txHash: string) => {
+        // Three questions, whichever chain is behind it: our reference, our transaction, our
+        // amount. A boolean over the reference alone accepts another payment's evidence.
+        if (live) {
+          const seen = await findPaymentByReference(reference, {
+            rpcUrl,
+            lookbackBlocks: 300_000,
+            expect: { tokenAddress: FAU, to: payee, amount },
+          });
+          return seen.found && seen.txHash?.toLowerCase() === txHash.toLowerCase();
+        }
         const res = await fetch(
           `${rpcUrl.replace(/\/rpc$/, "")}/paid?reference=${encodeURIComponent(reference)}&txHash=${encodeURIComponent(txHash)}`,
         );

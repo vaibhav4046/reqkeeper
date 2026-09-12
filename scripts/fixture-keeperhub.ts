@@ -27,6 +27,7 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
+import { EVENT_TOPIC, referenceTopic } from "../src/chain.ts";
 import { ERC20_FEE_PROXY, FAU } from "../src/plan.ts";
 
 export interface FixtureCounters {
@@ -52,6 +53,7 @@ interface Executed {
 
 const SEPOLIA_HEX = "0xaa36a7";
 const HEAD_BLOCK = 1_000_000;
+const sameAddress = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const word = (hex: string) => hex.replace(/^0x/, "").toLowerCase().padStart(64, "0");
 
 /**
@@ -202,6 +204,23 @@ export class KeeperHubFixture {
         return reply(SEPOLIA_HEX);
       case "eth_blockNumber":
         return reply(`0x${HEAD_BLOCK.toString(16)}`);
+      case "eth_getLogs": {
+        // Request's own detection, served from what this fixture actually executed. Filtered
+        // the way the real scan filters — emitter, event topic, and the keccak of the reference
+        // BYTES (it is an indexed dynamic parameter, so the topic is a hash, not the value).
+        const f = (call.params?.[0] ?? {}) as { address?: string; topics?: string[] };
+        const wantRef = f.topics?.[1];
+        const hits = this.#executions
+          .filter((e) => (!f.address || sameAddress(f.address, ERC20_FEE_PROXY)) && (!wantRef || referenceTopic(e.reference) === wantRef))
+          .map((e) => ({
+            address: ERC20_FEE_PROXY,
+            topics: [EVENT_TOPIC, referenceTopic(e.reference)],
+            data: paymentLogData(e.to, e.amount),
+            transactionHash: e.transactionHash,
+            blockNumber: `0x${e.blockNumber.toString(16)}`,
+          }));
+        return reply(hits);
+      }
       case "eth_getTransactionReceipt": {
         const hash = String(call.params?.[0] ?? "").toLowerCase();
         const e = this.#executions.find((x) => x.transactionHash.toLowerCase() === hash);

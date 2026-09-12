@@ -41,13 +41,33 @@ if (!apiKey) {
 
 if (!existsSync(".data")) mkdirSync(".data");
 
+/**
+ * Two operational overrides, both off by default.
+ *
+ * REQKEEPER_DB lets an operator run more than one workspace, and lets the end-to-end test drive
+ * this exact binary against a temporary file instead of the live database.
+ *
+ * KEEPERHUB_BASE_URL points the provider somewhere else. It exists so `npm run mcp:e2e` can
+ * exercise the REAL server, the REAL provider and the REAL settle path against a counting
+ * fixture — the alternative is an end-to-end test that either spends money or tests a stub, and
+ * neither of those is an end-to-end test. It is not a test-only branch: the provider has always
+ * taken a base URL, this only surfaces it.
+ */
+const dbPath = process.env.REQKEEPER_DB ?? ".data/live.sqlite";
+const baseUrl = process.env.KEEPERHUB_BASE_URL;
+
 const ctx: McpContext = {
   // The same durable store the human approval CLI writes to. In-memory would mean an agent
   // could never see a human's decision, and a restart would forget what was already sent.
-  store: new Store(".data/live.sqlite"),
-  provider: new KeeperHubProvider({ apiKey, chainId: SEPOLIA, rpcUrl: DEFAULT_RPC }),
+  store: new Store(dbPath),
+  provider: new KeeperHubProvider({ apiKey, chainId: SEPOLIA, rpcUrl: DEFAULT_RPC, ...(baseUrl ? { baseUrl } : {}) }),
   rpcUrl: DEFAULT_RPC,
 };
+
+if (baseUrl) {
+  process.stderr.write(`reqkeeper-mcp: provider pointed at ${baseUrl} (not app.keeperhub.com)
+`);
+}
 
 process.stderr.write(
   `reqkeeper-mcp ${SERVER_INFO.version} ready — ${TOOLS.length} tools, none of which can approve a payment\n`,

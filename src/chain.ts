@@ -35,7 +35,7 @@ const NULLABLE_IS_UNKNOWN = new Set([
  * topic is the keccak hash of the reference bytes, not the bytes themselves. Getting this
  * wrong returns zero logs and looks exactly like "not paid yet".
  */
-const EVENT_TOPIC = keccak256Hex(
+export const EVENT_TOPIC = keccak256Hex(
   "TransferWithReferenceAndFee(address,address,uint256,bytes,uint256,address)",
 );
 
@@ -84,7 +84,7 @@ function ensureChain(rpcUrl: string): Promise<void> {
   return check;
 }
 
-function referenceTopic(reference: string): string {
+export function referenceTopic(reference: string): string {
   let hex = reference.replace(/^0x/, "");
   if (hex.length % 2 !== 0) hex = "0" + hex;
   const bytes = new Uint8Array(hex.length / 2);
