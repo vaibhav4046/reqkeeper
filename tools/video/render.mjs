@@ -41,6 +41,13 @@ mkdirSync(WORK, { recursive: true });
 const lines = readFileSync(transcriptPath, "utf8").replace(/\r/g, "").split("\n");
 
 /** How long a given line should sit on screen. Structure gets room; body reads fast. */
+// A single multiplier over every hold, so the cut can be tightened without
+// re-tuning the per-line rules that decide what deserves a longer beat. The
+// default is the pace docs/demo.mp4 was cut at -- `npm run demo:video` has to
+// reproduce the file that shipped, so the number lives here and not in a shell
+// that ran once. DEMO_PACE=1 is the unscaled read, about 128s.
+const PACE = Number(process.env.DEMO_PACE ?? "0.72") || 0.72;
+
 function holdFor(line) {
   const t = line.trim();
   if (t === "") return 0.16;
@@ -50,6 +57,8 @@ function holdFor(line) {
   if (/0x[0-9a-f]{16,}/i.test(t)) return 0.9;
   return Math.min(1.0, 0.3 + t.length / 130);
 }
+
+const holdScaled = (line) => holdFor(line) * PACE;
 
 function magick(args) {
   execFileSync("magick", args, { stdio: ["ignore", "ignore", "pipe"] });
@@ -84,7 +93,7 @@ for (let i = 0; i < lines.length; i++) {
     frame,
   ]);
 
-  frames.push({ file: `f-${String(i).padStart(4, "0")}.png`, hold: holdFor(lines[i]) });
+  frames.push({ file: `f-${String(i).padStart(4, "0")}.png`, hold: holdScaled(lines[i]) });
   if (i % 20 === 0) process.stderr.write(`  rendered ${i}/${lines.length}\n`);
 }
 

@@ -48,6 +48,10 @@ function evidence(name) {
 }
 const race = evidence("race");
 const crash = evidence("crash");
+// Settlements dispatched through KeeperHub's MCP server rather than its REST API. These are the
+// only rows that carry the KeeperHub execution id that produced the payment, so the proof strip
+// is built from one of them; the REST artifact records no execution id on any row.
+const mcp = evidence("mcp-settlements");
 
 /**
  * Which npm scripts actually exist right now. The verify view lists the commands a judge can
@@ -100,7 +104,7 @@ const data = {
    * stamp from the artifacts makes a rebuild of the same commit deterministic, and says
    * something more useful than when a file was written: how fresh the evidence behind it is.
    */
-  builtAt: [live?.generatedAt, refusals?.generatedAt, race?.generatedAt, crash?.generatedAt]
+  builtAt: [live?.generatedAt, refusals?.generatedAt, race?.generatedAt, crash?.generatedAt, mcp?.generatedAt]
     .filter(Boolean)
     .sort()
     .pop() ?? "unknown",
@@ -109,6 +113,7 @@ const data = {
   live,
   race,
   crash,
+  mcp,
   scripts: scriptNames(),
   settlement: {
     requestId: env("REQUEST_ID", "(not settled yet)"),
@@ -134,5 +139,6 @@ console.log(
     `${live ? `${live.rows.length} live rows, ${live.totals.payments} real payments, ` : "no live artifact, "}` +
     `${race ? `race ${race.workers} workers / ${race.totals.distinctTransactions} transactions, ` : "no race artifact, "}` +
     `${crash ? "crash artifact present, " : "no crash artifact, "}` +
+    `${mcp ? `mcp ${mcp.rows.length} settlements / ${mcp.totals.withExecutionId} execution ids, ` : "no mcp artifact, "}` +
     `${tests} tests`,
 );

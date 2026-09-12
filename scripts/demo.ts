@@ -290,6 +290,133 @@ say("      18 of 24 refusals happened before any provider write — 0 gas burned
 say("");
 say("  Including two that found real bugs in this codebase, both now regression-tested.");
 
+heading("7", "One invoice. Fifty workers. One payment.", "FIXTURE");
+
+{
+  const race = existsSync("docs/evidence/race.json")
+    ? (JSON.parse(readFileSync("docs/evidence/race.json", "utf8")) as {
+        workers: number;
+        totals: Record<string, number>;
+      })
+    : null;
+  if (race) {
+    const t = race.totals;
+    say(`  ${race.workers} independent OS processes. Own process, own SQLite connection, no`);
+    say("  shared memory. All settling the same obligation, released from a barrier onto");
+    say("  the same millisecond.");
+    say("");
+    say(`      payments broadcast            ${t.broadcasts}`);
+    say(`      posts reaching the provider   ${t.postsReachingTheProvider}`);
+    say(`      deduped by idempotency key    ${t.dedupedByKey}`);
+    say(`      duplicate payments            ${t.duplicates}`);
+    say(`      second wave broadcasts        ${t.secondWaveBroadcasts}`);
+    say("");
+    say("  The second number is the one that matters. Every worker computes the same");
+    say("  idempotency key, so a run that only showed KeeperHub refusing a duplicate");
+    say("  would prove KeeperHub's cache works and say nothing about this project.");
+    say("  The fixture counts every call that reaches it regardless of key. One did.");
+    say("  The other workers were stopped locally, before the provider was ever called.");
+  } else {
+    say("  docs/evidence/race.json not present. Run npm run race.");
+  }
+}
+
+heading("8", "The same race, once, against real money", "LIVE");
+
+{
+  const live = existsSync("docs/evidence/race-live.json")
+    ? (JSON.parse(readFileSync("docs/evidence/race-live.json", "utf8")) as {
+        workers: number;
+        invoice?: { reference?: string };
+        totals: Record<string, number>;
+        waves: Array<{ workers: Array<{ state: string; refusal: string | null; txHash: string | null }> }>;
+      })
+    : null;
+  if (live) {
+    const hash = live.waves.flatMap((w) => w.workers.map((x) => x.txHash)).find(Boolean) ?? "-";
+    say(`  ${live.workers} workers, real KeeperHub, real Sepolia.`);
+    say("");
+    say(`      reference              ${live.invoice?.reference ?? "-"}`);
+    say(`      payments on chain      ${live.totals.broadcasts}`);
+    say(`      duplicates             ${live.totals.duplicates}`);
+    say(`      transaction            ${hash}`);
+    say("");
+    say("  Live, the chain is the counter: one fee-proxy event carrying this reference");
+    say("  is one payment. That is the same question Request's own detection asks.");
+  } else {
+    say("  docs/evidence/race-live.json not present.");
+  }
+}
+
+heading("9", "Kill it mid-flight, nine times", "FIXTURE");
+
+{
+  const crash = existsSync("docs/evidence/crash.json")
+    ? (JSON.parse(readFileSync("docs/evidence/crash.json", "utf8")) as {
+        rows: Array<{ checkpoint: string; totalBroadcasts: number; duplicate: boolean; finalState: string }>;
+      })
+    : null;
+  if (crash) {
+    const dupes = crash.rows.filter((r) => r.duplicate).length;
+    const settled = crash.rows.filter((r) => r.finalState === "SETTLED").length;
+    for (const r of crash.rows) {
+      say(
+        `      ${r.checkpoint.padEnd(32)} sends ${r.totalBroadcasts}  duplicate ${r.duplicate ? "YES" : "no"}   ${r.finalState}`,
+      );
+    }
+    say("");
+    say(`  ${crash.rows.length} checkpoints, real SIGKILL each time. ${dupes} duplicate payments.`);
+    say(`  ${settled} converged to SETTLED; the rest stayed open for a human at zero sends.`);
+    say("");
+    say("  The two that do not converge are the honest ones. The attempt row is");
+    say("  committed and the provider was never called, so the row waits rather than");
+    say("  being closed by sending. Uncertainty is resolved by looking, never by paying.");
+  } else {
+    say("  docs/evidence/crash.json not present. Run npm run crash.");
+  }
+}
+
+heading("10", "Both KeeperHub surfaces, both with money behind them", "LIVE");
+
+{
+  const mcp = existsSync("docs/evidence/mcp-settlements.json")
+    ? (JSON.parse(readFileSync("docs/evidence/mcp-settlements.json", "utf8")) as {
+        rows: Array<{ keeperhubExecutionId?: string; txHash?: string; block?: number; finalState?: string }>;
+      })
+    : null;
+  if (mcp) {
+    say("  REST direct-execution API, and KeeperHub's own MCP server. Same interface,");
+    say("  same calldata gate, both proven with real settlements.");
+    say("");
+    for (const r of mcp.rows) {
+      say(`      ${String(r.keeperhubExecutionId).padEnd(24)} ${String(r.txHash).slice(0, 22)}  block ${r.block}  ${r.finalState}`);
+    }
+    say("");
+    say("  Each row carries the KeeperHub execution id that produced it.");
+  } else {
+    say("  docs/evidence/mcp-settlements.json not present.");
+  }
+}
+
+heading("11", "Check all of it, without a credential", "LIVE");
+
+{
+  const v = existsSync("docs/evidence/verify.json")
+    ? (JSON.parse(readFileSync("docs/evidence/verify.json", "utf8")) as {
+        totals: { checks: number; ok: number; failed: number; blocked: number };
+      })
+    : null;
+  if (v) {
+    say("      npm run verify:all");
+    say("");
+    say(`      ${v.totals.ok} ok · ${v.totals.failed} failed · ${v.totals.blocked} blocked`);
+    say("");
+    say("  No API key, no wallet, no .env. It imports no provider and cannot move money.");
+    say("  Totals are recomputed from rows, never read from a summary field: tamper with");
+    say("  an artifact's header and leave its rows alone, and this exits 1.");
+  }
+}
+
 say();
 say(`${"─".repeat(74)}`);
 say(`  npm test          ${TEST_COUNT} tests`);

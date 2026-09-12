@@ -185,6 +185,9 @@
     font-size: 9px; letter-spacing: .1em; text-transform: uppercase; font-weight: 400; z-index: 1;
   }
   tbody tr { cursor: pointer; }
+  /* The MCP settlement rows are read-only evidence, not a selectable list. */
+  #mcpset tbody tr { cursor: default; }
+  #mcpset tbody tr:hover td { background: none; }
   tbody tr:hover td { background: var(--panel-2); }
   tbody tr[aria-selected="true"] td { background: rgba(53,240,160,.08); }
   tbody tr[aria-selected="true"] td:first-child { box-shadow: inset 2px 0 0 var(--signal); }
@@ -342,6 +345,19 @@
         <div class="card" style="grid-column:1/-1">
           <header>One obligation, end to end<span class="mut" id="strip-src"></span></header>
           <div class="body"><ol class="pstrip" id="pstrip"></ol></div>
+        </div>
+      </div>
+
+      <div class="grid g3" style="margin-top:12px">
+        <div class="card" style="grid-column:1/-1">
+          <header>Value moved through both KeeperHub surfaces<span class="mut" id="surf2-src"></span></header>
+          <div class="body">
+            <dl class="kv" id="surf2-kv"></dl>
+            <div class="tw" style="max-height:none;margin-top:12px"><table id="mcpset"><thead><tr>
+              <th>Obligation</th><th>KeeperHub execution</th><th>Transaction</th><th class="n">Block</th><th class="n">Sends</th>
+            </tr></thead><tbody></tbody></table></div>
+            <p class="honest" id="surf2-honest"></p>
+          </div>
         </div>
       </div>
     </section>
@@ -985,45 +1001,84 @@
   // --- five steps, one real obligation ------------------------------------
   // A RECORDED row off Sepolia, never a fixture row: the strip links out, and a placeholder
   // hash sends a reader to a dead explorer page from the one view that exists to be checked.
-  const proofRow = liveRows.find((r) => r.tx_hash);
-  const proofTwin = liveRows.find((r) => r.expected === "ALREADY_SETTLED" && r.request_id === proofRow?.request_id);
-  const execId = proofRow?.keeperhub_execution_id ?? proofRow?.keeperhubExecutionId ?? null;
+  //
+  // The source is preferentially an MCP settlement, because those are the only rows that carry
+  // the KeeperHub execution id that produced the payment. docs/refusals-live.json records no
+  // execution id on any row, so a strip built from it has a hole at step three — which is what
+  // this view used to show. The two artifacts spell their fields differently, so a row is
+  // normalised here and the renderer below sees one shape.
+  const mcpRows = D.mcp?.rows ?? [];
+  const mcpDate = String(D.mcp?.generatedAt || "").slice(0, 10);
+  const restRow = liveRows.find((r) => r.tx_hash);
+  const restTwin = liveRows.find((r) => r.expected === "ALREADY_SETTLED" && r.request_id === restRow?.request_id);
+
+  const proofRow = mcpRows.find((r) => r.txHash)
+    ? ((m) => ({
+        src: `docs/evidence/mcp-settlements.json · recorded ${mcpDate}`,
+        surface: "settled through KeeperHub's MCP server",
+        requestId: m.requestId,
+        reference: m.paymentReference,
+        execId: m.keeperhubExecutionId ?? null,
+        txHash: m.txHash,
+        chainId: D.mcp?.chainId ?? 11155111,
+        sends: m.physicalSends,
+        verified: m.corroborated === true,
+        paidNote:
+          `${plural(m.feeProxyEventsForReference, "ERC20FeeProxy event")} carrying this reference from the invoice's own ` +
+          `anchor block ${m.invoiceAnchorBlock} — one send, one transaction. No replay was recorded against this ` +
+          `obligation; the replays are the ${plural(replays.length, "REST row")} counted at the top of this page.`,
+      }))(mcpRows.find((r) => r.txHash))
+    : restRow
+      ? {
+          src: `row ${restRow.case_id} · recorded ${runDate}`,
+          surface: "settled through KeeperHub's REST API",
+          requestId: restRow.request_id,
+          reference: restRow.payment_reference,
+          execId: restRow.keeperhub_execution_id ?? restRow.keeperhubExecutionId ?? null,
+          txHash: restRow.tx_hash,
+          chainId: D.live?.chainId ?? 11155111,
+          sends: restRow.physical_sends,
+          verified: restRow.independently_verified === true,
+          paidNote: restTwin
+            ? `asked again for the same obligation → ${restTwin.actual}, ${plural(restTwin.physical_sends, "send")}`
+            : "no replay recorded for this obligation",
+        }
+      : null;
 
   if (!proofRow) {
-    el("pstrip").innerHTML = '<div class="empty">No recorded payment in docs/refusals-live.json.</div>';
+    el("pstrip").innerHTML =
+      '<div class="empty">No recorded payment in docs/evidence/mcp-settlements.json or docs/refusals-live.json.</div>';
   } else {
-    el("strip-src").textContent = `row ${proofRow.case_id} · recorded ${runDate}`;
+    el("strip-src").textContent = proofRow.src;
     const steps = [
       [
         "Request invoice",
-        `<div class="id"><a href="https://scan.request.network/request/${proofRow.request_id}" target="_blank" rel="noopener"><code>${proofRow.request_id}</code></a></div>`,
+        `<div class="id"><a href="https://scan.request.network/request/${proofRow.requestId}" target="_blank" rel="noopener"><code>${proofRow.requestId}</code></a></div>`,
         "the obligation as Request stored it; identity, amount and payee are read from here, never from the agent",
       ],
       [
         "Approved plan",
-        `<div class="id"><code>${proofRow.payment_reference}</code></div>`,
+        `<div class="id"><code>${proofRow.reference}</code></div>`,
         "payment reference derived from the invoice, the salt and the payee — a caller-supplied one that differs is REFERENCE_MISMATCH",
       ],
       [
         "KeeperHub execution",
-        execId
-          ? `<div class="id"><code>${execId}</code></div>`
+        proofRow.execId
+          ? `<div class="id"><code>${proofRow.execId}</code></div>`
           : '<div class="id mut">&mdash;</div>',
-        execId
-          ? "the provider write, as KeeperHub recorded it (plain text: it is an id, not a URL)"
-          : "docs/refusals-live.json does not carry a KeeperHub execution id for this row, so none is shown. The fixture race records one; a recorded execution id needs the live artifact to carry the field.",
+        proofRow.execId
+          ? `the provider write, as KeeperHub recorded it — ${proofRow.surface} (plain text: it is an id, not a URL)`
+          : "this artifact does not carry a KeeperHub execution id for this row, so none is shown. Run npm run evidence:mcp to record one.",
       ],
       [
         "Chain transaction",
-        `<div class="id"><a href="https://sepolia.etherscan.io/tx/${proofRow.tx_hash}" target="_blank" rel="noopener"><code>${proofRow.tx_hash}</code></a></div>`,
-        `one send · physical_sends ${proofRow.physical_sends} · chain ${D.live?.chainId ?? "11155111"}`,
+        `<div class="id"><a href="https://sepolia.etherscan.io/tx/${proofRow.txHash}" target="_blank" rel="noopener"><code>${proofRow.txHash}</code></a></div>`,
+        `one send · physical sends ${proofRow.sends} · chain ${proofRow.chainId}`,
       ],
       [
         "Request paid",
-        `<div class="id">${proofRow.independently_verified ? '<span class="zero">independently re-read: yes</span>' : '<span class="mut">not independently re-read</span>'}</div>`,
-        proofTwin
-          ? `asked again for the same obligation → ${proofTwin.actual}, ${plural(proofTwin.physical_sends, "send")}`
-          : "no replay recorded for this obligation",
+        `<div class="id">${proofRow.verified ? '<span class="zero">independently re-read: yes</span>' : '<span class="mut">not independently re-read</span>'}</div>`,
+        proofRow.paidNote,
       ],
     ];
     el("pstrip").innerHTML = steps
@@ -1035,6 +1090,53 @@
       )
       .join("");
   }
+
+  // --- both KeeperHub surfaces --------------------------------------------
+  // The question a judge asks is whether value actually moved through KeeperHub and whether
+  // it can be seen. Both counts are lengths of arrays in the two artifacts; neither is typed.
+  // The explorer href is rebuilt from the transaction hash rather than taken from the row's
+  // own `explorer` string, so a link on this page can only ever point at the hash beside it.
+  const mcpSettled = mcpRows.filter((r) => r.txHash).length;
+  el("surf2-src").textContent = D.mcp
+    ? `recorded ${mcpDate} · chain ${D.mcp.chainId}`
+    : "docs/evidence/mcp-settlements.json absent at build time";
+  kv(el("surf2-kv"), [
+    [
+      'REST <span class="mut">/api/execute/contract-call</span>',
+      `<span class="zero">${settled}</span> settlements <span class="mut">docs/refusals-live.json</span>`,
+    ],
+    [
+      'MCP <span class="mut">app.keeperhub.com/mcp</span>',
+      D.mcp
+        ? `<span class="zero">${mcpSettled}</span> settlements <span class="mut">docs/evidence/mcp-settlements.json</span>`
+        : '<span class="mut">no artifact — run npm run evidence:mcp</span>',
+    ],
+    [
+      "execution ids recorded",
+      D.mcp
+        ? `<span class="zero">${mcpRows.filter((r) => r.keeperhubExecutionId).length}</span> of ${mcpSettled} MCP settlements · ` +
+          `<span class="mut">${liveRows.filter((r) => r.keeperhub_execution_id ?? r.keeperhubExecutionId).length} of ${settled} REST settlements</span>`
+        : '<span class="mut">—</span>',
+    ],
+  ]);
+  el("mcpset").tBodies[0].innerHTML = mcpRows.length
+    ? mcpRows
+        .map(
+          (r) => `<tr>
+            <td><a href="https://scan.request.network/request/${r.requestId}" target="_blank" rel="noopener"><code>${short(r.requestId, 16)}</code></a></td>
+            <td><code>${r.keeperhubExecutionId ?? "&mdash;"}</code></td>
+            <td><a href="https://sepolia.etherscan.io/tx/${r.txHash}" target="_blank" rel="noopener"><code>${short(r.txHash, 16)}</code></a></td>
+            <td class="n">${r.block ?? "&mdash;"}</td>
+            <td class="n">${r.physicalSends}</td>
+          </tr>`,
+        )
+        .join("")
+    : '<tr><td colspan="5"><span class="mut">No MCP settlements recorded. Run npm run evidence:mcp.</span></td></tr>';
+  el("surf2-honest").innerHTML =
+    "<b>One limit.</b> <code>src/settle.ts</code> writes the same REST endpoint string on every attempt whichever " +
+    "provider carries it, so the <code>transport: \"mcp\"</code> field on these rows is backed by the run that " +
+    "produced them and not by a durable record in the store; the execution ids, transactions and blocks beside it " +
+    "were read back from KeeperHub and Sepolia.";
 
   // --- verify -------------------------------------------------------------
   // The commands, what each one settles, and — only where an artifact exists — what it
@@ -1059,6 +1161,13 @@
       "npm run verify:live",
       "re-reads Sepolia for every recorded payment in docs/refusals-live.json",
       T ? `${T.asSpecified}/${T.rows} rows as specified, ${T.payments} payments · recorded ${runDate}` : none,
+    ],
+    [
+      "npm run evidence:mcp",
+      "for each obligation settled over KeeperHub's MCP transport, re-reads the Request invoice, the settlement store and Sepolia, and writes docs/evidence/mcp-settlements.json",
+      D.mcp
+        ? `${plural(D.mcp.totals.rows, "settlement")}, ${D.mcp.totals.withExecutionId} with a KeeperHub execution id, ${plural(D.mcp.totals.physicalSends, "physical send")} · recorded ${mcpDate}`
+        : '<span class="mut">docs/evidence/mcp-settlements.json absent at build time</span>',
     ],
     ["npm run verify:onchain", "reads the settlement transaction back off the chain", none],
     ["npm run verify:seam", "the KeeperHub REST seam against the real API", none],
