@@ -51,7 +51,13 @@ loadDotEnv();
 function need(name: string): string {
   const v = process.env[name];
   if (!v) {
-    console.error(`\nmissing ${name} in .env — run the invoice creation step first.\n`);
+    // Naming the step that supplies THIS variable. The generic version told someone whose
+    // KEEPERHUB_API_KEY was missing to go and create an invoice.
+    const where =
+      name === "KEEPERHUB_API_KEY"
+        ? "get one from KeeperHub and put it in .env"
+        : "run the invoice creation step first (docs/RUNBOOK.md)";
+    console.error(`\nmissing ${name} in .env — ${where}.\n`);
     process.exit(2);
   }
   return v;

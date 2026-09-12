@@ -167,11 +167,18 @@ const TRANSITIONS: Readonly<Record<State, readonly State[]>> = {
  * from the state name alone. PAYMENT_PREFLIGHT is not replannable, and deliberately so: a
  * simulate can TIME OUT, and a timed-out dry run may have executed for real (#1959). The
  * provider's own `retryable` flag cannot separate the two — `rate_limited` and `timeout` are
- * both retryable — so it is not the discriminator. The discriminator is durable local state:
- * this state may only be entered when NO attempt on the obligation carries `first_send_at`,
- * i.e. nothing has ever been handed to the provider under this obligation. `settleObligation`
- * enforces that with `store.sentAttemptFor` before the transition, and the test
- * "PREFLIGHT_UNAVAILABLE is unreachable once anything has been sent" pins it.
+ * both retryable — so it is not the discriminator. Neither is durable local state, read from
+ * inside `settleObligation`: an earlier version of this comment said the transition was gated
+ * there on `store.sentAttemptFor`, and that check was vacuous where it stood, because
+ * `openAttempt` does not run until after the simulate returns. Two adversarial passes walked
+ * through it to a second payment.
+ *
+ * The discriminator is the chain. This state is entered in exactly one place — `worker.ts`,
+ * after `sightPayment` has established across the whole scanned window that nothing carrying
+ * this reference paid this invoice. A truncated scan does not qualify. `settleObligation` no
+ * longer enters it at all: a simulate that throws leaves the obligation in PAYMENT_PREFLIGHT
+ * with the observation still queued, and the test
+ * "PREFLIGHT_UNAVAILABLE is unreachable once anything has been sent" pins the invariant.
  */
 export const REPLANNABLE: readonly State[] = [
   "IMPORTED",
