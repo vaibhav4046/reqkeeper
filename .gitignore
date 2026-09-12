@@ -11,3 +11,11 @@ tools/invoice/pnpm-lock.yaml
 
 .vercel
 tools/video/.frames/
+
+# Internal judging artifacts — never committed
+.judging/
+
+# Agent harness config. Local working aid, not part of the product, and this
+# account's repositories carry no assistant artifacts.
+.claude/
+CLAUDE.md
