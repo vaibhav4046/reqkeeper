@@ -20,6 +20,7 @@
  * failed. A verification that cannot fail is decoration.
  */
 
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 import { findPaymentByReference, matchPaymentLog, readReceipt, type PaymentExpectation } from "../src/chain.ts";
@@ -409,4 +410,20 @@ if (JSON_ONLY) {
   }
 }
 
-process.exit(failed.length === 0 ? 0 : 1);
+// The documents are part of the claim surface. A figure in README.md or docs/SUBMISSION.md that
+// no longer matches the evidence just written is the same failure as a check going red, and it is
+// the failure nobody notices — docs/SUBMISSION.md claimed 239 unit tests for months after the
+// suite passed 300. Run last, because it reads the verify.json this run just wrote.
+let documentsAgree = true;
+if (!JSON_ONLY) {
+  try {
+    execFileSync("node", ["--experimental-strip-types", "scripts/readme-numbers.ts", "--check"], {
+      stdio: "inherit",
+    });
+  } catch {
+    documentsAgree = false;
+    console.error("  a documented number no longer matches the evidence (see above)\n");
+  }
+}
+
+process.exit(failed.length === 0 && documentsAgree ? 0 : 1);
