@@ -103,7 +103,11 @@ export const TOOLS = [
     name: "verify_payment",
     description:
       "Independently confirm a payment by reading the ERC20FeeProxy event log off-chain for a " +
-      "payment reference. Does not consult the execution provider, so it can contradict it.",
+      "payment reference. Does not consult the execution provider, so it can contradict it. " +
+      "`paid` is true only when the log is corroborated — matched against the facts this " +
+      "deployment imported for that reference, or against the transaction it recorded as the " +
+      "payment. A bare sighting is reported as `referenceSeen`, because the proxy is " +
+      "permissionless and references are public: anyone can emit a log carrying one.",
     inputSchema: {
       type: "object",
       properties: { paymentReference: { type: "string" } },
@@ -226,20 +230,73 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
     case "verify_payment": {
       const reference = String(args.paymentReference ?? "");
       if (!/^0x[0-9a-fA-F]+$/.test(reference)) throw new Error("paymentReference must be 0x hex");
-      const sighting = await findPayment(reference, { rpcUrl: ctx.rpcUrl });
+
+      /**
+       * What this deployment already knows about the debt that reference names.
+       *
+       * `paid: sighting.found` was the whole answer, and the ERC20FeeProxy is permissionless:
+       * a red-team pass emitted a log carrying a victim's reference that paid the attacker one
+       * unit of a worthless token, and this tool called it a payment. The money path refused
+       * the same log on its fields, so the surface an agent asks contradicted the surface that
+       * decides.
+       *
+       * The expectation is RECOVERED from the obligation's own imported facts rather than
+       * accepted as an argument: this server has the store beside it, and a caller who could
+       * hand over an expectation could hand over one shaped to fit the forgery.
+       */
+      const known = ctx.store.obligationForReference(reference);
+      const recorded = known ? ctx.store.obligationForRecovery(known.obligationId) : undefined;
+      const expect = recorded?.expectation ?? undefined;
+      const ourTx = known ? (ctx.store.sentAttemptFor(known.obligationId)?.txHash ?? null) : null;
+
+      const sighting = await findPayment(reference, {
+        rpcUrl: ctx.rpcUrl,
+        ...(expect ? { expect } : {}),
+      });
+
+      // With an expectation, `found` already means emitter, token, payee, amount and fee all
+      // agreed. Without one — a reference this deployment has never imported — the only thing
+      // that can corroborate a sighting is our own record of which transaction paid it.
+      const sameTx = ourTx !== null && sighting.txHash?.toLowerCase() === ourTx.toLowerCase();
+      const corroboratedBy = sighting.found
+        ? expect
+          ? "obligation-facts"
+          : sameTx
+            ? "recorded-transaction"
+            : null
+        : null;
+
+      const conflicts = [
+        ...(sighting.conflicts ?? []),
+        ...(ourTx !== null && sighting.txHash !== undefined && !sameTx
+          ? [`${sighting.txHash} carries this reference, but this deployment recorded ${ourTx} as the payment`]
+          : []),
+      ];
+
       return {
-        paid: sighting.found,
+        reference,
+        // Only ever true on corroboration. "A log carries this reference" is a sighting, not a
+        // settlement, and must not be handed to an agent as one.
+        paid: corroboratedBy !== null,
+        corroboratedBy,
+        referenceSeen: sighting.found === true,
         txHash: sighting.txHash ?? null,
         amountBaseUnits: sighting.amount ?? null,
+        tokenAddress: sighting.tokenAddress ?? null,
+        to: sighting.to ?? null,
+        conflicts: conflicts.length > 0 ? conflicts : null,
         source: "ERC20FeeProxy event log, read directly from the chain",
         blocksScanned: sighting.scannedBlocks ?? null,
         // Said out loud so a false is not mistaken for proof of non-payment: the scan is a
         // bounded window, and a payment older than it would not be seen.
-        caveat: sighting.found
-          ? null
-          : sighting.truncated
+        caveat: !sighting.found
+          ? sighting.truncated
             ? "not seen in the scanned window; this is not proof the invoice is unpaid"
-            : "scanned to genesis; no payment with this reference exists",
+            : "scanned to genesis; no payment matching this obligation was found"
+          : corroboratedBy === null
+            ? "a log carries this reference, but nothing here corroborates that it pays this " +
+              "obligation: it was never imported, so there are no facts to match it against"
+            : null,
       };
     }
 

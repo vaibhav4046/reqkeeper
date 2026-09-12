@@ -42,9 +42,10 @@ this run cannot make it.
 ### Both KeeperHub surfaces, both with money behind them
 
 38 settlements through the REST direct-execution API, and **3 through KeeperHub's own MCP
-server** — `execute_contract_call` with `simulate: true` first, then with `idempotency_key`, and
-`get_direct_execution_status` polled for the result. Each MCP row carries the KeeperHub execution
-id that produced it:
+server** — `execute_contract_call` with `simulate: true` first, then with `idempotency_key`, then
+`get_direct_execution_status` called once for each execution id. That status is recorded, not
+trusted: settlement is decided by an independently read receipt and the fee-proxy event for the
+same transaction and amount. Each MCP row carries the KeeperHub execution id that produced it:
 
 | execution id | transaction | block |
 |---|---|---|
@@ -101,7 +102,7 @@ dependencies. `typecheck` and `build` call `tsc`, so those two want `npm install
 ```bash
 npm install           # only for typecheck and build; everything above runs without it
 
-npm test              # 349 tests, 66 suites
+npm test              # 377 tests, 73 suites
 npm run typecheck     # tsc --noEmit
 npm run build         # console + api; the tree must stay clean afterwards
 npm run gate-a        # Request <-> KeeperHub <-> Sepolia end to end (10 ok, 0 failed, 2 blocked)

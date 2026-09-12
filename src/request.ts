@@ -38,7 +38,8 @@ export type RequestErrorCode =
   | "NO_CREATE_ACTION"
   | "NO_FEE_PROXY_EXTENSION"
   | "WRONG_NETWORK"
-  | "REFERENCE_MISMATCH";
+  | "REFERENCE_MISMATCH"
+  | "FACT_MISMATCH";
 
 export class RequestError extends Error {
   // See MoneyError: Node's strip-only TypeScript mode rejects constructor parameter
@@ -126,6 +127,61 @@ export function assertReferenceMatches(supplied: string, derived: string): void 
     `supplied payment reference ${supplied} is not the one this invoice derives (${derived}); ` +
       "these are different debts, and nothing downstream re-derives the reference",
   );
+}
+
+/**
+ * What a caller already believes about an invoice — from `.env`, from a local JSON file, from
+ * an agent. Every field is a CLAIM to be checked against Request, never a fact to be used.
+ */
+export interface ClaimedFacts {
+  readonly paymentReference?: string;
+  readonly payee?: string;
+  readonly amountBaseUnits?: string;
+  readonly feeAmount?: string;
+  readonly feeAddress?: string;
+  readonly tokenAddress?: string;
+}
+
+/**
+ * The only way a settlement path should learn what an invoice says.
+ *
+ * `fetchInvoice` alone is not enough in practice, because the scripts that move money already
+ * hold a local copy of these fields and the tempting thing is to keep using it. So this is the
+ * one call that does both halves: read the invoice, then REFUSE — not warn, not prefer one
+ * side — if anything the caller brought disagrees with what Request states. The identifier is
+ * the only thing a caller is allowed to supply and have used.
+ *
+ * Amounts are compared as exact strings. A claimed amount is supposed to be a verbatim copy of
+ * the invoice's, so "1000000000000000000" and "01000000000000000000" being refused as
+ * different is the point: one of them was typed by something other than Request.
+ */
+export async function fetchInvoiceChecked(
+  requestId: string,
+  claimed: ClaimedFacts = {},
+  opts: FetchInvoiceOptions = {},
+): Promise<InvoiceFactsFromRequest> {
+  const invoice = await fetchInvoice(requestId, opts);
+  if (claimed.paymentReference !== undefined) {
+    assertReferenceMatches(claimed.paymentReference, invoice.paymentReference);
+  }
+  // Addresses compare case-insensitively (checksum capitalisation is a rendering choice);
+  // amounts do not.
+  const check = (field: string, c: string | undefined, stated: string, addressLike = false): void => {
+    if (c === undefined) return;
+    if (addressLike ? c.toLowerCase() === stated.toLowerCase() : c === stated) return;
+    throw new RequestError(
+      "FACT_MISMATCH",
+      `${field} was supplied as ${JSON.stringify(c)}, but invoice ${invoice.requestId} states ` +
+        `${JSON.stringify(stated)}; the facts come from Request, so this settlement is refused ` +
+        "rather than run against the caller's version",
+    );
+  };
+  check("payee", claimed.payee, invoice.payee, true);
+  check("tokenAddress", claimed.tokenAddress, invoice.tokenAddress, true);
+  check("feeAddress", claimed.feeAddress, invoice.feeRecipient, true);
+  check("amountBaseUnits", claimed.amountBaseUnits, invoice.invoiceBaseUnits);
+  check("feeAmount", claimed.feeAmount, invoice.feeBaseUnits);
+  return invoice;
 }
 
 /**

@@ -27,6 +27,7 @@
 
 import { readReceipt } from "./chain.ts";
 import { decodeAllowedCall, type CallStep } from "./calldata-gate.ts";
+import { idempotencyVerdict } from "./keeperhub.ts";
 import type {
   ExecuteResult,
   ExecutionProvider,
@@ -157,6 +158,13 @@ export class KeeperHubMcpProvider implements ExecutionProvider {
     });
 
     if (res.status === 429) throw new ProviderError("rate_limited", "429 from KeeperHub MCP", true);
+    // The REST route has discriminated 409s since the day one of them was mistaken for the
+    // other; this transport had no 409 branch at all, so an idempotency answer fell through to
+    // the JSON-RPC parse below and surfaced as `bad_response`. settle() keys the integrity
+    // branch on the literal code `idempotency_conflict`, so on this surface "the platform holds
+    // a different body for this key" was being recorded as an ordinary unknown outcome instead
+    // of the incident it is.
+    if (res.status === 409) throw idempotencyVerdict(text.slice(0, 300));
     if (res.status >= 500) {
       throw new ProviderError("provider_error", `HTTP ${res.status}: ${text.slice(0, 200)}`, true);
     }
@@ -191,6 +199,13 @@ export class KeeperHubMcpProvider implements ExecutionProvider {
     }
 
     const body = reply.result?.content?.find((c) => c.type === "text")?.text ?? "";
+
+    // An MCP tool reports most failures as a 200 carrying `isError`, so the 409 semantics
+    // arrive as text rather than as an HTTP status. Routed through the same verdict as the REST
+    // path: without this, `idempotency_in_progress` — an ordinary wait — was thrown
+    // non-retryable, which is exactly the collapse the REST transport was fixed for.
+    if (reply.result?.isError && /idempotenc/i.test(body)) throw idempotencyVerdict(body.slice(0, 300));
+
     let parsed: ExecutePayload;
     try {
       parsed = JSON.parse(body) as ExecutePayload;
@@ -240,7 +255,14 @@ export class KeeperHubMcpProvider implements ExecutionProvider {
     const hash = payload.transactionHash ?? payload.transaction_hash;
     return {
       status: "simulated",
-      wouldRevert: payload.wouldRevert === true || payload.success === false,
+      // The third term is the one this transport was missing. A tool payload that carries an
+      // `error` and neither `wouldRevert` nor `success` makes both other comparisons false, so
+      // a failure to simulate at all read as "would not revert" — and settle's preflight gate
+      // then let a real payment through on the strength of it. Unknown must mean unsafe here,
+      // because the next step spends money. The REST transport has had this guard since the
+      // same shape was observed there; the MCP transport is the surface that carries the live
+      // settlements, and it did not.
+      wouldRevert: payload.wouldRevert === true || payload.success === false || payload.error !== undefined,
       gasEstimate: payload.gasEstimate ?? "0",
       // Passed through deliberately: a hash from a dry run means it really executed, and
       // settle.ts treats that as a real send.

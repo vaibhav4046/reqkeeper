@@ -40,6 +40,25 @@ export declare const PUBLIC_TOOLS: readonly [{
             readonly paymentReference: {
                 readonly type: "string";
             };
+            readonly expect: {
+                readonly type: "object";
+                readonly description: "The payment you believe is owed. Without it a sighting is reported, never a payment.";
+                readonly properties: {
+                    readonly tokenAddress: {
+                        readonly type: "string";
+                        readonly description: "0x address of the ERC-20 being paid";
+                    };
+                    readonly to: {
+                        readonly type: "string";
+                        readonly description: "0x address the invoice is owed to";
+                    };
+                    readonly amount: {
+                        readonly type: "string";
+                        readonly description: "amount in base units, decimal string";
+                    };
+                };
+                readonly required: readonly ["tokenAddress", "to", "amount"];
+            };
         };
         readonly required: readonly ["paymentReference"];
     };

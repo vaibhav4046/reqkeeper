@@ -43,6 +43,7 @@ import type {
   Receipt,
   SimulateResult,
 } from "../src/provider.ts";
+import { fetchInvoiceChecked, toInvoiceFacts, type InvoiceFactsFromRequest } from "../src/request.ts";
 import { settleObligation } from "../src/settle.ts";
 import { Store } from "../src/store.ts";
 
@@ -130,16 +131,30 @@ const rows: Row[] = [];
 let n = 0;
 const nextId = (): string => `L${String(++n).padStart(3, "0")}`;
 
-function factsFor(inv: (typeof batch.invoices)[number], overrides: Partial<InvoiceFacts> = {}): InvoiceFacts {
-  return {
-    requestId: inv.requestId,
+/**
+ * Read the invoice from Request and refuse if the local file disagrees.
+ *
+ * `docs/live-invoices.json` is a local file: a hand that can edit its `paymentReference` can
+ * edit its `payee` next to it, and every guard downstream of here protects whatever reference
+ * it is handed. So the file names WHICH invoice and nothing else — the reference, payee,
+ * amount and fee this harness pays are the ones the gateway states, and a disagreement is a
+ * REFERENCE_MISMATCH / FACT_MISMATCH that ends the run before any provider write.
+ */
+async function readInvoice(inv: (typeof batch.invoices)[number]): Promise<InvoiceFactsFromRequest> {
+  return await fetchInvoiceChecked(inv.requestId, {
     paymentReference: inv.paymentReference,
     payee: inv.payee,
     amountBaseUnits: inv.amountBaseUnits,
-    // Twice the invoice, so the ceiling is real but not the thing under test.
-    maxTotalDebitBaseUnits: "2000000000000000000",
     feeAmount: inv.feeAmount,
     feeAddress: inv.feeAddress,
+    tokenAddress: FAU,
+  });
+}
+
+function factsFor(invoice: InvoiceFactsFromRequest, overrides: Partial<InvoiceFacts> = {}): InvoiceFacts {
+  return {
+    // Twice the invoice, so the ceiling is real but not the thing under test.
+    ...toInvoiceFacts(invoice, "2000000000000000000"),
     ...overrides,
   };
 }
@@ -191,7 +206,9 @@ function record(row: Row): void {
 }
 
 for (const inv of payable) {
-  const facts = factsFor(inv);
+  // Fetched per invoice rather than in one pass up front, so a --limit run costs one gateway
+  // read per invoice it actually intends to pay.
+  const facts = factsFor(await readInvoice(inv));
   const oid = obligationId(NAMESPACE, inv.requestId);
   const sourceFacts = buildSourceFacts(facts);
   const provider = newProvider();
@@ -203,18 +220,18 @@ for (const inv of payable) {
             // Not just "the reference appears somewhere": it must be OUR transaction for
             // OUR amount. A boolean over the reference alone accepts another payment's
             // evidence, which is how a duplicate obligation reported SETTLED.
-            const seen = await findPaymentByReference(inv.paymentReference, { lookbackBlocks: 300_000 });
+            const seen = await findPaymentByReference(facts.paymentReference, { lookbackBlocks: 300_000 });
             return (
               seen.found &&
               seen.txHash?.toLowerCase() === txHash.toLowerCase() &&
-              seen.amount === inv.amountBaseUnits
+              seen.amount === facts.amountBaseUnits
             );
           },
   };
   const input = {
     namespace: NAMESPACE,
-    requestId: inv.requestId,
-    paymentReference: inv.paymentReference,
+    requestId: facts.requestId,
+    paymentReference: facts.paymentReference,
     obligationId: oid,
     facts: sourceFacts,
     steps: buildSteps(facts),
@@ -233,8 +250,8 @@ for (const inv of payable) {
     physical_sends: provider.sends,
     tx_hash: first.txHash ?? null,
     independently_verified: first.state === "SETTLED",
-    request_id: inv.requestId,
-    payment_reference: inv.paymentReference,
+    request_id: facts.requestId,
+    payment_reference: facts.paymentReference,
     mode: "LIVE_TESTNET",
   });
 
@@ -250,8 +267,8 @@ for (const inv of payable) {
     physical_sends: provider.sends - sendsBefore,
     tx_hash: second.txHash ?? null,
     independently_verified: false,
-    request_id: inv.requestId,
-    payment_reference: inv.paymentReference,
+    request_id: facts.requestId,
+    payment_reference: facts.paymentReference,
     mode: "LIVE_TESTNET",
   });
 }
@@ -261,7 +278,10 @@ for (const inv of payable) {
 // A live provider and a live policy, on a fresh unpaid invoice. Each of these must refuse
 // before any provider write, so the send counter is the evidence that nothing was spent.
 
-const spare = batch.invoices[payable.length] ?? batch.invoices.at(-1);
+const spareEntry = batch.invoices[payable.length] ?? batch.invoices.at(-1);
+// Read from Request like every other invoice here: these rows are refusals, but they are
+// refusals about a real debt, and the facts they refuse over are not the local file's.
+const spare = spareEntry ? await readInvoice(spareEntry) : undefined;
 if (spare) {
   type Case = {
     scenario: string;

@@ -6,7 +6,7 @@ still breaks or is unfinished?" and the last section is the source for that answ
 
 Reproduce any probe with `node --experimental-strip-types hackathon/audit/probes/<probe>.ts`.
 
-Gates: `npm test` 349 pass / 0 fail / 66 suites · `npm run typecheck` clean · `npm run build`
+Gates: `npm test` 377 pass / 0 fail / 73 suites · `npm run typecheck` clean · `npm run build`
 clean, and reproducible from a bare clone: the page is a function of the committed evidence and
 reads no environment at all, so `git diff --exit-code web api/_gen` passes on a machine that has
 never had a `.env` · `npm run gate-a` 10 ok / 0 failed / 2 blocked here, 9 ok / 0 failed / 3
@@ -20,6 +20,26 @@ tests is noted where it exists, because that is worth knowing.
 ---
 
 ## Closed
+
+### The two KeeperHub transports now enforce the same things (was REST only)
+
+Recorded here as fixed, the simulate guard and the 409 discrimination were fixed on the REST
+transport and not on the MCP one -- and MCP is the surface carrying the three showcased live
+settlements. Three behaviours were missing on it:
+
+1. `wouldRevert` compared only `wouldRevert === true || success === false`, so a payload carrying
+   an `error` and neither field read as a clean dry run. `src/settle.ts` gates the real payment on
+   exactly that boolean.
+2. No 409 branch at all: an HTTP 409 fell through to the JSON-RPC parse and surfaced as
+   `bad_response`, so "the platform holds a different body for this key" was recorded as an
+   ordinary unknown outcome instead of an integrity conflict.
+3. No in-progress discrimination: a tool-level `idempotency_in_progress` was thrown
+   non-retryable, which is a recoverable wait made terminal -- the same collapse REST was fixed
+   for.
+
+REST's 409 logic is now one exported `idempotencyVerdict` that both transports call, so they
+cannot drift apart again. Four cases in `test/keeperhub-mcp.test.ts` fail without the fix.
+
 
 ### Two duplicate-payment paths, found by an adversarial pass on 2026-09-12
 

@@ -12,7 +12,7 @@
  * business calling.
  */
 
-import { findPaymentByReference } from "./chain.ts";
+import { findPaymentByReference, type PaymentExpectation } from "./chain.ts";
 import { EVIDENCE } from "./evidence.generated.ts";
 
 export const PUBLIC_SERVER_INFO = { name: "reqkeeper-public", version: "0.1.0" };
@@ -36,10 +36,27 @@ export const PUBLIC_TOOLS = [
     name: "verify_payment",
     description:
       "Read the ERC20FeeProxy event log on Sepolia for a payment reference and report what is " +
-      "actually there. No credential, no execution provider, so it can contradict both.",
+      "actually there. No credential, no execution provider, so it can contradict both. A " +
+      "reference on its own proves nothing — the proxy is permissionless and references are " +
+      "public — so `paid` is true only when something corroborates the log: the `expect` you " +
+      "pass (token, payee, amount), or this project's own recorded transaction for one of its " +
+      "references.",
     inputSchema: {
       type: "object",
-      properties: { paymentReference: { type: "string" } },
+      properties: {
+        paymentReference: { type: "string" },
+        expect: {
+          type: "object",
+          description:
+            "The payment you believe is owed. Without it a sighting is reported, never a payment.",
+          properties: {
+            tokenAddress: { type: "string", description: "0x address of the ERC-20 being paid" },
+            to: { type: "string", description: "0x address the invoice is owed to" },
+            amount: { type: "string", description: "amount in base units, decimal string" },
+          },
+          required: ["tokenAddress", "to", "amount"],
+        },
+      },
       required: ["paymentReference"],
     },
   },
@@ -107,6 +124,46 @@ export interface PublicDeps {
   readonly rpcUrl?: string;
 }
 
+/**
+ * This project's own settled references, compiled in with the evidence: reference → the
+ * transaction that paid it.
+ *
+ * The second corroboration source, and the one that needs no argument from the caller. Every
+ * reference this project publishes is in the README, and a fee-proxy log carrying one can be
+ * emitted by anyone for a nominal amount of a worthless token. When we already know which
+ * transaction paid a reference, a sighting in a different transaction is not weak evidence of
+ * payment — it is evidence of a forgery, and it is reported as a conflict rather than swallowed.
+ */
+const OWN_PAYMENTS = new Map<string, string>();
+for (const row of EVIDENCE.rows) {
+  if (row.paymentReference && row.txHash) {
+    OWN_PAYMENTS.set(row.paymentReference.toLowerCase(), row.txHash.toLowerCase());
+  }
+}
+
+const HEX_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+const BASE_UNITS = /^[0-9]+$/;
+
+/**
+ * The caller's claim about what this invoice owes, validated before it reaches a chain read.
+ *
+ * Untrusted input from a public endpoint, so every field is checked rather than coerced: an
+ * `amount` of "1e18" or a `to` of "0x0" would silently never match and report a real payment
+ * as unseen, which is the same wrong answer in the other direction.
+ */
+function readExpectation(raw: unknown): PaymentExpectation | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== "object" || Array.isArray(raw)) throw new Error("expect must be an object");
+  const e = raw as Record<string, unknown>;
+  const tokenAddress = String(e.tokenAddress ?? "");
+  const to = String(e.to ?? "");
+  const amount = String(e.amount ?? "");
+  if (!HEX_ADDRESS.test(tokenAddress)) throw new Error("expect.tokenAddress must be a 0x-prefixed 20-byte address");
+  if (!HEX_ADDRESS.test(to)) throw new Error("expect.to must be a 0x-prefixed 20-byte address");
+  if (!BASE_UNITS.test(amount)) throw new Error("expect.amount must be base units as a decimal string");
+  return { tokenAddress, to, amount };
+}
+
 async function callTool(name: string, args: Record<string, unknown>, deps: PublicDeps): Promise<unknown> {
   switch (name) {
     case "settlement_evidence": {
@@ -123,16 +180,58 @@ async function callTool(name: string, args: Record<string, unknown>, deps: Publi
       if (!/^0x[0-9a-fA-F]+$/.test(reference)) {
         throw new Error("paymentReference must be 0x-prefixed hex");
       }
+      // Passed down so the chain read matches emitter, token, payee and amount rather than the
+      // reference alone. Without it this tool answered "found" for any log carrying the
+      // reference — and a red-team pass forged exactly that: a fee-proxy log with a victim's
+      // reference paying the attacker one unit of a worthless token. The money path already
+      // refused it on the fields; this surface reported it as the payment.
+      const expect = readExpectation(args.expect);
       const find = deps.findPayment ?? findPaymentByReference;
-      const seen = await find(reference, { rpcUrl: deps.rpcUrl, lookbackBlocks: 300_000 });
+      const seen = await find(reference, {
+        rpcUrl: deps.rpcUrl,
+        lookbackBlocks: 300_000,
+        ...(expect ? { expect } : {}),
+      });
+
+      // With an expectation, `found` already means the fields agreed (chain.ts refuses the log
+      // otherwise). Without one, the only thing that can corroborate a sighting here is this
+      // project's own record of which transaction paid that reference.
+      const ourTx = OWN_PAYMENTS.get(reference.toLowerCase()) ?? null;
+      const sameTx = ourTx !== null && seen.txHash?.toLowerCase() === ourTx;
+      const corroboratedBy = seen.found ? (expect ? "expectation" : sameTx ? "project-evidence" : null) : null;
+
+      const conflicts = [
+        ...(seen.conflicts ?? []),
+        ...(ourTx !== null && seen.txHash !== undefined && !sameTx
+          ? [`${seen.txHash} carries this reference, but this project's evidence records ${ourTx} as the payment`]
+          : []),
+      ];
+
       return {
         reference,
-        found: seen.found,
+        // Only ever true on corroboration. A reference is derived from data anchored openly on
+        // Sepolia and the ERC20FeeProxy is permissionless, so "a log carries this reference" is
+        // a sighting, not a settlement, and must not be handed to an agent as one.
+        paid: corroboratedBy !== null,
+        corroboratedBy,
+        referenceSeen: seen.found === true,
         txHash: seen.txHash ?? null,
         amountBaseUnits: seen.amount ?? null,
+        tokenAddress: seen.tokenAddress ?? null,
+        to: seen.to ?? null,
+        conflicts: conflicts.length > 0 ? conflicts : null,
         scannedBlocks: seen.scannedBlocks ?? null,
         // A miss inside a bounded window is "not seen recently", never "unpaid".
         conclusive: seen.found || seen.truncated !== true,
+        caveat: !seen.found
+          ? seen.truncated
+            ? "not seen in the scanned window; this is not proof the invoice is unpaid"
+            : "scanned the whole window; no payment carrying this reference was found"
+          : corroboratedBy === null
+            ? "a log carries this reference, but nothing corroborates that it pays this invoice. " +
+              "Anyone can emit a fee-proxy log with a public reference: pass `expect` (token, to, " +
+              "amount) to have the payment itself checked."
+            : null,
         source: "ERC20FeeProxy event log, read from a public Sepolia RPC with no credential",
       };
     }

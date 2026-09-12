@@ -18,10 +18,12 @@
 import assert from "node:assert/strict";
 import { after, describe, test } from "node:test";
 
+import { canonicalReference } from "../src/identity.ts";
 import {
   assertReferenceMatches,
   derivePaymentReference,
   fetchInvoice,
+  fetchInvoiceChecked,
   RequestError,
   SEPOLIA_CHAIN_ID,
   toInvoiceFacts,
@@ -297,6 +299,102 @@ describe("assertReferenceMatches is the refusal the settle path uses", () => {
         return true;
       },
     );
+  });
+});
+
+describe("fetchInvoiceChecked refuses a caller's facts rather than preferring them", () => {
+  /** Everything a local file or `.env` would carry, all of it agreeing with the invoice. */
+  const agreeing = {
+    paymentReference: REFERENCE,
+    payee: PAYMENT_ADDRESS,
+    amountBaseUnits: ONE_FAU,
+    feeAmount: "0",
+    feeAddress: ZERO_ADDRESS,
+    tokenAddress: FAU,
+  };
+
+  test("facts that agree are allowed through, and the returned ones are Request's", async () => {
+    stubGateway(gatewayBody());
+    const facts = await fetchInvoiceChecked(REQUEST_ID, agreeing);
+    assert.equal(facts.paymentReference, REFERENCE);
+    assert.equal(facts.payee, PAYMENT_ADDRESS);
+  });
+
+  test("with nothing claimed it is just a read", async () => {
+    stubGateway(gatewayBody());
+    const facts = await fetchInvoiceChecked(REQUEST_ID);
+    assert.equal(facts.paymentReference, REFERENCE);
+  });
+
+  test("a supplied reference for another debt is REFERENCE_MISMATCH", async () => {
+    stubGateway(gatewayBody());
+    await assert.rejects(
+      () => fetchInvoiceChecked(REQUEST_ID, { ...agreeing, paymentReference: "0xfaac1220a314c4a9" }),
+      (e: RequestError) => e.code === "REFERENCE_MISMATCH",
+    );
+  });
+
+  test("each other supplied fact is FACT_MISMATCH, and the message names the field", async () => {
+    const wrong: Array<[keyof typeof agreeing, string]> = [
+      ["payee", STRANGER],
+      ["amountBaseUnits", "2000000000000000000"],
+      ["feeAmount", "1"],
+      ["feeAddress", STRANGER],
+      ["tokenAddress", STRANGER],
+    ];
+    for (const [field, value] of wrong) {
+      stubGateway(gatewayBody());
+      await assert.rejects(
+        () => fetchInvoiceChecked(REQUEST_ID, { ...agreeing, [field]: value }),
+        (e: RequestError) => {
+          assert.equal(e.code, "FACT_MISMATCH", `${field}: ${e.message}`);
+          assert.ok(e.message.includes(field), `the refusal does not name ${field}: ${e.message}`);
+          return true;
+        },
+      );
+    }
+  });
+
+  test("checksum capitalisation is not a disagreement, but a different amount spelling is", async () => {
+    stubGateway(gatewayBody());
+    await assert.doesNotReject(() =>
+      fetchInvoiceChecked(REQUEST_ID, { payee: PAYMENT_ADDRESS.toLowerCase() }),
+    );
+    stubGateway(gatewayBody());
+    // An amount is supposed to be a verbatim copy. A leading zero means something other than
+    // Request typed it, and this is the last place to find that out.
+    await assert.rejects(
+      () => fetchInvoiceChecked(REQUEST_ID, { amountBaseUnits: `0${ONE_FAU}` }),
+      (e: RequestError) => e.code === "FACT_MISMATCH",
+    );
+  });
+});
+
+describe("Request's own spelling of a reference is the same debt", () => {
+  /**
+   * `canonicalReference` lives in identity.ts, but the two spellings it has to reconcile are
+   * produced here: `derivePaymentReference` returns the 0x form, and Request's own
+   * `PaymentReferenceCalculator.calculate` returns the bare sixteen characters.
+   */
+  test("the bare 16-hex form canonicalises onto the derived one", () => {
+    const derived = derivePaymentReference(REQUEST_ID, SALT, PAYMENT_ADDRESS);
+    const bare = derived.slice(2);
+    assert.equal(canonicalReference(bare), canonicalReference(derived));
+    // Canonical in ONE direction: whichever spelling arrives, one string is stored, because
+    // this value feeds a UNIQUE index and two rows for one debt is two payments.
+    assert.equal(canonicalReference(bare), derived);
+    assert.equal(canonicalReference(bare.toUpperCase()), derived);
+  });
+
+  test("a genuinely different reference is still a different one", () => {
+    assert.notEqual(canonicalReference("faac1220a314c4a9"), canonicalReference(REFERENCE));
+  });
+
+  test("a value that is not a reference is still refused rather than guessed at", () => {
+    assert.throws(() => canonicalReference("not-hex"), /0x-prefixed hex/);
+    assert.throws(() => canonicalReference("0x"), /0x-prefixed hex/);
+    // Unprefixed and not the 8-byte spelling: as plausibly a decimal as a reference.
+    assert.throws(() => canonicalReference("1000"), /0x-prefixed hex/);
   });
 });
 

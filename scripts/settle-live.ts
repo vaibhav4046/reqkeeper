@@ -28,6 +28,7 @@ import { KeeperHubProvider } from "../src/keeperhub.ts";
 import { KeeperHubMcpProvider } from "../src/keeperhub-mcp.ts";
 import type { ExecutionProvider } from "../src/provider.ts";
 import type { Policy, SourceFacts } from "../src/policy.ts";
+import { fetchInvoiceChecked, RequestError } from "../src/request.ts";
 import { settleObligation } from "../src/settle.ts";
 import { Store } from "../src/store.ts";
 
@@ -58,11 +59,42 @@ function need(name: string): string {
 
 const KH_KEY = need("KEEPERHUB_API_KEY");
 const REQUEST_ID = need("REQUEST_ID");
-const REFERENCE = need("PAYMENT_REFERENCE");
-const PAYEE = need("PAYEE_BURNER").toLowerCase();
-const FEE_ADDRESS = (process.env.FEE_ADDRESS ?? `0x${"0".repeat(40)}`).toLowerCase();
-const FEE_AMOUNT = process.env.FEE_AMOUNT ?? "0";
-const AMOUNT = "1000000000000000000"; // 1 FAU, matching the invoice
+
+/**
+ * The facts come from Request, and `.env` gets one job: naming which invoice.
+ *
+ * This used to read the reference, payee, fee and fee recipient straight out of `.env` and
+ * hardcode the amount — the exact hazard src/request.ts exists to remove. Every guard
+ * downstream of here protects whatever reference it is handed, so a `.env` a hand could edit
+ * decided which debt this script paid. Now the invoice decides, and anything still present in
+ * `.env` is a claim that has to agree with it or the run is refused before the store is
+ * opened, before a provider exists, at zero sends.
+ */
+async function readInvoice() {
+  try {
+    return await fetchInvoiceChecked(REQUEST_ID, {
+      paymentReference: process.env.PAYMENT_REFERENCE,
+      payee: process.env.PAYEE_BURNER,
+      feeAddress: process.env.FEE_ADDRESS,
+      feeAmount: process.env.FEE_AMOUNT,
+      // Not from the environment: the token this deployment settles in, checked against the
+      // token the invoice is denominated in. The calldata below pays FAU regardless, so an
+      // invoice in another token has to stop here rather than be paid in the wrong one.
+      tokenAddress: FAU,
+    });
+  } catch (e) {
+    const code = e instanceof RequestError ? e.code : "UNREADABLE_INVOICE";
+    console.error(`\nREFUSED before any write (${code}): ${e instanceof Error ? e.message : String(e)}\n`);
+    return process.exit(2);
+  }
+}
+const invoice = await readInvoice();
+
+const REFERENCE = invoice.paymentReference;
+const PAYEE = invoice.payee.toLowerCase();
+const FEE_ADDRESS = invoice.feeRecipient.toLowerCase();
+const FEE_AMOUNT = invoice.feeBaseUnits;
+const AMOUNT = invoice.invoiceBaseUnits;
 
 async function rpc(method: string, params: unknown[]): Promise<unknown> {
   const res = await fetch(RPC, {
@@ -104,7 +136,8 @@ const policy: Policy = {
   chainId: SEPOLIA,
   token: { address: FAU, decimals: 18, symbol: "FAU" },
   allowedPayees: [PAYEE],
-  // 2 FAU ceiling on the TOTAL debit. The invoice is 1 FAU with a zero fee.
+  // 2 FAU ceiling on the TOTAL debit. The human's number, not the invoice's: an invoice that
+  // asks for more than this is refused rather than paid.
   maxTotalDebitBaseUnits: "2000000000000000000",
   allowedFeeRecipients: [FEE_ADDRESS],
   maxFeeBaseUnits: "0",
@@ -149,7 +182,7 @@ console.log(`transport        : KeeperHub ${TRANSPORT.toUpperCase()}`);
 console.log(`requestId        : ${REQUEST_ID}`);
 console.log(`paymentReference : ${REFERENCE}`);
 console.log(`payee            : ${PAYEE}`);
-console.log(`amount           : ${AMOUNT} base units (1 FAU)`);
+console.log(`amount           : ${AMOUNT} base units, fee ${FEE_AMOUNT} (read from Request)`);
 console.log(`calldata         : ${calldata.slice(0, 42)}… (${(calldata.length - 2) / 2} bytes)`);
 
 const oid = obligationId(NS, REQUEST_ID);

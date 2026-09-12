@@ -143,11 +143,24 @@ export function idempotencyKey(
  * a rendering choice, not identity, so it is removed before the value is ever stored or
  * looked up. A reference that is not hex is refused outright rather than normalised, because
  * a value this load-bearing must not be guessed at.
+ *
+ * The `0x` is a rendering choice too, and Request makes the other one: its own
+ * `PaymentReferenceCalculator.calculate` returns the bare sixteen hex characters, while
+ * `derivePaymentReference` returns them with a prefix. Refusing the bare spelling answered
+ * REFERENCE_MISMATCH for what is the identical eight bytes — so it is accepted, and
+ * normalised INTO the prefixed form. The direction matters: this value feeds a UNIQUE index,
+ * so both spellings have to land on one stored string or one debt becomes two rows and gets
+ * paid twice. Only the exact 8-byte spelling is taken bare; anything else unprefixed is too
+ * ambiguous to guess at (a bare "1000" is as plausibly a decimal as a reference).
  */
 export function canonicalReference(reference: string): string {
   const trimmed = String(reference).trim();
+  if (/^[0-9a-fA-F]{16}$/.test(trimmed)) return `0x${trimmed.toLowerCase()}`;
   if (!/^0x[0-9a-fA-F]+$/.test(trimmed)) {
-    throw new Error(`payment reference must be 0x-prefixed hex, got ${JSON.stringify(reference)}`);
+    throw new Error(
+      `payment reference must be 0x-prefixed hex, or Request's bare 16-character spelling, ` +
+        `got ${JSON.stringify(reference)}`,
+    );
   }
   return trimmed.toLowerCase();
 }

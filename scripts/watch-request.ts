@@ -16,7 +16,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { DEFAULT_RPC, findPaymentByReference } from "../src/chain.ts";
+import { DEFAULT_RPC, findPaymentByReference, type PaymentExpectation } from "../src/chain.ts";
 import { describeStandingPolicy, loadStandingPolicy } from "../src/standing-policy.ts";
 import { Store } from "../src/store.ts";
 import { watchPass, type WatchInvoice, type WatchRow } from "../src/watch.ts";
@@ -62,7 +62,10 @@ const deps = {
   store,
   standing,
   dbPath,
-  findPayment: (reference: string) => findPaymentByReference(reference, { rpcUrl }),
+  // `expect` is forwarded, so a log that carries the reference but pays another token, payee,
+  // amount or fee is skipped by the scan rather than returned as this invoice's payment.
+  findPayment: (reference: string, expect: PaymentExpectation) =>
+    findPaymentByReference(reference, { rpcUrl, expect }),
 };
 
 function report(rows: readonly WatchRow[]): void {

@@ -21,10 +21,10 @@
  * project exists to make impossible.
  */
 
-import type { PaymentSighting } from "./chain.ts";
+import { matchPaymentLog, type PaymentExpectation, type PaymentSighting } from "./chain.ts";
 import { obligationId } from "./identity.ts";
 import type { State } from "./machine.ts";
-import { buildPolicy, buildSourceFacts, buildSteps, NAMESPACE, type InvoiceFacts } from "./plan.ts";
+import { buildPolicy, buildSourceFacts, buildSteps, FAU, NAMESPACE, type InvoiceFacts } from "./plan.ts";
 import type { ExecuteResult, ExecutionProvider, Receipt, SimulateResult } from "./provider.ts";
 import { settleObligation } from "./settle.ts";
 import type { StandingPolicy } from "./standing-policy.ts";
@@ -66,8 +66,15 @@ export interface WatchDeps {
    * how far back to look. A read that fails is not evidence of anything and must throw
    * rather than resolve to "unpaid": a swallowed RPC error would look exactly like an
    * invoice nobody has paid, and this loop's answer to that is to propose one.
+   *
+   * `expect` is what paying THIS invoice looks like, passed through so the scan can skip a
+   * log that merely carries the reference. An implementation that ignores it is not a
+   * shortcut to a wrong verdict — `watchPass` re-checks the returned fields itself.
    */
-  readonly findPayment: (paymentReference: string) => Promise<PaymentSighting>;
+  readonly findPayment: (
+    paymentReference: string,
+    expect: PaymentExpectation,
+  ) => Promise<PaymentSighting>;
   /**
    * Where the plans this pass writes actually live.
    *
@@ -137,6 +144,46 @@ function factsFor(inv: WatchInvoice): InvoiceFacts {
   };
 }
 
+/** What paying this invoice has to look like. One statement, used by the scan and the check. */
+function expectationFor(f: InvoiceFacts): PaymentExpectation {
+  return {
+    tokenAddress: FAU,
+    to: f.payee,
+    amount: f.amountBaseUnits,
+    feeAmount: f.feeAmount,
+    feeAddress: f.feeAddress,
+  };
+}
+
+/**
+ * Does the sighting actually pay this invoice, or does it merely carry its reference?
+ *
+ * `found` alone used to be the whole test, and references are public: they derive from data
+ * anchored openly on Sepolia, so anyone can read one off-chain and emit a fee-proxy event
+ * carrying it. That event would have marked this invoice PAID_ON_CHAIN on every future pass —
+ * never proposed, never approved, never paid, with no refusal anywhere to explain why. It
+ * fails safe on money, which is exactly why it is easy to miss: the damage is a real debt
+ * suppressed rather than a wrong one paid.
+ *
+ * A sighting missing the payment fields is not evidence either, and is treated as unpaid —
+ * the cost of being wrong in that direction is a proposal a human looks at. The emitter is
+ * not among the fields a sighting carries; `findPaymentByReference` pins it by querying the
+ * ERC20FeeProxy address directly, and `expect` is passed down so it applies the same match.
+ */
+function paysThisInvoice(s: PaymentSighting, f: InvoiceFacts): { ok: boolean; conflicts: string[] } {
+  const { tokenAddress, to, amount, feeAmount, feeAddress } = s;
+  if (
+    tokenAddress === undefined ||
+    to === undefined ||
+    amount === undefined ||
+    feeAmount === undefined ||
+    feeAddress === undefined
+  ) {
+    return { ok: false, conflicts: ["the sighting carries no payment fields, so it corroborates nothing"] };
+  }
+  return matchPaymentLog({ tokenAddress, to, amount, feeAmount, feeAddress }, expectationFor(f));
+}
+
 /**
  * The command a human runs next, with the numbers this proposal actually used.
  *
@@ -176,8 +223,10 @@ export async function watchPass(
   const rows: WatchRow[] = [];
 
   for (const inv of invoices) {
-    const sighting = await deps.findPayment(inv.paymentReference);
-    if (sighting.found) {
+    const facts = factsFor(inv);
+    const sighting = await deps.findPayment(inv.paymentReference, expectationFor(facts));
+    const paid = sighting.found ? paysThisInvoice(sighting, facts) : { ok: false, conflicts: [] };
+    if (paid.ok) {
       // Paid means there is no obligation to propose, so nothing is imported and no
       // obligation row is created. Proposing here would be harmless — the policy gate would
       // refuse it as SOURCE_ALREADY_PAID — but it would fill the store with settled debts
@@ -189,7 +238,9 @@ export async function watchPass(
         chainSaysPaid: true,
         state: "PAID_ON_CHAIN",
         refusal: null,
-        detail: `already paid on chain in ${sighting.txHash ?? "an unnamed transaction"}; nothing to propose`,
+        detail:
+          `already paid on chain in ${sighting.txHash ?? "an unnamed transaction"}, for this ` +
+          "invoice's token, payee, amount and fee; nothing to propose",
         planHash: null,
         providerWriteIssued: false,
         approvalCommand: null,
@@ -197,11 +248,11 @@ export async function watchPass(
       continue;
     }
 
-    // A miss inside a truncated window means "not seen recently", never "unpaid" — but the
-    // consequence of being wrong here is a proposal, not a payment, and the reference index
-    // and the attempt guard both still refuse a duplicate further down. So a short window
-    // costs an extra row for a human to look at, and cannot cost money.
-    const facts = factsFor(inv);
+    // A miss inside a truncated window means "not seen recently", never "unpaid" — and so
+    // does a log that carries the reference but pays somebody else. The consequence of being
+    // wrong here is a proposal, not a payment, and the reference index and the attempt guard
+    // both still refuse a duplicate further down. So a short window, or a forged log, costs
+    // an extra row for a human to look at, and cannot cost money.
     const sourceFacts = buildSourceFacts(facts);
     const outcome = await settleObligation(
       {
@@ -232,7 +283,12 @@ export async function watchPass(
       chainSaysPaid: false,
       state: outcome.state,
       refusal: outcome.refusal ?? null,
-      detail: outcome.detail,
+      // A log that carried the reference and paid something else is not a footnote: it is
+      // either an attack or a misconfiguration, and it is the reason this row exists at all.
+      detail:
+        paid.conflicts.length > 0
+          ? `${outcome.detail} (a log carries this reference but does not pay this invoice: ${paid.conflicts.join("; ")})`
+          : outcome.detail,
       planHash: outcome.planHash ?? null,
       providerWriteIssued: outcome.providerWriteIssued,
       approvalCommand: outcome.state === "AWAITING_APPROVAL" ? approvalCommand(facts, deps.dbPath) : null,

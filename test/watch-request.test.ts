@@ -12,10 +12,10 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import type { PaymentSighting } from "../src/chain.ts";
+import type { PaymentExpectation, PaymentSighting } from "../src/chain.ts";
 import { obligationId, sourceFactsHash } from "../src/identity.ts";
 import { checkPolicy } from "../src/policy.ts";
-import { buildPolicy, buildSourceFacts, buildSteps, NAMESPACE, type InvoiceFacts } from "../src/plan.ts";
+import { buildPolicy, buildSourceFacts, buildSteps, FAU, NAMESPACE, type InvoiceFacts } from "../src/plan.ts";
 import { FixtureProvider } from "../src/provider.ts";
 import { derivePlan } from "../src/settle.ts";
 import { NO_STANDING_POLICY, type StandingPolicy } from "../src/standing-policy.ts";
@@ -33,23 +33,49 @@ const INVOICE: WatchInvoice = {
 };
 
 const UNPAID: PaymentSighting = { found: false, scannedBlocks: 450_000, truncated: true };
+
+/**
+ * A log that actually pays this invoice: the right token to the right payee for the right
+ * amount and fee. Anything less than all five is somebody else's transaction.
+ */
 const PAID: PaymentSighting = {
   found: true,
   txHash: `0x${"1c".repeat(32)}`,
+  tokenAddress: FAU,
+  to: PAYEE,
   amount: INVOICE.amountBaseUnits,
+  feeAmount: "0",
+  feeAddress: `0x${"0".repeat(40)}`,
   scannedBlocks: 45_000,
+};
+
+/**
+ * The public-reference attack. Payment references derive from data anchored openly on
+ * Sepolia, so anyone can read one off-chain and emit a fee-proxy event carrying it — paying
+ * themselves a dust amount, in any token. It costs the attacker nothing and it used to be
+ * enough to mark a real invoice PAID_ON_CHAIN on every pass, for ever.
+ */
+const SOMEBODY_ELSES_PAYMENT: PaymentSighting = {
+  ...PAID,
+  txHash: `0x${"ee".repeat(32)}`,
+  to: "0x000000000000000000000000000000000000dEaD",
+  amount: "1",
 };
 
 function bench(sighting: PaymentSighting, standing: StandingPolicy = NO_STANDING_POLICY) {
   const store = new Store();
   const provider = new FixtureProvider("NONE");
+  const asked: PaymentExpectation[] = [];
   const deps = {
     store,
     provider,
     standing,
-    findPayment: async (_reference: string): Promise<PaymentSighting> => sighting,
+    findPayment: async (_reference: string, expect: PaymentExpectation): Promise<PaymentSighting> => {
+      asked.push(expect);
+      return sighting;
+    },
   };
-  return { store, provider, deps };
+  return { store, provider, deps, asked };
 }
 
 /**
@@ -146,6 +172,57 @@ describe("an unpaid Request invoice proposes, and only proposes", () => {
     );
     assert.equal(second.providerWriteIssued, false);
     assert.equal(provider.totalSends(), 0);
+    store.close();
+  });
+
+  test("a log carrying the reference but paying somebody else does not suppress the invoice", async () => {
+    // The grief case. `found` alone made this invoice PAID_ON_CHAIN — never proposed, never
+    // approved, never paid, and with no refusal anywhere to explain the silence. It fails
+    // safe on money, which is why it survived: the damage is a real debt suppressed.
+    const { store, provider, deps } = bench(SOMEBODY_ELSES_PAYMENT);
+
+    const [row] = await watchPass(deps, [INVOICE], 1_000_000);
+
+    assert.equal(row.chainSaysPaid, false);
+    assert.equal(row.state, "AWAITING_APPROVAL");
+    assert.ok(row.planHash, "the invoice must still reach a human");
+    assert.ok(row.approvalCommand);
+    // The conflicting log is named rather than swallowed: it is either an attack or a
+    // misconfiguration, and both need a human to see it.
+    assert.match(row.detail, /carries this reference but does not pay this invoice/);
+    assert.match(row.detail, /0x000000000000000000000000000000000000dEaD/i);
+    assert.equal(provider.totalSends(), 0);
+    store.close();
+  });
+
+  test("a sighting with no payment fields is not evidence of payment", async () => {
+    // What a reader that only matched the reference returns. It corroborates nothing, so it
+    // cannot be the reason an invoice is skipped.
+    const { store, provider, deps } = bench({ found: true, txHash: `0x${"ab".repeat(32)}` });
+
+    const [row] = await watchPass(deps, [INVOICE], 1_000_000);
+
+    assert.equal(row.chainSaysPaid, false);
+    assert.equal(row.state, "AWAITING_APPROVAL");
+    assert.equal(provider.totalSends(), 0);
+    store.close();
+  });
+
+  test("the chain reader is told what paying this invoice looks like", async () => {
+    // So the scan can skip a foreign log rather than return it and rely on the check here.
+    const { store, deps, asked } = bench(UNPAID);
+
+    await watchPass(deps, [INVOICE], 1_000_000);
+
+    assert.deepEqual(asked, [
+      {
+        tokenAddress: FAU,
+        to: INVOICE.payee,
+        amount: INVOICE.amountBaseUnits,
+        feeAmount: "0",
+        feeAddress: INVOICE.feeAddress,
+      },
+    ]);
     store.close();
   });
 

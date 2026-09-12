@@ -52,6 +52,32 @@ interface KeeperHubResponse {
   replayed?: boolean;
 }
 
+/**
+ * What a 409 means, decided once for every transport.
+ *
+ * Two different things arrive as 409 and they mean opposite things to a caller.
+ *
+ *   idempotency_in_progress  — the platform is still working on THIS key. Retryable: the
+ *                              answer is coming, and asking again is asking about the same
+ *                              request, not making a second one.
+ *   idempotency_conflict     — the same key with a DIFFERENT body. An integrity incident:
+ *                              the key must never be rotated to make it go away, because
+ *                              that is how the second payment happens.
+ *
+ * Collapsing both into `idempotency_conflict` made the recoverable one terminal, and dressed
+ * an ordinary wait up as an incident. Exported rather than kept private because the MCP
+ * transport has to reach the same verdict from a differently-shaped reply: a guard that
+ * exists on one transport and not the other is not a guard, it is a coin flip over which
+ * surface the settlement happened to use.
+ */
+export function idempotencyVerdict(said: string): ProviderError {
+  const text = said.trim();
+  if (/in[_\s-]?progress/i.test(text)) {
+    return new ProviderError("idempotency_in_progress", text || "409 in progress", true);
+  }
+  return new ProviderError("idempotency_conflict", text || "409 from KeeperHub", false);
+}
+
 export class KeeperHubProvider implements ExecutionProvider {
   readonly #cfg: KeeperHubConfig;
   readonly #base: string;
@@ -119,22 +145,7 @@ export class KeeperHubProvider implements ExecutionProvider {
     }
 
     if (res.status === 409) {
-      // Two different things arrive as 409 and they mean opposite things to a caller.
-      //
-      //   idempotency_in_progress  — the platform is still working on THIS key. Retryable:
-      //                              the answer is coming, and asking again is asking about
-      //                              the same request, not making a second one.
-      //   idempotency_conflict     — the same key with a DIFFERENT body. An integrity
-      //                              incident: the key must never be rotated to make it go
-      //                              away, because that is how the second payment happens.
-      //
-      // Collapsing both into `idempotency_conflict` made the recoverable one terminal, and
-      // dressed an ordinary wait up as an incident.
-      const said = `${parsed.code ?? ""} ${parsed.error ?? ""}`;
-      if (/in[_\s-]?progress/i.test(said)) {
-        throw new ProviderError("idempotency_in_progress", parsed.error ?? "409 in progress", true);
-      }
-      throw new ProviderError("idempotency_conflict", parsed.error ?? "409 from KeeperHub", false);
+      throw idempotencyVerdict(`${parsed.code ?? ""} ${parsed.error ?? ""}`);
     }
     if (res.status === 429) {
       throw new ProviderError("rate_limited", "429 from KeeperHub", true);
