@@ -25,6 +25,7 @@
  *      and broadcasts. Anything that reaches this file sends a real boolean or nothing.
  */
 
+import { readReceipt } from "./chain.ts";
 import { decodeAllowedCall, type CallStep } from "./calldata-gate.ts";
 import type {
   ExecuteResult,
@@ -174,6 +175,18 @@ export class KeeperHubMcpProvider implements ExecutionProvider {
     if (reply.error) {
       // -32003 is the un-initialized session; the handshake is wrong, not the request.
       const retryable = reply.error.code === -32003 || reply.error.code === -32603;
+      if (reply.error.code === -32003) {
+        // Retryable was a promise this code could not keep. `#handshake()` returns early
+        // whenever `#session` is non-null and nothing ever cleared it, so a retry on the same
+        // provider re-sent the dead session id and failed identically, for ever. Dropping the
+        // session is what makes the next call re-handshake — which is what "retryable" was
+        // always supposed to mean.
+        //
+        // Safe on a write path: this is the server saying it has no session and therefore did
+        // nothing with the request. The idempotency key is unchanged and travels with the
+        // retry, so even if that reading is wrong the platform's own replay window catches it.
+        this.#session = null;
+      }
       throw new ProviderError("mcp_error", `${reply.error.code}: ${reply.error.message}`, retryable);
     }
 
@@ -263,41 +276,18 @@ export class KeeperHubMcpProvider implements ExecutionProvider {
    * dispatched the payment: a provider reporting on its own success is not evidence.
    */
   async receipt(hash: string): Promise<Receipt> {
-    let body: { result?: { status?: string; gasUsed?: string } | null; error?: unknown };
-    try {
-      const res = await fetch(this.#cfg.rpcUrl, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "eth_getTransactionReceipt",
-          params: [hash],
-        }),
-        signal: AbortSignal.timeout(this.#timeout),
-      });
-      body = (await res.json()) as typeof body;
-    } catch {
-      return { hash, verified: false, receiptStatus: "timeout", gasUsed: "0" };
-    }
-    if (body.error) return { hash, verified: false, receiptStatus: "timeout", gasUsed: "0" };
-    const r = body.result;
-    if (!r) return { hash, verified: false, receiptStatus: "not_found", gasUsed: "0" };
-    const gasUsed = r.gasUsed ? BigInt(r.gasUsed).toString(10) : "0";
-    // Three outcomes, not two. `status === "0x1" ? success : reverted` calls anything that is
-    // not exactly 0x1 a revert — including a receipt whose status is missing or malformed —
-    // and EXECUTION_REVERTED is terminal, so a malformed RPC response could permanently label
-    // a real payment as failed. Only 0x0 means the chain said no; anything else means this
-    // read did not answer, which is `verified: false` and stays open for another look.
-    if (r.status === "0x1") return { hash, verified: true, receiptStatus: "success", gasUsed };
-    if (r.status === "0x0") return { hash, verified: true, receiptStatus: "reverted", gasUsed };
-    return { hash, verified: false, receiptStatus: "not_found", gasUsed };
+    // The same shared reader the REST transport uses. This was the last private `fetch` for a
+    // receipt in the codebase, and it had none of the RPC fallback: on this transport a pruned
+    // `result: null` became `not_found`, which settle reads as EVIDENCE_CONFLICT — a real
+    // settlement reported as missing, on the path that had just moved money.
+    return readReceipt(this.#cfg.rpcUrl, hash, this.#timeout);
   }
 
   /** Unrecognised statuses become "pending", never "completed". */
   #toExecuteResult(payload: ExecutePayload): ExecuteResult {
     const hash = payload.transactionHash ?? payload.transaction_hash;
-    const id = payload.executionId ?? payload.execution_id ?? hash ?? "unknown";
+    // No placeholder standing where a resource identifier belongs. See provider.ts.
+    const id = payload.executionId ?? payload.execution_id ?? hash ?? null;
     const status = payload.status;
 
     let mapped: ExecuteResult["status"];

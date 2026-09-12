@@ -88,11 +88,14 @@ describe("a receipt is read three ways, not two", () => {
     globalThis.fetch = realFetch;
   });
 
-  /** Answer eth_getTransactionReceipt with this exact object. */
+  /** Answer eth_getTransactionReceipt with this exact object, on a chain that checks out. */
   function receiptSays(result: unknown) {
-    globalThis.fetch = (async () => ({
-      json: async () => ({ jsonrpc: "2.0", id: 1, result }),
-    })) as unknown as typeof fetch;
+    globalThis.fetch = (async (_url: string, init: { body: string }) => {
+      const { method } = JSON.parse(init.body) as { method: string };
+      if (method === "eth_chainId") return { json: async () => ({ jsonrpc: "2.0", id: 1, result: "0xaa36a7" }) };
+      if (method === "eth_blockNumber") return { json: async () => ({ jsonrpc: "2.0", id: 1, result: "0x64" }) };
+      return { json: async () => ({ jsonrpc: "2.0", id: 1, result }) };
+    }) as unknown as typeof fetch;
   }
 
   const HASH = `0x${"cd".repeat(32)}`;
@@ -126,5 +129,89 @@ describe("a receipt is read three ways, not two", () => {
     const r = await readable.receipt(HASH);
     assert.notEqual(r.receiptStatus, "reverted");
     assert.equal(r.verified, false);
+  });
+});
+
+describe("what each HTTP status does to a dispatch", () => {
+  const realFetch = globalThis.fetch;
+  after(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  function platformAnswers(status: number, body: unknown) {
+    globalThis.fetch = (async () => ({
+      status,
+      ok: status >= 200 && status < 300,
+      text: async () => JSON.stringify(body),
+      json: async () => body,
+    })) as unknown as typeof fetch;
+  }
+
+  const p = new KeeperHubProvider({ apiKey: "kh_test", chainId: 11155111, rpcUrl: "http://127.0.0.1:1" });
+  const send = () => p.execute({ to: PROXY, data: PAY_CALLDATA, value: "0" }, "key-abc");
+
+  async function dispositionOf(status: number, body: unknown) {
+    platformAnswers(status, body);
+    try {
+      const r = await send();
+      return { threw: false as const, result: r };
+    } catch (e) {
+      const err = e as { code?: string; retryable?: boolean };
+      return { threw: true as const, code: err.code, retryable: err.retryable };
+    }
+  }
+
+  test("a 401 with a JSON body is a rejection, not a send", async () => {
+    // It used to resolve as status "pending", so settle wrote outcome: SENT and every
+    // in-flight obligation became a manual investigation the moment a key was revoked.
+    // Nothing ran, and the disposition must say so.
+    const d = await dispositionOf(401, { error: "invalid api key" });
+    assert.equal(d.threw, true, "a rejected request must never resolve as a dispatch");
+    assert.equal(d.threw && d.retryable, false, "a bad credential does not fix itself on a retry");
+  });
+
+  test("a 400 with a JSON body is a rejection, not a send", async () => {
+    const d = await dispositionOf(400, { error: "Missing required field", field: "functionName" });
+    assert.equal(d.threw, true);
+    assert.equal(d.threw && d.retryable, false);
+  });
+
+  test("a 200 carrying an error body is never a completed payment", async () => {
+    const d = await dispositionOf(200, { error: "insufficient funds for gas" });
+    assert.equal(d.threw, false);
+    assert.notEqual(d.threw === false && d.result.status, "completed");
+  });
+
+  test("429 is retryable and holds the key", async () => {
+    const d = await dispositionOf(429, { error: "rate limited" });
+    assert.equal(d.threw && d.code, "rate_limited");
+    assert.equal(d.threw && d.retryable, true);
+  });
+
+  test("a 409 still in progress is retryable; it is the same request, not a second one", async () => {
+    // These two arrive as the same status and mean opposite things. Collapsing them made the
+    // recoverable one terminal and dressed an ordinary wait up as an integrity incident.
+    const d = await dispositionOf(409, { code: "idempotency_in_progress", error: "still working on this key" });
+    assert.equal(d.threw && d.code, "idempotency_in_progress");
+    assert.equal(d.threw && d.retryable, true);
+  });
+
+  test("a 409 conflict is NOT retryable — the key must never be rotated to make it pass", async () => {
+    const d = await dispositionOf(409, { code: "idempotency_conflict", error: "same key, different body" });
+    assert.equal(d.threw && d.code, "idempotency_conflict");
+    assert.equal(d.threw && d.retryable, false, "rotating the key here is how the second payment happens");
+  });
+
+  test("5xx is retryable", async () => {
+    const d = await dispositionOf(503, { error: "upstream unavailable" });
+    assert.equal(d.threw && d.retryable, true);
+  });
+
+  test("a success with no execution id records null, not the word 'unknown'", async () => {
+    // The placeholder used to be persisted into attempts.execution_id and would have been sent
+    // as a path segment by observe(). Two stranded attempts recorded the same identifier.
+    const d = await dispositionOf(202, { status: "completed" });
+    assert.equal(d.threw, false);
+    assert.notEqual(d.threw === false && d.result.executionId, "unknown");
   });
 });

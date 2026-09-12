@@ -27,6 +27,30 @@ export const PAY_SIGNATURE = "transferFromWithReferenceAndFee(address,address,ui
  * they are protected when they are not. A ceiling is always the LOWER of the two: an agent
  * may tighten its own limit, never raise it above what a human wrote down.
  */
+/**
+ * Tokens this deployment will settle, and what the chain says about them.
+ *
+ * The decimals in a POLICY must not come from the same place as the decimals in the FACTS, or
+ * `TOKEN_DECIMALS_MISMATCH` compares a value to itself. Both used to read `f.tokenDecimals ?? 18`,
+ * so on every composed entry point the gate compared 18 to 18 and was structurally unable to
+ * fire — a refusal that exists, is tested in isolation, and cannot happen in production.
+ *
+ * A policy is the operator's standing truth; facts are the invoice's claim. This is the
+ * operator's side. FAU's 18 is not assumed here either: `npm run verify:onchain` calls
+ * `decimals()` on the token over eth_call and asserts it, which is what makes this table a
+ * record rather than a guess.
+ *
+ * The moment a second token is added — the repository already references a 6-decimal FakeUSDC —
+ * an invoice claiming the wrong scale becomes a 10^12 error, and this is the one comparison
+ * standing between that and a payment.
+ */
+const TOKEN_DECIMALS = {
+    [FAU.toLowerCase()]: 18,
+};
+/** What the operator holds true about a token, independent of what an invoice claims. */
+export function knownTokenDecimals(tokenAddress) {
+    return TOKEN_DECIMALS[tokenAddress.toLowerCase()];
+}
 export function buildPolicy(f, standing = loadStandingPolicy()) {
     const lower = (a, b) => (b === null ? a : (BigInt(a) < BigInt(b) ? a : b));
     return {
@@ -34,7 +58,10 @@ export function buildPolicy(f, standing = loadStandingPolicy()) {
         chainId: SEPOLIA,
         token: {
             address: f.tokenAddress ?? FAU,
-            decimals: f.tokenDecimals ?? 18,
+            // From the operator's table, NOT from the invoice. If the token is unknown the policy
+            // says 0, which no real token has, so an unrecognised token cannot quietly inherit 18
+            // and settle at the wrong scale — it is refused by the decimals comparison instead.
+            decimals: knownTokenDecimals(f.tokenAddress ?? FAU) ?? 0,
             symbol: f.tokenSymbol ?? "FAU",
         },
         allowedPayees: standing.allowedPayees.length > 0 ? standing.allowedPayees : [f.payee.toLowerCase()],

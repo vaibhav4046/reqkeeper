@@ -22,7 +22,7 @@
  */
 
 import { type CallStep, decodeAllowedCall } from "./calldata-gate.ts";
-import { rpcCall } from "./chain.ts";
+import { readReceipt, rpcCall } from "./chain.ts";
 import type { ExecuteResult, ExecutionProvider, Receipt, SimulateResult } from "./provider.ts";
 import { ProviderError } from "./provider.ts";
 
@@ -36,6 +36,7 @@ export interface KeeperHubConfig {
 }
 
 interface KeeperHubResponse {
+  code?: string;
   success?: boolean;
   status?: string;
   wouldRevert?: boolean;
@@ -118,6 +119,21 @@ export class KeeperHubProvider implements ExecutionProvider {
     }
 
     if (res.status === 409) {
+      // Two different things arrive as 409 and they mean opposite things to a caller.
+      //
+      //   idempotency_in_progress  — the platform is still working on THIS key. Retryable:
+      //                              the answer is coming, and asking again is asking about
+      //                              the same request, not making a second one.
+      //   idempotency_conflict     — the same key with a DIFFERENT body. An integrity
+      //                              incident: the key must never be rotated to make it go
+      //                              away, because that is how the second payment happens.
+      //
+      // Collapsing both into `idempotency_conflict` made the recoverable one terminal, and
+      // dressed an ordinary wait up as an incident.
+      const said = `${parsed.code ?? ""} ${parsed.error ?? ""}`;
+      if (/in[_\s-]?progress/i.test(said)) {
+        throw new ProviderError("idempotency_in_progress", parsed.error ?? "409 in progress", true);
+      }
       throw new ProviderError("idempotency_conflict", parsed.error ?? "409 from KeeperHub", false);
     }
     if (res.status === 429) {
@@ -186,31 +202,11 @@ export class KeeperHubProvider implements ExecutionProvider {
    * provider reporting on its own success is not evidence of anything.
    */
   async receipt(hash: string): Promise<Receipt> {
-    // Deliberately the shared rpcCall, not a private fetch. A public endpoint can prune a
+    // One reader, shared with the MCP transport and with every script. There were four private
+    // copies of this and each one had to learn separately that a public endpoint can prune a
     // receipt and answer `result: null` for a transaction that demonstrably succeeded
     // (observed on publicnode and drpc for 0xb90a0771…, which tenderly returns in full).
-    // Through a private fetch that lands here as `not_found`, which settle reads as
-    // EVIDENCE_CONFLICT — a real settlement reported as missing. rpcCall asks the other
-    // endpoints before believing a null.
-    let r: { status?: string; gasUsed?: string } | null | undefined;
-    try {
-      r = (await rpcCall(this.#cfg.rpcUrl, "eth_getTransactionReceipt", [hash], this.#timeout)) as
-        | { status?: string; gasUsed?: string }
-        | null;
-    } catch {
-      return { hash, verified: false, receiptStatus: "timeout", gasUsed: "0" };
-    }
-    if (!r) return { hash, verified: false, receiptStatus: "not_found", gasUsed: "0" };
-
-    const gasUsed = r.gasUsed ? BigInt(r.gasUsed).toString(10) : "0";
-    // Three outcomes, not two. `status === "0x1" ? success : reverted` calls anything that is
-    // not exactly 0x1 a revert — including a receipt whose status is missing or malformed —
-    // and EXECUTION_REVERTED is terminal, so a malformed RPC response could permanently label
-    // a real payment as failed. Only 0x0 means the chain said no; anything else means this
-    // read did not answer, which is `verified: false` and stays open for another look.
-    if (r.status === "0x1") return { hash, verified: true, receiptStatus: "success", gasUsed };
-    if (r.status === "0x0") return { hash, verified: true, receiptStatus: "reverted", gasUsed };
-    return { hash, verified: false, receiptStatus: "not_found", gasUsed };
+    return readReceipt(this.#cfg.rpcUrl, hash, this.#timeout);
   }
 
   /**
@@ -228,7 +224,11 @@ export class KeeperHubProvider implements ExecutionProvider {
    */
   #toExecuteResult(res: KeeperHubResponse): ExecuteResult {
     const hash = res.transactionHash ?? res.txHash ?? res.hash;
-    const id = res.executionId ?? res.id ?? hash ?? "unknown";
+    // No placeholder. `?? "unknown"` put the literal string where a resource identifier
+    // belongs, persisted it into attempts.execution_id, and would have sent it as a path
+    // segment to observe(). Two different stranded attempts recorded the same id. An absent
+    // identifier is absent, and every consumer already handles null.
+    const id = res.executionId ?? res.id ?? hash ?? null;
     const replay = res.idempotentReplay === true || res.replayed === true;
 
     let status: ExecuteResult["status"];

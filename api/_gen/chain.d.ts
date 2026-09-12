@@ -69,6 +69,15 @@ export declare function matchPaymentLog(log: PaymentLogFields & {
     conflicts: string[];
 };
 /**
+ * The five non-indexed words: tokenAddress, to, amount, feeAmount, feeAddress.
+ *
+ * There is no offset placeholder among them. An indexed dynamic parameter is removed from
+ * `data` entirely rather than replaced, which is why `amount` is word 2 and not word 3 — a
+ * detail worth stating, because a comment in this file used to claim otherwise and the next
+ * person to "fix" the correct offset would have broken every amount check at once.
+ */
+export declare function decodePaymentLogFields(data: string): PaymentLogFields | null;
+/**
  * Request Network's payment detection, as a direct chain read: find the ERC20FeeProxy event
  * carrying this payment reference. This is the same evidence Request's own indexer uses, so
  * agreeing with it does not depend on Request's API being up.
@@ -89,3 +98,44 @@ export declare function findPaymentByReference(reference: string, opts?: {
     expect?: PaymentExpectation;
 }): Promise<PaymentSighting>;
 export declare function currentBlock(rpcUrl?: string): Promise<number>;
+/** The raw JSON-RPC receipt, as the node returns it. */
+export interface RawReceipt {
+    status?: string;
+    gasUsed?: string;
+    to?: string;
+    blockNumber?: string;
+    logs?: Array<{
+        address?: string;
+        data?: string;
+        topics?: string[];
+    }>;
+}
+/**
+ * The one receipt reader, for every transport.
+ *
+ * There were four private copies of this, and each one had to learn separately that publicnode
+ * answers `result: null` for receipts it still holds. The MCP provider was the last to keep its
+ * own `fetch`, so on that transport a pruned null still became `not_found`, which settle reads
+ * as EVIDENCE_CONFLICT — a real settlement reported as missing, for the wrong reason, on the
+ * path that had just moved money.
+ *
+ * Reads more than `{status, gasUsed}`: the transaction's own target, its own logs, and how far
+ * behind head its block is. The real execution shape is a meta-transaction, so the fee proxy
+ * appears only as a log emitter nested inside a forwarder's transaction — and a forwarder that
+ * does not bubble an inner revert returns status 0x1 regardless. Without the logs, "the
+ * transaction succeeded" and "the payment happened" are indistinguishable here.
+ */
+export declare function readReceipt(rpcUrl: string, hash: string, timeoutMs?: number): Promise<{
+    hash: string;
+    verified: boolean;
+    receiptStatus: "success" | "reverted" | "not_found" | "timeout";
+    gasUsed: string;
+    to?: string;
+    logs?: Array<{
+        address?: string;
+        data?: string;
+        topics?: string[];
+    }>;
+    blockNumber?: number;
+    confirmations?: number;
+}>;

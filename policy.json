@@ -1,0 +1,23 @@
+{
+  "_comment": [
+    "The operator's standing policy: the ceilings an invoice cannot raise.",
+    "",
+    "This file shipping is the point. Without it buildPolicy falls back to the caller's own",
+    "values for allowedPayees, allowedFeeRecipients, maxTotalDebitBaseUnits and maxFeeBaseUnits",
+    "- so the agent was checked against the ceiling the agent supplied, and POLICY_DENIED was",
+    "decorative. The human approval gate still stood in front of it, but a gate that cannot",
+    "refuse is not a gate.",
+    "",
+    "Environment variables win over this file, so an operator running one deployment can set",
+    "REQKEEPER_ALLOWED_PAYEES / REQKEEPER_MAX_DEBIT without editing anything. policySource",
+    "reports which won.",
+    "",
+    "The payee below is the burner address that received all 38 recorded settlements. Change it",
+    "before settling anything of your own: an allowlist naming somebody else's address is worse",
+    "than none, because it reads as a control."
+  ],
+  "allowedPayees": ["0xc43d766CB7c48B9B198db87441b97c09e81717A1"],
+  "allowedFeeRecipients": ["0x0000000000000000000000000000000000000000"],
+  "maxTotalDebitBaseUnits": "5000000000000000000",
+  "maxFeeBaseUnits": "0"
+}

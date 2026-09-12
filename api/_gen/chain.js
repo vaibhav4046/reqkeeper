@@ -156,7 +156,7 @@ export function matchPaymentLog(log, expect) {
  * detail worth stating, because a comment in this file used to claim otherwise and the next
  * person to "fix" the correct offset would have broken every amount check at once.
  */
-function decodePaymentLog(data) {
+export function decodePaymentLogFields(data) {
     const d = data.replace(/^0x/, "");
     if (d.length < 320)
         return null;
@@ -238,7 +238,7 @@ async function scanForReference(reference, rpcUrl, head, floor, expect) {
             },
         ]));
         for (const log of logs) {
-            const fields = decodePaymentLog(log.data);
+            const fields = decodePaymentLogFields(log.data);
             if (!fields) {
                 conflicts.push(`log in ${log.transactionHash} carries this reference but is not a payment event`);
                 continue;
@@ -298,4 +298,61 @@ async function corroborate(reference, sighting, primaryUrl, expect) {
 }
 export async function currentBlock(rpcUrl = DEFAULT_RPC) {
     return Number(BigInt((await rpcCall(rpcUrl, "eth_blockNumber", []))));
+}
+/**
+ * The one receipt reader, for every transport.
+ *
+ * There were four private copies of this, and each one had to learn separately that publicnode
+ * answers `result: null` for receipts it still holds. The MCP provider was the last to keep its
+ * own `fetch`, so on that transport a pruned null still became `not_found`, which settle reads
+ * as EVIDENCE_CONFLICT — a real settlement reported as missing, for the wrong reason, on the
+ * path that had just moved money.
+ *
+ * Reads more than `{status, gasUsed}`: the transaction's own target, its own logs, and how far
+ * behind head its block is. The real execution shape is a meta-transaction, so the fee proxy
+ * appears only as a log emitter nested inside a forwarder's transaction — and a forwarder that
+ * does not bubble an inner revert returns status 0x1 regardless. Without the logs, "the
+ * transaction succeeded" and "the payment happened" are indistinguishable here.
+ */
+export async function readReceipt(rpcUrl, hash, timeoutMs = 30_000) {
+    try {
+        await ensureChain(rpcUrl);
+    }
+    catch (e) {
+        // An endpoint that will not answer is "I could not read", the same as any other transport
+        // failure. An endpoint on the WRONG CHAIN is different in kind: it is answering, and its
+        // answer would be about a different chain's transaction with a colliding hash. That is a
+        // refusal, and it propagates.
+        if (/refusing to read chain/.test(e instanceof Error ? e.message : String(e)))
+            throw e;
+        return { hash, verified: false, receiptStatus: "timeout", gasUsed: "0" };
+    }
+    let r;
+    try {
+        r = (await rpcCall(rpcUrl, "eth_getTransactionReceipt", [hash], timeoutMs));
+    }
+    catch {
+        return { hash, verified: false, receiptStatus: "timeout", gasUsed: "0" };
+    }
+    if (!r)
+        return { hash, verified: false, receiptStatus: "not_found", gasUsed: "0" };
+    const gasUsed = r.gasUsed ? BigInt(r.gasUsed).toString(10) : "0";
+    const blockNumber = r.blockNumber === undefined ? undefined : Number(BigInt(r.blockNumber));
+    let confirmations;
+    if (blockNumber !== undefined) {
+        try {
+            confirmations = Math.max(0, (await currentBlock(rpcUrl)) - blockNumber + 1);
+        }
+        catch {
+            // Depth unknown is not depth zero. Left undefined so a caller can tell the difference.
+        }
+    }
+    const common = { hash, gasUsed, to: r.to, logs: r.logs, blockNumber, confirmations };
+    // Three outcomes, not two. Only 0x0 means the chain said no; a missing or malformed status
+    // means this read did not answer, and EXECUTION_REVERTED is terminal.
+    if (r.status === "0x1")
+        return { ...common, verified: true, receiptStatus: "success" };
+    if (r.status === "0x0")
+        return { ...common, verified: true, receiptStatus: "reverted" };
+    return { ...common, verified: false, receiptStatus: "not_found" };
 }

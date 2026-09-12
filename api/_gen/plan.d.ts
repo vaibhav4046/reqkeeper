@@ -36,20 +36,8 @@ export interface InvoiceFacts {
      */
     readonly hasBeenPaid?: boolean;
 }
-/**
- * The policy a plan is checked against.
- *
- * Every constraint here used to come from `f` — the same invoice the agent supplied and the
- * same object `checkPolicy` would then compare it to. That made five of the nine refusal
- * codes structurally unreachable on both real entry points: an agent could name an attacker
- * payee, a 500 FAU fee and its own ceiling, and get a clean approval sentence. The refusal
- * table demonstrated a gate that only ever existed inside the harness.
- *
- * The operator's standing policy wins wherever it is set. Where it is not, the invoice's own
- * value is used and `policySource` says so, so a bare clone still runs and nobody is told
- * they are protected when they are not. A ceiling is always the LOWER of the two: an agent
- * may tighten its own limit, never raise it above what a human wrote down.
- */
+/** What the operator holds true about a token, independent of what an invoice claims. */
+export declare function knownTokenDecimals(tokenAddress: string): number | undefined;
 export declare function buildPolicy(f: InvoiceFacts, standing?: StandingPolicy): Policy;
 export declare function buildSourceFacts(f: InvoiceFacts): SourceFacts;
 /**

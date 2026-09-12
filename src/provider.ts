@@ -36,7 +36,14 @@ export interface SimulateResult {
 }
 
 export interface ExecuteResult {
-  readonly executionId: string;
+  /**
+   * Null when the provider gave none.
+   *
+   * This used to default to the literal string "unknown", which was persisted into
+   * attempts.execution_id and would have been sent as a path segment by observe(). Two
+   * different stranded attempts recorded the same identifier. An absent id is absent.
+   */
+  readonly executionId: string | null;
   readonly status: "pending" | "completed" | "failed";
   readonly transactionHash?: string;
   readonly idempotentReplay?: boolean;
@@ -47,6 +54,26 @@ export interface Receipt {
   readonly verified: boolean;
   readonly receiptStatus: "success" | "reverted" | "not_found" | "timeout";
   readonly gasUsed: string;
+  /**
+   * The transaction's own target, and its own logs.
+   *
+   * The receipt used to be parsed as `{status, gasUsed}` and nothing else, so nothing
+   * post-dispatch checked that the transaction had touched the fee proxy, paid the right payee
+   * or moved the right amount — those were bound before dispatch only. That matters here more
+   * than it would elsewhere, because the real execution shape is a meta-transaction: `to` is a
+   * forwarder, `from` is a relayer, and the fee proxy appears only as a log emitter nested
+   * inside someone else's transaction. A forwarder that does not bubble an inner revert
+   * returns status 0x1 regardless, which is exactly the shape in which "the transaction
+   * succeeded" and "the payment happened" come apart.
+   *
+   * Optional because a fixture provider has no chain behind it. Where the transport supplies
+   * them, settle requires them to contain the payment.
+   */
+  readonly to?: string;
+  readonly logs?: ReadonlyArray<{ address?: string; data?: string; topics?: string[] }>;
+  /** Height of the block the receipt is in, and how far behind head that is. */
+  readonly blockNumber?: number;
+  readonly confirmations?: number;
 }
 
 export class ProviderError extends Error {

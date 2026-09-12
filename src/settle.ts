@@ -4,6 +4,7 @@
  * and nothing may reach the provider without a durable attempt row behind it.
  */
 
+import { decodePaymentLogFields, matchPaymentLog, type PaymentExpectation } from "./chain.ts";
 import { canReplan, type State } from "./machine.ts";
 import { ERC20_FEE_PROXY, decodeAllowedCall } from "./calldata-gate.ts";
 import { idempotencyKey, planHash as hashPlan, policyHash as hashPolicy, sourceFactsHash } from "./identity.ts";
@@ -183,7 +184,24 @@ export function derivePlan(p: {
     invoiceBaseUnits: p.facts.invoiceBaseUnits,
     feeBaseUnits: p.facts.feeBaseUnits,
     totalDebitBaseUnits: p.totalDebitBaseUnits,
-    steps: p.steps,
+    // Hex, folded, so the plan hash addresses the EFFECT rather than one spelling of it.
+    //
+    // `steps[].data` used to go into the hash verbatim while the payment reference beside it
+    // was folded. Two plans whose calldata differed only in hex case therefore produced two
+    // plan hashes, and so two provider idempotency keys, for one identical on-chain effect.
+    // Blocked today by reserveObligation and canReplan, which is a defence one layer away from
+    // the thing that is wrong; it becomes a live lever the moment either is relaxed, or the
+    // moment a path reaches derivePlan without a reservation.
+    //
+    // Folding here does not weaken the calldata gate. That gate is byte identity between the
+    // approved bytes and the dispatched bytes, and it still runs on `p.steps` exactly as given
+    // — only the hash input is normalised, and hex is case-insensitive by definition, so two
+    // spellings are one instruction to the chain.
+    steps: p.steps.map((step) => ({
+      ...step,
+      to: step.to.toLowerCase(),
+      data: step.data.toLowerCase(),
+    })),
     sourceFactsHash: p.sourceFactsHash,
     policyHash: hashPolicy(p.policy),
   };
@@ -263,6 +281,61 @@ function refusalForLostRace(e: unknown, store: Store, input: SettleInput): Settl
 
   return null;
 }
+
+
+/**
+ * Minimum confirmations before a payment may be called settled.
+ *
+ * There was no finality concept in this codebase at all: a receipt one block deep settled
+ * exactly like a receipt a hundred blocks deep, and nothing re-checked afterwards. On Sepolia a
+ * shallow reorg is not theoretical. Nobody has to attack this — they wait for it, and then
+ * dispute a settlement whose transaction is no longer there.
+ *
+ * Two is the default rather than something larger because the honest claim this project makes
+ * is "confirmed by an independently read receipt plus the fee-proxy event for the same
+ * transaction and the same amount", and depth is a second, separate axis. Raise it with
+ * REQKEEPER_MIN_CONFIRMATIONS where a deployment wants more.
+ *
+ * Insufficient depth is NOT a refusal. It is RECONCILIATION_PENDING with a job, which is the
+ * state this system already has for "true, but not yet provable" — the worker re-reads and
+ * finishes it. What it must never be is SETTLED.
+ */
+const MIN_CONFIRMATIONS = Math.max(1, Number(process.env.REQKEEPER_MIN_CONFIRMATIONS ?? "2") || 2);
+
+/**
+ * Does this transaction's OWN receipt contain the payment?
+ *
+ * The execution shape here is a meta-transaction: `to` is a forwarder, `from` is a relayer, and
+ * the ERC20FeeProxy appears only as a log emitter nested inside someone else's transaction. A
+ * forwarder that does not bubble an inner revert returns `status: 0x1` regardless, which is
+ * precisely the shape in which "the transaction succeeded" and "the payment happened" come
+ * apart. Reconciliation catches that by scanning for the reference, but the receipt already
+ * carries the answer and it costs nothing to insist on it.
+ *
+ * Returns null when the transport supplies no logs — a fixture has no chain behind it, and a
+ * check that cannot run must not masquerade as a check that passed.
+ */
+function receiptDisagreesWithPayment(
+  receipt: { logs?: ReadonlyArray<{ address?: string; data?: string; topics?: string[] }> },
+  expect: PaymentExpectation,
+): string | null {
+  if (!receipt.logs) return null;
+  const candidates = receipt.logs.filter((l) => l.address && sameAddress(l.address, ERC20_FEE_PROXY));
+  if (candidates.length === 0) {
+    return "the receipt carries no ERC20FeeProxy event, so this transaction did not pay the invoice";
+  }
+  const conflicts: string[] = [];
+  for (const log of candidates) {
+    const fields = log.data ? decodePaymentLogFields(log.data) : null;
+    if (!fields) continue;
+    const verdict = matchPaymentLog({ ...fields, emitter: log.address }, expect);
+    if (verdict.ok) return null;
+    conflicts.push(verdict.conflicts.join("; "));
+  }
+  return `the receipt's own fee-proxy event does not pay this invoice: ${conflicts.join(" | ") || "unreadable event data"}`;
+}
+
+const sameAddress = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
 export async function settleObligation(deps: SettleDeps, input: SettleInput): Promise<SettleOutcome> {
   const { store, provider, policy } = deps;
@@ -687,7 +760,7 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
     // receipt, so "failed" is checked against the chain rather than believed.
     store.recordOutcome(attemptId, {
       outcome: "FAILED",
-      executionId: executed.executionId,
+      executionId: executed.executionId ?? undefined,
       txHash: executed.transactionHash,
       now: input.now,
     });
@@ -705,7 +778,7 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
 
   store.recordOutcome(attemptId, {
     outcome: "SENT",
-    executionId: executed.executionId,
+    executionId: executed.executionId ?? undefined,
     txHash: executed.transactionHash,
     now: input.now,
   });
@@ -726,7 +799,54 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
     store.setState(input.obligationId, "EVIDENCE_CONFLICT", input.now);
     return out({ state: "EVIDENCE_CONFLICT", refusal: "EVIDENCE_CONFLICT", detail: `provider says ${executed.status} but receipt is ${receipt.receiptStatus}`, providerWriteIssued: true, txHash: receipt.hash, planHash });
   }
+  // The receipt's own logs have to contain the payment. Bound pre-dispatch is not the same as
+  // observed post-dispatch, and a forwarder's success is not the inner call's success.
+  const paymentExpectation: PaymentExpectation = {
+    tokenAddress: input.facts.tokenAddress,
+    to: input.facts.payee,
+    amount: input.facts.invoiceBaseUnits,
+    feeAmount: input.facts.feeBaseUnits,
+    feeAddress: input.facts.feeRecipient,
+  };
+  const receiptDisagreement = receiptDisagreesWithPayment(receipt, paymentExpectation);
+  if (receiptDisagreement) {
+    store.setState(input.obligationId, "EVIDENCE_CONFLICT", input.now);
+    store.audit(input.obligationId, "system", "RECEIPT_DISAGREES", { txHash: receipt.hash, why: receiptDisagreement });
+    return out({
+      state: "EVIDENCE_CONFLICT",
+      refusal: "EVIDENCE_CONFLICT",
+      detail: receiptDisagreement,
+      providerWriteIssued: true,
+      txHash: receipt.hash,
+      planHash,
+    });
+  }
+
   store.setState(input.obligationId, "CHAIN_CONFIRMED", input.now);
+
+  // Depth. A receipt one block deep is a receipt that can still be reorged away, and this used
+  // to settle on it. Not a refusal — the payment is almost certainly real — but not settlement
+  // either, so it waits in the state this system already has for "true, not yet provable".
+  if (receipt.confirmations !== undefined && receipt.confirmations < MIN_CONFIRMATIONS) {
+    store.setState(input.obligationId, "RECONCILING", input.now);
+    store.setState(input.obligationId, "RECONCILIATION_PENDING", input.now);
+    store.enqueue({
+      kind: "RECONCILE_SOURCE",
+      dedupeKey: `reconcile:${planHash}`,
+      obligationId: input.obligationId,
+      dueAt: input.now + 15_000,
+      now: input.now,
+    });
+    return out({
+      state: "RECONCILIATION_PENDING",
+      detail:
+        `paid on chain at depth ${receipt.confirmations}, and settlement here needs ` +
+        `${MIN_CONFIRMATIONS}. A receipt that shallow can still be reorged away. Resolving.`,
+      providerWriteIssued: true,
+      txHash: receipt.hash,
+      planHash,
+    });
+  }
 
   // --- 10. reconcile with Request itself ---------------------------------
   store.setState(input.obligationId, "RECONCILING", input.now);

@@ -1,68 +1,147 @@
 # Audit status — what was fixed, what still breaks
 
-Every row is the state on 2026-09-12 after the hardening pass, re-checked against the working
-tree rather than inherited from the audit that raised it. FIXED rows name the evidence that
-says so. OPEN rows are open; the submission form asks "what still breaks or is unfinished?" and
-this is the source for that answer.
+Every row is the state on 2026-09-12, re-checked against the working tree rather than inherited
+from the audit that raised it. FIXED rows name the evidence. The submission form asks "what
+still breaks or is unfinished?" and the last section is the source for that answer.
 
 Reproduce any probe with `node --experimental-strip-types hackathon/audit/probes/<probe>.ts`.
 
-Gates at the time of writing: `npm test` 278 pass / 0 fail / 51 suites · `npm run typecheck`
-clean · `npm run build` clean · `npm run gate-a` 10 ok / 0 failed / 2 blocked.
+Gates: `npm test` 344 pass / 0 fail / 64 suites · `npm run typecheck` clean · `npm run build`
+clean · `npm run gate-a` 10 ok / 0 failed / 2 blocked (the 2 are the hosted REST convenience
+API, which this project does not depend on).
+
+Every fix below is mutation-checked: the fix reverted, the dangerous test confirmed red, the
+control confirmed green, the fix restored. A test that passes both with and without the code it
+tests is noted where it exists, because that is worth knowing.
 
 ---
 
-## Fixed, with the evidence
+## Closed
+
+### The invoice is read from Request now (PROTOCOL 6a — was the largest gap)
+
+Every guard sat downstream of facts the **caller** supplied — payee, amount, fee, and the
+payment reference. Nothing re-derived it. Hand over a reference you control and the whole
+machine protects the wrong debt perfectly, and the payee check does not save you because the
+payee came from the same place.
+
+`src/request.ts` reads the invoice from Request's own Sepolia gateway (no credential) and
+re-derives `last8Bytes(keccak256(requestId + salt + paymentAddress))` over the UTF-8 text of
+those concatenated hex strings, lowercased. Verified against four live invoices and, offline,
+against every reference in `docs/live-invoices.json` — **41/41 reproduce**. Those recorded
+references are therefore correct; the point is that they no longer have to be trusted.
+
+`propose_payment` and `settle_obligation` refuse `REFERENCE_MISMATCH` and
+`FACTS_DISAGREE_WITH_INVOICE` before any write. Against the live gateway: a real reference
+proposes, `0xdeadbeefdeadbeef` is refused, and an attacker payee carrying the *correct*
+reference is refused. It fails closed — an unreadable gateway is not permission to proceed on
+the agent's word, or the check would be bypassable by breaking one HTTP request.
+
+### A simulation that never came back (REDTEAM 3b — the last wedged checkpoint)
+
+A process killed inside `simulate` left `PAYMENT_PREFLIGHT` with no attempt row and no job:
+zero sends, and that invoice could never be paid again. The attempt row is what makes later
+steps recoverable and it is not written until *after* the simulation, because an attempt means
+intent to send.
+
+Making `PAYMENT_PREFLIGHT` replannable would have been the wrong fix and a test now pins it
+shut: a simulate can time out, and a timed-out dry run may have executed for real (#1959).
+Instead `beginPreflight` commits an `OBSERVE_PREFLIGHT` job in the same transaction as the
+state, before the risky call; the settle path cancels it the moment it gets past the simulation
+under its own power; only a crash leaves it to be claimed. The worker then asks the chain — a
+payment found means the dry run executed, which is `EVIDENCE_CONFLICT` and a human's problem;
+no payment across a complete, untruncated window means nothing ran, so the reservation goes back
+and the debt is payable again. **An inconclusive read rescues nothing.**
+
+Crash matrix now, `p3-crash.ts`, total sends never above 1:
+
+| checkpoint | before | after |
+|---|---|---|
+| `RECEIPT` | CHAIN_PENDING, **0 jobs** | SETTLED |
+| `RECONCILE` | RECONCILING, **0 jobs** | SETTLED |
+| `SIMULATE` | PAYMENT_PREFLIGHT, **0 jobs** | PAYMENT_PREFLIGHT, **1 job** — recovers wherever a chain reader is wired (see residuals) |
+| `BEFORE_SEND` | EXECUTION_OUTCOME_UNKNOWN, 1 job | unchanged — this is the specified outcome, not a defect |
+
+### Everything else
 
 | Finding | Was | Now |
 |---|---|---|
-| REDTEAM 1b · `getAttempt` then `markSent` is a non-atomic test-and-set | Both racing callers passed the guard; only SQLite's writer serialisation stopped the second send | `markSent` is `UPDATE … WHERE first_send_at IS NULL` and returns whether it won. Mutation-checked: reverting it turns the two race tests red and leaves the old "stamped once" test green — which is the point, that test never tested the guard |
-| REDTEAM 1c · `new Store(path)` dies on concurrent open | 22–29 of 50 concurrent opens of a fresh file failed with `database is locked` | `p7-store-open-race.ts`, real constructor, three runs: retry disabled 12/50, 15/50, 10/50 · as shipped **0/50, 0/50, 0/50** |
-| REDTEAM 2 · fencing enforced on the job row, not the domain writes | A worker 30 s past its lease could rewrite state and recorded evidence | `setState`, `enqueue` and `recordOutcome` take a fence checked inside the same immediate transaction, and the worker passes its generation. `test/fencing.test.ts` proves the real worker, losing its lease mid-flight, advances nothing |
-| REDTEAM 3b · crash convergence, the two cases where money moved | Crash in `receipt` or `sourceSaysPaid` left a real payment at CHAIN_PENDING / RECONCILING with **zero** pending jobs | `recordOutcome` enqueues `OBSERVE_EXECUTION` in the same transaction. `p3-crash.ts` now reaches SETTLED at both checkpoints, still at 1 send. Mutation-checked: removing the enqueue reproduces the original table exactly |
-| REDTEAM 4b · `releaseObligation` return value discarded at three sites | A single 429 held the reservation forever and the agent was told to retry into `ALREADY_DISPATCHED` | New `PREFLIGHT_UNAVAILABLE` state, entered only when no attempt on the obligation has `first_send_at`. State moves before the release. `test/preflight-unavailable.test.ts`, 8 tests, both orderings mutation-checked |
-| REDTEAM 6a · recorded transaction hash overwritable | `COALESCE(?, tx_hash)` was last-write-wins | Write-once. `p2-fencing.ts` now shows the zombie failing to change the hash |
-| REDTEAM 6b / PROTOCOL 7a · `settle-live.ts` reconciled on `.found` alone | The live-money script settled on a foreign hash | Binds transaction hash and amount, like its three siblings |
-| REDTEAM 6c · no `eth_chainId` anywhere in `src/` | A receipt from another chain for a colliding hash was accepted | `assertChainId`, memoised per endpoint, on every chain read. A wrong-chain endpoint is refused and the refusal is memoised too |
-| REDTEAM 6c · malformed receipt status reported as `reverted` | `status === "0x1" ? success : reverted` made a receipt we could not read a terminal failed payment | Three-way split in both providers. Mutation-checked |
-| KEEPERHUB F-2 · an error body read as a clean simulation | HTTP 401, or 200 with `{"error":…}`, gave `wouldRevert: false` and the payment dispatched | Fails closed at both layers, `test/simulate-fail-closed.test.ts` |
-| KEEPERHUB F-5 · settlement receipt read bypassed the RPC fallback | A pruned `null` became `EVIDENCE_CONFLICT` | `receipt()` routes through the shared `rpcCall` |
-| KEEPERHUB F-6 · non-retryable preflight left the reservation stuck | A corrected plan was refused `OBLIGATION_RESERVED` forever | Same ordering fix; covered by a test |
-| PROTOCOL 2c · reference-only "already paid" pre-check | A 1-wei transfer carrying a public reference blocked an invoice permanently | Full-field match. `matchPaymentLog` compares emitter, token, payee, amount and fee |
-| BASELINE 1a · the deployed console matched no commit | A judge could not check out a revision and obtain the live site | Deployed page content is byte-identical to `web/index.html` at HEAD once line endings are normalised (`99b5f2f045894825886c6ee1f49f1326` both sides) |
-| BASELINE 7.2–7.4 · console honesty and viewport | "receipts 38/38" and "references 38/38" were one field twice; fixture placeholders linked to Etherscan; no viewport meta | Three distinct computations, explorer links only on recorded rows, doctype/lang/viewport/favicon/OG |
-| — · `verify:mcp` and `verify:seam` could spend | Both called the live platform on a route documented as possibly executing for real; `verify:seam` called `provider.execute()` and relied on the gate throwing | `probe:mcp` is renamed and its live check is opt-in; `verify:seam`'s gate section points at an unroutable address. No `verify:*` command can move money |
+| REDTEAM 1a · race refusal | The loser got a raw `UNIQUE constraint failed: obligations.payment_reference` in 39 of 40 trials, with no audit row under the right code | All three read-then-write sites convert a lost race into `REFERENCE_ALREADY_CLAIMED` or `ALREADY_DISPATCHED`, and rethrow anything unrecognised so a real bug still looks like one |
+| REDTEAM 1b · non-atomic test-and-set | Both racing callers passed the guard; only SQLite's writer serialisation stopped the second send | `markSent` is `UPDATE … WHERE first_send_at IS NULL` and reports whether it won |
+| REDTEAM 1c · `database is locked` | 22–29 of 50 concurrent opens of a fresh file died in the constructor | `p7-store-open-race.ts` on the real constructor: retry disabled 12/50, 15/50, 10/50 · as shipped **0/50, 0/50, 0/50** |
+| REDTEAM 2 · fencing | A worker 30 s past its lease could rewrite state and recorded evidence | `setState`, `enqueue`, `recordOutcome` take a fence checked inside the same transaction; the real worker losing its lease mid-flight advances nothing |
+| REDTEAM 6a · overwritable evidence | `COALESCE(?, tx_hash)` was last-write-wins | Write-once |
+| REDTEAM 6b / PROTOCOL 7a · `settle-live.ts` | The live-money script settled on a foreign hash | Binds transaction hash and amount |
+| REDTEAM 6c · no `eth_chainId` | `grep -rn "eth_chainId" src/` returned nothing; a hash is only unique within a chain | `assertChainId`, memoised per endpoint, on every chain read. An unreachable endpoint is "could not read"; a **wrong-chain** endpoint is a refusal and propagates |
+| REDTEAM 6c · malformed receipt status | `status === "0x1" ? success : reverted` made an unreadable receipt a *terminal* failed payment | Three-way split in both providers |
+| REDTEAM 6c · receipt `to`/`logs` never read | Nothing post-dispatch checked the transaction touched the fee proxy. The real shape is a meta-transaction, and a forwarder that does not bubble an inner revert returns `0x1` regardless | The receipt's own fee-proxy log must pay this invoice — emitter, token, payee, amount, fee — or it is `EVIDENCE_CONFLICT` |
+| REDTEAM 8 · decorative policy | With no standing policy, `buildPolicy` fell back to the caller's own ceilings: the agent was checked against the ceiling the agent supplied | `policy.json` ships. An attacker payee is now `PAYEE_NOT_ALLOWED` and 9 FAU against a 5 FAU operator cap is `LIMIT_EXCEEDED`, even when the invoice claims a 999 FAU ceiling |
+| PROTOCOL 1b · calldata case | The reference was folded and `steps[].data` was not, so two spellings of one calldata gave two plan hashes and two idempotency keys | Folded for the hash only. The dispatched bytes are untouched, so the byte-identity gate is unaffected |
+| PROTOCOL 2c · reference-only pre-check | A 1-wei transfer carrying a public reference blocked an invoice permanently | Full-field match via `matchPaymentLog` |
+| PROTOCOL 4 · decimals | Both sides of `TOKEN_DECIMALS_MISMATCH` read `f.tokenDecimals ?? 18`, so it compared 18 to 18 and could not fire | Policy decimals come from the operator's table, facts from the invoice. A 6-decimal claim for FAU is refused, and an unknown token cannot inherit 18 |
+| PROTOCOL 5 · no finality | A receipt one block deep settled exactly like one a hundred deep | `REQKEEPER_MIN_CONFIRMATIONS`, default 2, enforced on both the settle path and the worker. Insufficient depth is `RECONCILIATION_PENDING` with a job, not a refusal. Unknown depth is not treated as zero |
+| KEEPERHUB F-2 · error body as clean simulation | HTTP 401, or 200 with `{"error":…}`, gave `wouldRevert: false` and the payment dispatched | Fails closed at both layers |
+| KEEPERHUB F-3 · 4xx recorded as a send | A 401 with a JSON body resolved as `pending`, so `outcome: SENT` was written | Non-2xx throws, non-retryable. Covered by a status-disposition table |
+| KEEPERHUB F-4 · dead MCP session | `-32003` was flagged retryable but nothing cleared `#session`, so every retry re-sent the dead id | The session is dropped on `-32003`, so the next call re-handshakes |
+| KEEPERHUB F-5 · receipt bypassed the fallback | Fixed in the REST provider only; the **MCP transport kept its own private `fetch`** and had none of it | One shared `readReceipt` in `chain.ts` for both transports. This was the fourth private copy; there are none left |
+| KEEPERHUB F-6 · stuck reservation | A non-retryable preflight error left the reservation on a plan that never ran | State moves before the release |
+| KEEPERHUB F-7 · `"unknown"` execution id | A placeholder string was persisted where an identifier belongs, and would have been sent as a path segment | `null`. An absent id is absent |
+| KEEPERHUB F-8 · 409 conflation | `idempotency_in_progress` (retryable — the same request) and `idempotency_conflict` (an incident) both became the latter | Distinguished. Rotating the key on a conflict is how the second payment happens, and it stays non-retryable |
+| KEEPERHUB F-9 · no disposition tests | Provider HTTP-status behaviour was untested | A table over 401, 400, 200-with-error, 429, both 409s, 5xx and a missing execution id |
+| — · `verify:*` could spend | `verify:mcp` called the live platform on a route documented as possibly-executing; `verify:seam` called `provider.execute()` and relied on the gate throwing | `probe:mcp`, live check opt-in; `verify:seam`'s gate section points at an unroutable address. No `verify:*` command can move money |
+| — · repo hygiene | `docs/demo-transcript.txt` was committed | It is generated by `scripts/demo.ts`; now ignored. `npm run demo:video` still works, because it writes the file before reading it |
+| BASELINE 1a · unreproducible deployment | The deployed console matched no commit and advertised 192 tests | Deployed content is identical to `web/index.html` at HEAD once line endings are normalised |
+| BASELINE 7.2–7.4 · console | "receipts 38/38" and "references 38/38" were one field twice; fixture placeholders linked to Etherscan; no viewport | Three distinct computations, explorer links only on recorded rows, doctype/lang/viewport/favicon/OG |
 
 ---
 
-## Open — this is the candid list
+## What still breaks — the candid list
 
-**Money-safe but not live.** None of these can cause a duplicate payment. Every one has been
-checked for that specifically.
+Nothing here is a duplicate-payment path. Each was checked for that specifically.
 
-| # | What still breaks | Consequence | Why it is still open |
-|---|---|---|---|
-| REDTEAM 3b | A crash *inside* `simulate` leaves the obligation in `PAYMENT_PREFLIGHT` with no attempt row and no job | Zero sends, but that invoice cannot be paid by this system again | `PAYMENT_PREFLIGHT` is deliberately not replannable: a simulate can time out, and a timed-out dry run may have executed for real (#1959). The `PREFLIGHT_UNAVAILABLE` discriminator does not reach this case because the crash happens before the catch. Rescuing it means widening a duplicate-payment door to fix a liveness bug, which is the wrong trade this close to a deadline |
-| REDTEAM 1a | The loser of a reference race gets a raw `UNIQUE constraint failed: obligations.payment_reference` instead of `REFERENCE_ALREADY_CLAIMED` | Misleading refusal, and no `REFUSED` audit row for the right code | Fails closed. Cosmetic against the money invariant, real against the audit trail |
-| REDTEAM 6c | The receipt is still parsed as `{status, gasUsed}` — `to` and `logs` are never read | Nothing *post*-dispatch checks the transaction hit the fee proxy. Those fields are bound pre-dispatch, and reconciliation reads the fee-proxy log independently, so this is redundancy that is missing rather than a hole | Would duplicate what `findPaymentByReference` already proves |
-| PROTOCOL 6a | The runtime never re-derives the payment reference from `(requestId, salt, payee)` — it trusts `docs/live-invoices.json` | The cheapest attack in the audit: swap one reference in that file and every guard protects the wrong debt perfectly | This is the Request read path (§5 of the build mandate) and it is not built. **The single largest gap in the submission** |
-| PROTOCOL 4 | `decimals: f.tokenDecimals ?? 18` on both sides of the comparison, so `TOKEN_DECIMALS_MISMATCH` cannot fire in production | Correct today — FAU is 18dp and `verify:onchain` proves it — and a 10^12 error the moment a 6-decimal token is added | Needs a token decimals read on the settle path |
-| PROTOCOL 5 | No confirmation depth anywhere. A receipt one block deep settles | A reorg between `CHAIN_CONFIRMED` and a settlement claim is not defended against | "Receipt observed, finality unverified" is the honest phrasing and it is what the README should say |
-| PROTOCOL 1b | `steps[].data` is not case-folded in `canonicalJson`, so two spellings of one calldata give two plan hashes | Blocked today by `reserveObligation` and `canReplan`; live the moment either is relaxed | Second-order |
-| KEEPERHUB F-3 | A 4xx with a JSON body resolves as `status: "pending"` and is recorded `SENT` | A revoked API key turns every in-flight obligation into a manual investigation. Safe direction, wrong disposition | |
-| KEEPERHUB F-4 | An expired MCP session can never re-handshake, though `-32003` is flagged retryable | Low impact today: every caller constructs a fresh provider per process | |
-| KEEPERHUB F-7 | `"unknown"` is used as a placeholder execution id and persisted | Two stranded attempts record the same identifier | |
-| KEEPERHUB F-8 | REST 409 does not distinguish "in progress" from "same key, different body" | Both become `EVIDENCE_CONFLICT`. Safe, imprecise | |
-| REDTEAM 8 | With no standing policy configured — and this checkout has none — `buildPolicy` falls back to the caller's own ceilings | `POLICY_DENIED` is decorative as deployed. The human approval gate still stands in front | Ship a `policy.json` |
-| — | `docs/demo-transcript.txt` is still in the tree | Repo hygiene says video sources live with the video | Removing it breaks `npm run demo:video` |
+1. **The `SIMULATE` crash recovers only where a chain reader is wired.** The recovery needs the
+   `sightPayment` dependency, which `scripts/resolve.ts` and the MCP `resolve_pending` both
+   supply. `p3-crash.ts` uses a fixture with no chain behind it, so its `SIMULATE` row still
+   shows `PAYMENT_PREFLIGHT` — correctly: without something that can look, concluding "nothing
+   ran" would be the exact assumption this system refuses. It is money-safe either way (zero
+   sends), and `test/preflight-crash.test.ts` proves both outcomes with a reader wired.
 
-**Not defects, recorded so nobody re-raises them.** The global payment-reference index has no
-namespace predicate — correct for a single-operator deployment, where one Request reference is
-one debt however it was imported, and narrowing it would reopen the double-pay door it was added
-to shut. `rpcCall`'s receipt fallback is first-non-null rather than agreement, which is the right
-polarity for a receipt: a `null` means "this endpoint does not know". `findPaymentByReference`
-does corroborate positives across endpoints, because a false positive there can mark an
-obligation settled.
+2. **Confirmation depth changes live timing, and the recorded evidence predates it.** With the
+   default of 2, a live settlement will now usually return `RECONCILIATION_PENDING` on the
+   first pass and finish on a `resolve` drain about a block later. The 38 recorded settlements
+   in `docs/refusals-live.json` were made before this gate existed and settled at whatever depth
+   they happened to have. They are still real payments with real receipts; they are not evidence
+   that the depth gate works, and nothing here claims they are.
+
+3. **`verifyAgainstRequest: false` exists.** It is the documented offline path and the tests use
+   it, which means the Request verification is skippable by a caller who controls the context
+   object. That is a deliberate seam for offline work, not a hole an agent can reach — an MCP
+   client cannot set it — but it is a seam, and it should be tagged TEST in any evidence.
+
+4. **`payeeOfRecord !== payee` is recorded, not refused.** Request lets an invoice's creditor
+   differ from its payment address. The payment address is what is paid and what the reference
+   derives from, which is correct, but an invoice where the two differ is something a human
+   should see before settlement, and right now it is only written down.
+
+5. **Reorg after settlement is still not watched.** Depth is checked before `SETTLED`; nothing
+   re-checks afterwards. The honest claim remains "confirmed by an independently read receipt
+   plus the fee-proxy event for the same transaction and the same amount, at a stated depth" —
+   never "final" or "irreversible".
+
+6. **The scripts still read `docs/live-invoices.json` for the salt.** The *runtime* derives the
+   reference from the gateway now, but `scripts/live-harness.ts` and friends still start from
+   that file. A corrupted file would be caught by the runtime check rather than silently
+   obeyed — which is the whole point — but the scripts have not been rewritten to fetch first.
+
+7. **The global payment-reference index has no namespace predicate.** Deliberate, and recorded
+   so nobody re-raises it: for a single-operator deployment one Request reference is one debt
+   however it was imported, and narrowing the index would reopen the double-pay door it was
+   added to shut. It becomes wrong the day `namespace` becomes a caller-supplied argument.
+
+8. **Not built, and out of scope for this pass:** the multi-process race script (`scripts/race.ts`),
+   the crash-lottery runner (`scripts/crash.ts`), `scripts/verify-all.ts`, and `docs/TRUTH.md`.
+   The behaviours they would demonstrate are covered by the probes and the test suite; the
+   one-command judge experience they were meant to provide is not there.
 
 ---
 

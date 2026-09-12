@@ -223,7 +223,7 @@ export function matchPaymentLog(
  * detail worth stating, because a comment in this file used to claim otherwise and the next
  * person to "fix" the correct offset would have broken every amount check at once.
  */
-function decodePaymentLog(data: string): PaymentLogFields | null {
+export function decodePaymentLogFields(data: string): PaymentLogFields | null {
   const d = data.replace(/^0x/, "");
   if (d.length < 320) return null;
   const word = (i: number) => d.slice(i * 64, i * 64 + 64);
@@ -336,7 +336,7 @@ async function scanForReference(
     ])) as RawLog[];
 
     for (const log of logs) {
-      const fields = decodePaymentLog(log.data);
+      const fields = decodePaymentLogFields(log.data);
       if (!fields) {
         conflicts.push(`log in ${log.transactionHash} carries this reference but is not a payment event`);
         continue;
@@ -399,4 +399,82 @@ async function corroborate(
 
 export async function currentBlock(rpcUrl = DEFAULT_RPC): Promise<number> {
   return Number(BigInt((await rpcCall(rpcUrl, "eth_blockNumber", [])) as string));
+}
+
+
+/** The raw JSON-RPC receipt, as the node returns it. */
+export interface RawReceipt {
+  status?: string;
+  gasUsed?: string;
+  to?: string;
+  blockNumber?: string;
+  logs?: Array<{ address?: string; data?: string; topics?: string[] }>;
+}
+
+/**
+ * The one receipt reader, for every transport.
+ *
+ * There were four private copies of this, and each one had to learn separately that publicnode
+ * answers `result: null` for receipts it still holds. The MCP provider was the last to keep its
+ * own `fetch`, so on that transport a pruned null still became `not_found`, which settle reads
+ * as EVIDENCE_CONFLICT — a real settlement reported as missing, for the wrong reason, on the
+ * path that had just moved money.
+ *
+ * Reads more than `{status, gasUsed}`: the transaction's own target, its own logs, and how far
+ * behind head its block is. The real execution shape is a meta-transaction, so the fee proxy
+ * appears only as a log emitter nested inside a forwarder's transaction — and a forwarder that
+ * does not bubble an inner revert returns status 0x1 regardless. Without the logs, "the
+ * transaction succeeded" and "the payment happened" are indistinguishable here.
+ */
+export async function readReceipt(
+  rpcUrl: string,
+  hash: string,
+  timeoutMs = 30_000,
+): Promise<{
+  hash: string;
+  verified: boolean;
+  receiptStatus: "success" | "reverted" | "not_found" | "timeout";
+  gasUsed: string;
+  to?: string;
+  logs?: Array<{ address?: string; data?: string; topics?: string[] }>;
+  blockNumber?: number;
+  confirmations?: number;
+}> {
+  try {
+    await ensureChain(rpcUrl);
+  } catch (e) {
+    // An endpoint that will not answer is "I could not read", the same as any other transport
+    // failure. An endpoint on the WRONG CHAIN is different in kind: it is answering, and its
+    // answer would be about a different chain's transaction with a colliding hash. That is a
+    // refusal, and it propagates.
+    if (/refusing to read chain/.test(e instanceof Error ? e.message : String(e))) throw e;
+    return { hash, verified: false, receiptStatus: "timeout", gasUsed: "0" };
+  }
+  let r: RawReceipt | null | undefined;
+  try {
+    r = (await rpcCall(rpcUrl, "eth_getTransactionReceipt", [hash], timeoutMs)) as RawReceipt | null;
+  } catch {
+    return { hash, verified: false, receiptStatus: "timeout", gasUsed: "0" };
+  }
+  if (!r) return { hash, verified: false, receiptStatus: "not_found", gasUsed: "0" };
+
+  const gasUsed = r.gasUsed ? BigInt(r.gasUsed).toString(10) : "0";
+  const blockNumber = r.blockNumber === undefined ? undefined : Number(BigInt(r.blockNumber));
+
+  let confirmations: number | undefined;
+  if (blockNumber !== undefined) {
+    try {
+      confirmations = Math.max(0, (await currentBlock(rpcUrl)) - blockNumber + 1);
+    } catch {
+      // Depth unknown is not depth zero. Left undefined so a caller can tell the difference.
+    }
+  }
+
+  const common = { hash, gasUsed, to: r.to, logs: r.logs, blockNumber, confirmations };
+
+  // Three outcomes, not two. Only 0x0 means the chain said no; a missing or malformed status
+  // means this read did not answer, and EXECUTION_REVERTED is terminal.
+  if (r.status === "0x1") return { ...common, verified: true, receiptStatus: "success" };
+  if (r.status === "0x0") return { ...common, verified: true, receiptStatus: "reverted" };
+  return { ...common, verified: false, receiptStatus: "not_found" };
 }

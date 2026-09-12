@@ -57,6 +57,15 @@ export interface DrainResult {
   readonly advanced: ReadonlyArray<{ obligationId: string; from: State; to: State }>;
 }
 
+/**
+ * Read at call time rather than at import, so a test or an operator can change it without
+ * reloading the module. Same default and same env var as the settle path, deliberately: two
+ * places deciding depth differently is how one of them quietly stops mattering.
+ */
+function minConfirmations(): number {
+  return Math.max(1, Number(process.env.REQKEEPER_MIN_CONFIRMATIONS ?? "2") || 2);
+}
+
 /** How long a job waits before another look. Chain and indexer both need a moment. */
 const RETRY_MS = 15_000;
 const LEASE_MS = 30_000;
@@ -333,6 +342,14 @@ async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Reso
     }
     if (!receipt.verified || receipt.receiptStatus !== "success") {
       return { done: false, reason: "RECEIPT_NOT_FINAL", advanced };
+    }
+
+    // Depth, here too. Without it the settle path's gate is decorative: it hands the obligation
+    // to this job, and this job settles it one block deep anyway.
+    if (receipt.confirmations !== undefined && receipt.confirmations < minConfirmations()) {
+      move("RECONCILING");
+      move("RECONCILIATION_PENDING");
+      return { done: false, reason: "AWAITING_CONFIRMATIONS", advanced };
     }
 
     move("RECONCILING");
