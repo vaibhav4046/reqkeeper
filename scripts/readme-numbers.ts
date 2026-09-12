@@ -95,6 +95,11 @@ const facts = {
  */
 const claims: Array<{ file: string; what: string; re: RegExp; expected: number }> = [
   { file: "README.md", what: "unit tests", re: /(\d+) tests\b/, expected: facts.tests },
+  { file: "README.md", what: "race workers (headline)", re: /(\d+) workers\. 1 payment/, expected: facts.raceWorkers },
+  { file: "README.md", what: "race workers (command)", re: /npm run race +# (\d+) processes/, expected: facts.raceWorkers },
+  { file: "README.md", what: "REST settlements", re: /(\d+) settlements through the REST/, expected: facts.settlements },
+  { file: "README.md", what: "MCP settlements", re: /\*\*(\d+) through KeeperHub's own MCP/, expected: facts.mcpSettlements },
+  { file: "README.md", what: "references re-derived", re: /\*\*(\d+) of \d+\*\* recorded payment references/, expected: facts.derivations },
   { file: "docs/SUBMISSION.md", what: "unit tests", re: /(\d+) unit tests/, expected: facts.tests },
   { file: "docs/SUBMISSION.md", what: "settlements", re: /\*\*(\d+) real payments on Sepolia/, expected: facts.settlements },
   { file: "docs/SUBMISSION.md", what: "replays refused", re: /(\d+) replays refused/, expected: facts.replays },

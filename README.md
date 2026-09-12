@@ -61,6 +61,18 @@ read back from the file that reports them. Artifact:
 - **Every claim, with its evidence:** [`docs/TRUTH.md`](docs/TRUTH.md) (generated, never typed)
 - **Every open finding:** [`hackathon/audit/STATUS.md`](hackathon/audit/STATUS.md)
 
+## When you should not use this
+
+If your payer can be an ERC-7710 delegator smart account, **use MetaMask's Delegation Framework
+instead — it ships both of these gates on-chain and that is strictly better.** `IdEnforcer` keeps
+a BitMap of spent ids, and `ExactCalldataEnforcer` requires
+`keccak256(termsCallData) == keccak256(callData)`. On-chain enforcement cannot be bypassed by a
+bug in software like this one.
+
+ReqKeeper exists for the payer that cannot be a smart account: a custodial or relayed EOA, where
+there is no account to attach a caveat to. KeeperHub's Turnkey wallet is exactly that case, which
+is why this project exists at all.
+
 ## Verify without credentials
 
 ```bash
@@ -83,12 +95,17 @@ Request's own detection uses, and **46 of 46** recorded payment references re-de
 
 ## Run everything else
 
+`verify:all` and `npm test` need no install — `src/` and `scripts/` have no runtime
+dependencies. `typecheck` and `build` call `tsc`, so those two want `npm install` first.
+
 ```bash
-npm test              # 344 tests, 64 suites
+npm install           # only for typecheck and build; everything above runs without it
+
+npm test              # 349 tests, 66 suites
 npm run typecheck     # tsc --noEmit
 npm run build         # console + api; the tree must stay clean afterwards
 npm run gate-a        # Request <-> KeeperHub <-> Sepolia end to end (10 ok, 0 failed, 2 blocked)
-npm run race          # 10 processes, one obligation, one payment
+npm run race          # 50 processes, one obligation, one payment
 npm run crash         # kill the process at nine checkpoints; zero duplicates at every one
 npm run probe:mcp     # KeeperHub's own MCP server, read-only by default
 ```
