@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { after, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { KeeperHubProvider } from "../src/keeperhub.ts";
 import { ProviderError } from "../src/provider.ts";
@@ -80,4 +80,51 @@ test("a receipt that cannot be read is never reported as success", async () => {
   const r = await provider.receipt(`0x${"ab".repeat(32)}`);
   assert.equal(r.verified, false);
   assert.equal(r.receiptStatus, "timeout");
+});
+
+describe("a receipt is read three ways, not two", () => {
+  const realFetch = globalThis.fetch;
+  after(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  /** Answer eth_getTransactionReceipt with this exact object. */
+  function receiptSays(result: unknown) {
+    globalThis.fetch = (async () => ({
+      json: async () => ({ jsonrpc: "2.0", id: 1, result }),
+    })) as unknown as typeof fetch;
+  }
+
+  const HASH = `0x${"cd".repeat(32)}`;
+  const readable = new KeeperHubProvider({ apiKey: "kh_test", chainId: 11155111, rpcUrl: "http://127.0.0.1:1" });
+
+  test("0x1 is success", async () => {
+    receiptSays({ status: "0x1", gasUsed: "0x1234" });
+    const r = await readable.receipt(HASH);
+    assert.equal(r.receiptStatus, "success");
+    assert.equal(r.verified, true);
+  });
+
+  test("0x0 is reverted", async () => {
+    receiptSays({ status: "0x0", gasUsed: "0x1234" });
+    const r = await readable.receipt(HASH);
+    assert.equal(r.receiptStatus, "reverted");
+    assert.equal(r.verified, true);
+  });
+
+  test("a receipt with no status is unread, NOT reverted", async () => {
+    // `status === "0x1" ? success : reverted` called this a revert. EXECUTION_REVERTED is
+    // terminal, so one malformed RPC response could permanently label a real payment failed.
+    receiptSays({ gasUsed: "0x1234" });
+    const r = await readable.receipt(HASH);
+    assert.notEqual(r.receiptStatus, "reverted", "a receipt we could not read is not a failed payment");
+    assert.equal(r.verified, false, "and it must not count as evidence either");
+  });
+
+  test("a receipt with a nonsense status is unread, NOT reverted", async () => {
+    receiptSays({ status: "banana", gasUsed: "0x1234" });
+    const r = await readable.receipt(HASH);
+    assert.notEqual(r.receiptStatus, "reverted");
+    assert.equal(r.verified, false);
+  });
 });

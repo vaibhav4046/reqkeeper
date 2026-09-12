@@ -203,9 +203,14 @@ export class KeeperHubProvider implements ExecutionProvider {
     if (!r) return { hash, verified: false, receiptStatus: "not_found", gasUsed: "0" };
 
     const gasUsed = r.gasUsed ? BigInt(r.gasUsed).toString(10) : "0";
-    return r.status === "0x1"
-      ? { hash, verified: true, receiptStatus: "success", gasUsed }
-      : { hash, verified: true, receiptStatus: "reverted", gasUsed };
+    // Three outcomes, not two. `status === "0x1" ? success : reverted` calls anything that is
+    // not exactly 0x1 a revert — including a receipt whose status is missing or malformed —
+    // and EXECUTION_REVERTED is terminal, so a malformed RPC response could permanently label
+    // a real payment as failed. Only 0x0 means the chain said no; anything else means this
+    // read did not answer, which is `verified: false` and stays open for another look.
+    if (r.status === "0x1") return { hash, verified: true, receiptStatus: "success", gasUsed };
+    if (r.status === "0x0") return { hash, verified: true, receiptStatus: "reverted", gasUsed };
+    return { hash, verified: false, receiptStatus: "not_found", gasUsed };
   }
 
   /**
