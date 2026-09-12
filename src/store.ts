@@ -267,13 +267,21 @@ const OPEN_BACKOFF_MS = 40;
  * it. What is proven is the symptom and its blast radius: `settle` and `resolve` started
  * together, or two `resolve` runs, sometimes die in the constructor.
  *
- * It fails closed — the crash is before any work — but "the exact contention this project is
+ * It fails closed -- the crash is before any work -- but "the exact contention this project is
  * about kills the process" is not a defensible answer, so the open is retried. Only the lock
  * error is retried; a corrupt file or a bad path still throws on the first attempt.
- */
-function openWithRetry(path: string): DatabaseSync {
+ *
+ * Measured on the real constructor, two processes released from one barrier onto a fresh file,
+ * 25 trials (hackathon/audit/probes/p7-store-open-race.ts), three runs:
+ *
+ *   retry disabled   12/50, 15/50, 10/50 failed with "database is locked"
+ *   as shipped        0/50,  0/50,  0/50
+ */function openWithRetry(path: string): DatabaseSync {
+  // The audit probe sets this to measure the unprotected path, so the retry's effect is a
+  // measured difference rather than an unfalsifiable claim. Never set in normal operation.
+  const attempts = process.env.REQKEEPER_NO_OPEN_RETRY === "1" ? 1 : OPEN_ATTEMPTS;
   let lastError: unknown;
-  for (let attempt = 0; attempt < OPEN_ATTEMPTS; attempt++) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
     let db: DatabaseSync | undefined;
     try {
       db = new DatabaseSync(path);
