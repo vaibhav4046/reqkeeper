@@ -19,3 +19,7 @@ tools/video/.frames/
 # account's repositories carry no assistant artifacts.
 .claude/
 CLAUDE.md
+
+# The demo video lives as a GitHub release asset and on YouTube, not in the tree.
+# 72 MB of committed cuts is most of this repository's clone time.
+docs/demo.mp4

@@ -111,7 +111,7 @@ sharpest one — the policy gate is only as strong as the operator's standing po
 - **Hosted agent surface (MCP over HTTP):** https://reqkeeper.vercel.app/api/mcp — four read-only
   tools. No tool there can move money; approval belongs next to a human, not behind a URL.
 - **Repository:** https://github.com/vaibhav4046/reqkeeper
-- **Demo video:** `docs/demo.mp4` in the repository
+- **Demo video:** a release asset, not committed — six cuts of it were 72 MB of this repository
 - **Evidence:** `docs/refusals-live.json` — all 83 rows
 
 ## Tech
@@ -135,6 +135,6 @@ not be reused for it.
 ## Before posting
 
 - [ ] `npm test`, `npm run harness`, `npm run verify:live` — re-read every number above
-- [ ] `docs/demo.mp4` is the current cut and shows no credential in any frame
+- [ ] the released video is the current cut and shows no credential in any frame
 - [ ] https://reqkeeper.vercel.app and `/api/mcp` both answer
 - [ ] the repository is public and `git status` is clean

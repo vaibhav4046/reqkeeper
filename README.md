@@ -28,7 +28,7 @@ flowchart LR
   S -.replay, 0 sends.-> X
 ```
 
-**Demo video:** [`docs/demo.mp4`](docs/demo.mp4) · **Console:** [`web/index.html`](web/index.html)
+**Demo video:** published as a release asset, not committed — see [Releases](https://github.com/vaibhav4046/reqkeeper/releases) · **Console:** <https://reqkeeper.vercel.app>
 
 **Who this is for:** payers that cannot be a smart account — a custodial or relayed EOA (here, a
 KeeperHub Turnkey wallet) whose agent must not pay the same invoice twice. **Not for you if** your
