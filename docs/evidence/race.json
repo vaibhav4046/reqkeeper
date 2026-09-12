@@ -1,0 +1,952 @@
+{
+  "generatedAt": "2026-09-12T18:50:43.023Z",
+  "mode": "FIXTURE",
+  "chainId": 11155111,
+  "note": "N independent processes, one SQLite file, one Request obligation, released from a barrier. The fixture counts every non-simulate POST regardless of idempotency key, and reports the deduplicated ones separately, so the result cannot be KeeperHub's cache taking the credit.",
+  "workers": 50,
+  "totals": {
+    "broadcasts": 1,
+    "postsReachingTheProvider": 1,
+    "dedupedByKey": 0,
+    "settled": 1,
+    "distinctTransactions": 1,
+    "duplicates": 0,
+    "secondWaveBroadcasts": 0
+  },
+  "waves": [
+    {
+      "label": "first wave",
+      "workers": [
+        {
+          "pid": 24436,
+          "startOrder": 0,
+          "state": "SETTLED",
+          "refusal": null,
+          "providerWriteIssued": true,
+          "txHash": "0x0001abababababababababababababababababababababababababababababab",
+          "planHash": "67e0de0c05d1b106bb8f389ed9c563831bd3ac1c5dce1f50dae54e6cf059d992"
+        },
+        {
+          "pid": 20852,
+          "startOrder": 1,
+          "state": "PAYMENT_PREFLIGHT",
+          "refusal": "ALREADY_DISPATCHED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 21764,
+          "startOrder": 2,
+          "state": "PAYMENT_PREFLIGHT",
+          "refusal": "ALREADY_DISPATCHED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 13796,
+          "startOrder": 3,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 980,
+          "startOrder": 4,
+          "state": "PAYMENT_PREFLIGHT",
+          "refusal": "ALREADY_DISPATCHED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 26176,
+          "startOrder": 5,
+          "state": "PAYMENT_PREFLIGHT",
+          "refusal": "ALREADY_DISPATCHED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 19496,
+          "startOrder": 6,
+          "state": "PAYMENT_PREFLIGHT",
+          "refusal": "ALREADY_DISPATCHED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 7228,
+          "startOrder": 7,
+          "state": "OBLIGATION_RESERVED",
+          "refusal": "REFERENCE_ALREADY_CLAIMED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 20328,
+          "startOrder": 8,
+          "state": "PAYMENT_PREFLIGHT",
+          "refusal": "ALREADY_DISPATCHED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 10180,
+          "startOrder": 9,
+          "state": "PAYMENT_PREFLIGHT",
+          "refusal": "ALREADY_DISPATCHED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 16560,
+          "startOrder": 10,
+          "state": "PAYMENT_PREFLIGHT",
+          "refusal": "ALREADY_DISPATCHED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 23484,
+          "startOrder": 11,
+          "state": "PAYMENT_PREFLIGHT",
+          "refusal": "ALREADY_DISPATCHED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 13092,
+          "startOrder": 12,
+          "state": "PAYMENT_PREFLIGHT",
+          "refusal": "ALREADY_DISPATCHED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 18404,
+          "startOrder": 13,
+          "state": "PAYMENT_PREFLIGHT",
+          "refusal": "ALREADY_DISPATCHED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 23008,
+          "startOrder": 14,
+          "state": "PAYMENT_PREFLIGHT",
+          "refusal": "ALREADY_DISPATCHED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 12072,
+          "startOrder": 15,
+          "state": "PAYMENT_PREFLIGHT",
+          "refusal": "ALREADY_DISPATCHED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 20016,
+          "startOrder": 16,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 25072,
+          "startOrder": 17,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 10132,
+          "startOrder": 18,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 24532,
+          "startOrder": 19,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 21840,
+          "startOrder": 20,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 17276,
+          "startOrder": 21,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 26324,
+          "startOrder": 22,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 21048,
+          "startOrder": 23,
+          "state": "PAYMENT_PREFLIGHT",
+          "refusal": "ALREADY_DISPATCHED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 14296,
+          "startOrder": 24,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 14436,
+          "startOrder": 25,
+          "state": "PAYMENT_PREFLIGHT",
+          "refusal": "ALREADY_DISPATCHED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 24792,
+          "startOrder": 26,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 11292,
+          "startOrder": 27,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 20240,
+          "startOrder": 28,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 15252,
+          "startOrder": 29,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 17808,
+          "startOrder": 30,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 8584,
+          "startOrder": 31,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 20064,
+          "startOrder": 32,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 26108,
+          "startOrder": 33,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 13228,
+          "startOrder": 34,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 19372,
+          "startOrder": 35,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 10732,
+          "startOrder": 36,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 25204,
+          "startOrder": 37,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 26420,
+          "startOrder": 38,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 23596,
+          "startOrder": 39,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 5884,
+          "startOrder": 40,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 21808,
+          "startOrder": 41,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 17272,
+          "startOrder": 42,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 13224,
+          "startOrder": 43,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 25160,
+          "startOrder": 44,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 15572,
+          "startOrder": 45,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 23260,
+          "startOrder": 46,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 25652,
+          "startOrder": 47,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 21396,
+          "startOrder": 48,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 25776,
+          "startOrder": 49,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        }
+      ],
+      "counters": {
+        "posts": 1,
+        "dedupedByKey": 0,
+        "broadcasts": 1,
+        "simulates": 1,
+        "distinctKeys": 1
+      }
+    },
+    {
+      "label": "second wave",
+      "workers": [
+        {
+          "pid": 21100,
+          "startOrder": 0,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 14056,
+          "startOrder": 1,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 14112,
+          "startOrder": 2,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 4928,
+          "startOrder": 3,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 14632,
+          "startOrder": 4,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 24988,
+          "startOrder": 5,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 23764,
+          "startOrder": 6,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 4852,
+          "startOrder": 7,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 8848,
+          "startOrder": 8,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 7944,
+          "startOrder": 9,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 25972,
+          "startOrder": 10,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 21764,
+          "startOrder": 11,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 16108,
+          "startOrder": 12,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 14396,
+          "startOrder": 13,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 3336,
+          "startOrder": 14,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 25636,
+          "startOrder": 15,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 13496,
+          "startOrder": 16,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 17240,
+          "startOrder": 17,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 11248,
+          "startOrder": 18,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 23244,
+          "startOrder": 19,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 19296,
+          "startOrder": 20,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 24436,
+          "startOrder": 21,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 26516,
+          "startOrder": 22,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 22544,
+          "startOrder": 23,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 22356,
+          "startOrder": 24,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 22016,
+          "startOrder": 25,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 7596,
+          "startOrder": 26,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 20140,
+          "startOrder": 27,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 17600,
+          "startOrder": 28,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 10172,
+          "startOrder": 29,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 16912,
+          "startOrder": 30,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 25432,
+          "startOrder": 31,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 20008,
+          "startOrder": 32,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 18532,
+          "startOrder": 33,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 6976,
+          "startOrder": 34,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 17920,
+          "startOrder": 35,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 10376,
+          "startOrder": 36,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 26496,
+          "startOrder": 37,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 16616,
+          "startOrder": 38,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 6080,
+          "startOrder": 39,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 17280,
+          "startOrder": 40,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 24868,
+          "startOrder": 41,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 25408,
+          "startOrder": 42,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 15000,
+          "startOrder": 43,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 16584,
+          "startOrder": 44,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 18488,
+          "startOrder": 45,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 3444,
+          "startOrder": 46,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 16872,
+          "startOrder": 47,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 3480,
+          "startOrder": 48,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        },
+        {
+          "pid": 22312,
+          "startOrder": 49,
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
+        }
+      ],
+      "counters": {
+        "posts": 0,
+        "dedupedByKey": 0,
+        "broadcasts": 0,
+        "simulates": 0,
+        "distinctKeys": 1
+      }
+    }
+  ],
+  "executions": [
+    {
+      "executionId": "exec-fixture-1",
+      "transactionHash": "0x0001abababababababababababababababababababababababababababababab",
+      "blockNumber": 999994,
+      "reference": "0x000001a096f50b36",
+      "to": "0xc43d766cb7c48b9b198db87441b97c09e81717a1",
+      "amount": "1000000000000000000"
+    }
+  ]
+}

@@ -337,7 +337,37 @@ function receiptDisagreesWithPayment(
 
 const sameAddress = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
 
+/**
+ * Settle one obligation, or refuse, exactly once.
+ *
+ * The wrapper exists because losing a race is not an error. `settleObligation` reads state and
+ * then acts on it in five separate places — the reference index, `replan`, the approval
+ * transition, `beginPreflight`, and the dispatch guard — and under a real N-way race the loser
+ * can be overtaken at any of them. Each one was guarded individually as it showed up in a race
+ * artifact, which meant every new one was found by a judge-shaped process rather than by the
+ * code. The fifth (`illegal transition PAYMENT_PREFLIGHT -> AWAITING_APPROVAL`, once per fifty
+ * workers) made the pattern obvious enough to stop patching sites.
+ *
+ * `refusalForLostRace` recognises lost races by their SIGNATURE, not by where they happened, so
+ * one wrapper covers every site including ones not written yet. Anything it does not recognise
+ * is rethrown, so a real bug still surfaces as a real bug rather than being dressed up as a
+ * polite refusal. Every branch it returns costs zero sends.
+ *
+ * The money invariant never depended on this: across 40 two-process races and a 50-worker run,
+ * `provider.execute()` was called exactly once. What this fixes is the refusal surface and the
+ * audit trail.
+ */
 export async function settleObligation(deps: SettleDeps, input: SettleInput): Promise<SettleOutcome> {
+  try {
+    return await settleOrRefuse(deps, input);
+  } catch (e) {
+    const refused = refusalForLostRace(e, deps.store, input);
+    if (refused) return refused;
+    throw e;
+  }
+}
+
+async function settleOrRefuse(deps: SettleDeps, input: SettleInput): Promise<SettleOutcome> {
   const { store, provider, policy } = deps;
   const factsHash = sourceFactsHash(input.facts);
 
@@ -377,23 +407,15 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
     });
   }
 
-  // Step 0 read the reference index; this writes to it. Two statements, so a second proposer
-  // that passed the read a microsecond ago loses here instead, on the unique index.
-  try {
-    store.importObligation({
-      obligationId: input.obligationId,
-      namespace: input.namespace,
-      requestId: input.requestId,
-      sourceFactsJson: JSON.stringify(input.facts),
-      sourceFactsHash: factsHash,
-      paymentReference: input.paymentReference ?? null,
-      now: input.now,
-    });
-  } catch (e) {
-    const refused = refusalForLostRace(e, store, input);
-    if (refused) return refused;
-    throw e;
-  }
+  store.importObligation({
+    obligationId: input.obligationId,
+    namespace: input.namespace,
+    requestId: input.requestId,
+    sourceFactsJson: JSON.stringify(input.facts),
+    sourceFactsHash: factsHash,
+    paymentReference: input.paymentReference ?? null,
+    now: input.now,
+  });
   store.audit(input.obligationId, "agent", "PROPOSED", { requestId: input.requestId });
 
   // --- 1. policy, before anything else can cost money ---------------------
@@ -401,14 +423,7 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
   // `replan`, not `setState`: a previous refusal is closed forever and this opens a new
   // settlement beside it. It throws for anything past the point of no return, which is the
   // same guard as 0b enforced one layer down, where nothing can route around it.
-  // Step 0b read the state; this acts on it. The winner can finish in between.
-  try {
-    store.replan(input.obligationId, input.now);
-  } catch (e) {
-    const refused = refusalForLostRace(e, store, input);
-    if (refused) return refused;
-    throw e;
-  }
+  store.replan(input.obligationId, input.now);
   const decision = checkPolicy(policy, input.facts);
   if (!decision.ok) {
     const state: State = decision.code === "SOURCE_ALREADY_PAID" ? "SOURCE_ALREADY_PAID" : "POLICY_DENIED";
@@ -544,15 +559,7 @@ export async function settleObligation(deps: SettleDeps, input: SettleInput): Pr
     });
   }
 
-  // The last read-then-write pair on this path: the winner may have moved the obligation past
-  // APPROVED since `replan` put it in VALIDATING.
-  try {
-    store.setState(input.obligationId, "APPROVED", input.now);
-  } catch (e) {
-    const refused = refusalForLostRace(e, store, input);
-    if (refused) return refused;
-    throw e;
-  }
+  store.setState(input.obligationId, "APPROVED", input.now);
 
   // --- 5. re-check at the dispatch boundary -------------------------------
   const plan = store.getPlan(planHash);

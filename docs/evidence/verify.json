@@ -1,0 +1,98 @@
+{
+  "generatedAt": "2026-09-12T18:53:40.243Z",
+  "chainId": 11155111,
+  "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
+  "credentialsUsed": "none",
+  "totals": {
+    "checks": 14,
+    "ok": 13,
+    "failed": 0,
+    "blocked": 1
+  },
+  "checks": [
+    {
+      "id": "race.totals",
+      "claim": "the artifact's summary matches its own rows",
+      "status": "ok",
+      "detail": "recomputed broadcasts=1, secondWave=0"
+    },
+    {
+      "id": "race.exactly-once",
+      "claim": "50 concurrent workers, one payment",
+      "status": "ok",
+      "detail": "1 broadcast, 1 distinct transaction(s)"
+    },
+    {
+      "id": "race.not-the-provider",
+      "claim": "exactly-once is ReqKeeper's, not KeeperHub's idempotency cache",
+      "status": "ok",
+      "detail": "1 post(s) reached the provider, 0 deduped by key — the losers never got that far"
+    },
+    {
+      "id": "race.second-wave",
+      "claim": "the same plan and key, after every process exited, sends nothing",
+      "status": "ok",
+      "detail": "0 broadcast in the second wave"
+    },
+    {
+      "id": "race.no-crashes",
+      "claim": "every worker reached a designed outcome",
+      "status": "ok",
+      "detail": "no worker threw or produced no output"
+    },
+    {
+      "id": "crash",
+      "claim": "no crash checkpoint produces a duplicate payment",
+      "status": "BLOCKED",
+      "detail": "docs/evidence/crash.json is absent — run `npm run crash`"
+    },
+    {
+      "id": "live.one-send-per-settlement",
+      "claim": "every recorded settlement cost exactly one send",
+      "status": "ok",
+      "detail": "38 settled, 38 physical send(s)"
+    },
+    {
+      "id": "live.distinct",
+      "claim": "no transaction and no payment reference is reused",
+      "status": "ok",
+      "detail": "38 distinct transactions over 38 rows, 38 distinct references"
+    },
+    {
+      "id": "live.replays-cost-nothing",
+      "claim": "replays of a settled obligation send nothing",
+      "status": "ok",
+      "detail": "38 replays, 0 send(s)"
+    },
+    {
+      "id": "live.refused-before-write",
+      "claim": "refusals happen before any provider write",
+      "status": "ok",
+      "detail": "45 row(s) refused at zero gas"
+    },
+    {
+      "id": "request.derivation",
+      "claim": "every recorded payment reference re-derives from its invoice",
+      "status": "ok",
+      "detail": "41/41 reproduce from keccak256(requestId + salt + paymentAddress)"
+    },
+    {
+      "id": "chain.receipt",
+      "claim": "L001's transaction has a successful receipt",
+      "status": "ok",
+      "detail": "0xb90a077185858154… → success, block 11665983, gas 74618"
+    },
+    {
+      "id": "chain.receipt-log",
+      "claim": "the receipt's own logs contain the fee-proxy payment",
+      "status": "ok",
+      "detail": "emitted by 0x399F5EE1…"
+    },
+    {
+      "id": "chain.reference",
+      "claim": "Request's own detection finds that payment by its reference",
+      "status": "ok",
+      "detail": "reference 0x050562a52ec69fa2 → 0xb90a077185858154…, single endpoint"
+    }
+  ]
+}

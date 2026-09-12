@@ -259,8 +259,19 @@ function sleepSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-const OPEN_ATTEMPTS = 6;
-const OPEN_BACKOFF_MS = 40;
+/**
+ * Sized against the race, not against a guess.
+ *
+ * Six attempts with a 40ms step survived two processes and lost six of ten workers at the
+ * concurrency this project actually demonstrates. The backoff is jittered because the failure
+ * mode is a thundering herd: every loser waking on the same schedule re-collides with every
+ * other loser, so a fixed step converts one collision into a queue of them.
+ *
+ * Worst case is a little over three seconds of waiting before giving up, which is the right
+ * trade for a process whose alternative is dying before it has done anything.
+ */
+const OPEN_ATTEMPTS = 14;
+const OPEN_BACKOFF_MS = 25;
 
 /**
  * Open the database, retrying while another process is mid-open.
@@ -306,7 +317,8 @@ const OPEN_BACKOFF_MS = 40;
       const message = e instanceof Error ? e.message : String(e);
       if (!/database is locked|SQLITE_BUSY/i.test(message)) throw e;
       lastError = e;
-      sleepSync(OPEN_BACKOFF_MS * (attempt + 1));
+      // Jittered: a fixed step makes every loser wake together and collide again.
+      sleepSync(OPEN_BACKOFF_MS * (attempt + 1) + Math.floor(Math.random() * OPEN_BACKOFF_MS * (attempt + 1)));
     }
   }
   throw lastError;
