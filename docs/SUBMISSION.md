@@ -51,8 +51,10 @@ Request triggers, KeeperHub executes, and a human sits between them.
 3. **A human approves.** `scripts/approve.ts` recomputes the plan hash from the invoice the human
    types and refuses if it differs from what the agent reserved. An approval flow that trusts the
    proposer's own summary is not an approval flow.
-4. **KeeperHub executes.** Through two different surfaces behind one interface: the REST
-   direct-execution API and KeeperHub's own MCP server. Both go through the same calldata gate.
+4. **KeeperHub executes.** Through the REST direct-execution API. A second provider implements
+   the same interface against KeeperHub's own MCP server and passes the same calldata gate
+   (`npm run probe:mcp`), but **every payment on record went through REST** — no settlement
+   carries `transport: "mcp"`. Two surfaces are implemented; one is proven with money.
 5. **The chain and Request both have to agree.** A provider status string is never sufficient:
    settlement needs an independently read receipt *and* the payment reference present in the fee
    proxy's log for that exact transaction and amount.

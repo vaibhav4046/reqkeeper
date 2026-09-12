@@ -31,3 +31,21 @@ jobs:
       # provider that counts physical sends. Exits non-zero if a case stops behaving.
       - name: refusal harness
         run: npm run harness
+
+      - name: build, and fail if the tree moved
+        run: npm run build
+
+      # A generated page that differs from the committed one means the deployed console cannot
+      # be reproduced from a revision, which is the defect the baseline audit raised.
+      - name: the built page must match the commit
+        run: git diff --exit-code web api/_gen
+
+      - name: race — N processes, one obligation, one payment
+        run: npm run race
+
+      - name: crash lottery — nine checkpoints, zero duplicates
+        run: npm run crash
+
+      # Credential-free by construction: it imports no provider and cannot move money.
+      - name: verify every public claim
+        run: npm run verify:all
