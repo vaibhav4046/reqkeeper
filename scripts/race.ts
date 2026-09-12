@@ -1,8 +1,8 @@
 /**
  * One invoice. N workers. One payment.
  *
- *   npm run race                 10 workers, fixture mode
- *   npm run race -- --workers 50
+ *   npm run race                 50 workers, fixture mode
+ *   npm run race -- --workers 10   (weaker; refused unless --force, see below)
  *   npm run race -- --json       artifact only, for scripting
  *
  * N independent Node processes — own process, own SQLite connection, no shared memory — all
@@ -62,7 +62,7 @@ if (LIVE && existsSync(".env")) {
 }
 // Fewer workers live, deliberately. If the invariant ever failed, every extra worker is another
 // real payment, so the blast radius of a bug is bounded by the smallest N that still races.
-const WORKERS = flag("workers", LIVE ? 3 : 10);
+const WORKERS = flag("workers", LIVE ? 3 : 50);
 const JSON_ONLY = argv.includes("--json");
 const OUT = LIVE ? "docs/evidence/race-live.json" : "docs/evidence/race.json";
 
@@ -330,6 +330,24 @@ const artifact = {
   waves: [first, second],
   executions: fx.executions,
 };
+
+// A run with fewer workers proves strictly less than the recorded one, and this file is what
+// README.md, docs/TRUTH.md and the console all cite. CI ran `npm run race` at the old default of
+// 10 and overwrote the 50-worker artifact on every push, quietly demoting the headline claim
+// while every check still reported green. Evidence may be replaced by evidence at least as
+// strong, or by someone who passes --force and has therefore said out loud that they mean it.
+if (existsSync(OUT) && !argv.includes("--force")) {
+  const prior = JSON.parse(readFileSync(OUT, "utf8")) as { workers?: number };
+  if (typeof prior.workers === "number" && prior.workers > WORKERS) {
+    console.error("");
+    console.error(`  refusing to overwrite ${OUT}: it records ${prior.workers} workers, this run had ${WORKERS}.`);
+    console.error(`  Re-run with --workers ${prior.workers}, or pass --force to record the weaker run anyway.`);
+    console.error("");
+    await fx.stop();
+    rmSync(dir, { recursive: true, force: true });
+    process.exit(2);
+  }
+}
 
 mkdirSync("docs/evidence", { recursive: true });
 writeFileSync(OUT, `${JSON.stringify(artifact, null, 2)}\n`);

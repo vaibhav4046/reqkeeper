@@ -15,14 +15,8 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 const ROOT = new URL("../../", import.meta.url);
 const path = (p) => new URL(p, ROOT).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 
-function env(name, fallback = "") {
-  if (!existsSync(path(".env"))) return fallback;
-  for (const line of readFileSync(path(".env"), "utf8").split(/\r?\n/)) {
-    const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*)$/.exec(line);
-    if (m && m[1] === name) return m[2].trim().replace(/^["']|["']$/g, "");
-  }
-  return fallback;
-}
+// Nothing here reads the environment. The page is a function of the committed evidence and
+// nothing else, which is what lets CI assert that the built page matches the commit.
 
 const refusals = JSON.parse(readFileSync(path("docs/refusals.json"), "utf8"));
 
@@ -92,7 +86,6 @@ function testCount() {
 }
 const tests = testCount();
 
-const payee = (env("PAYEE_BURNER") || "0x0000000000000000000000000000000000000000").toLowerCase();
 
 const data = {
   /**
@@ -115,16 +108,11 @@ const data = {
   crash,
   mcp,
   scripts: scriptNames(),
-  settlement: {
-    requestId: env("REQUEST_ID", "(not settled yet)"),
-    paymentReference: env("PAYMENT_REFERENCE", "-"),
-    obligationId: "3a79273eb6cab086a787cf5bbee3864982acda2e61b44875fdc6562e6e662f8d",
-    amountBaseUnits: "1000000000000000000",
-    txHash: "0x134f352dc69843105a01d1b9d6cc9799b660bd28e08920144bb67cb3852bfeff",
-    restatement:
-      `Pay 1 FAU to ${payee} on chain 11155111, plus 0 fee.\n` +
-      "Total leaving the wallet: 1 FAU (1000000000000000000 base units).",
-  },
+  // No `settlement` payload. It used to carry a requestId, a payment reference and a payee read
+  // from an untracked .env, which made the built page depend on a file no clone has: CI's "the
+  // built page must match the commit" step failed, and nobody could rebuild the bytes being
+  // served. The template never rendered any of it. A payload that cannot be reproduced and is
+  // never read is not evidence, it is a reason the build lies.
 };
 
 const template = readFileSync(path("tools/web/template.html"), "utf8");
