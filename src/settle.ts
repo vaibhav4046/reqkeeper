@@ -7,7 +7,7 @@
 import { decodePaymentLogFields, matchPaymentLog, type PaymentExpectation } from "./chain.ts";
 import { canReplan, type State } from "./machine.ts";
 import { ERC20_FEE_PROXY, decodeAllowedCall } from "./calldata-gate.ts";
-import { idempotencyKey, planHash as hashPlan, policyHash as hashPolicy, sourceFactsHash } from "./identity.ts";
+import { idempotencyKey, obligationId, planHash as hashPlan, policyHash as hashPolicy, sourceFactsHash } from "./identity.ts";
 import { checkPolicy, type Policy, type SourceFacts } from "./policy.ts";
 import { toHuman } from "./money.ts";
 import type { ExecutionProvider } from "./provider.ts";
@@ -378,6 +378,29 @@ async function settleOrRefuse(deps: SettleDeps, input: SettleInput): Promise<Set
   // is derived from the invoice by Request, so it is the identity that actually binds.
   {
     const holder = store.obligationForReference(input.paymentReference);
+    // The identity the whole duplicate defence rests on: obligationId is DERIVED from the
+    // namespace and the Request id (src/identity.ts), so a caller that supplies one which does not
+    // derive from the pair it also supplied is describing two different debts at once. Nothing
+    // downstream re-checks it -- the reference index, the reservation and the idempotency key all
+    // trust this id -- so a mismatched pair could open a second obligation for an invoice that
+    // already has one, and pay it again. It costs one hash to refuse.
+    const derived = obligationId(input.namespace, input.requestId);
+    if (derived !== input.obligationId) {
+      store.audit(input.obligationId, "system", "REFUSED", {
+        code: "OBLIGATION_ID_MISMATCH",
+        derived,
+        supplied: input.obligationId,
+      });
+      return out({
+        state: "IMPORTED",
+        refusal: "OBLIGATION_ID_MISMATCH",
+        detail:
+          `the obligation id does not derive from this namespace and request id: expected ${derived}. ` +
+          `One invoice is one obligation, and the id is a function of the invoice, never an argument.`,
+        providerWriteIssued: false,
+      });
+    }
+
     if (holder && holder.obligationId !== input.obligationId) {
       store.audit(input.obligationId, "system", "REFUSED", {
         code: "REFERENCE_ALREADY_CLAIMED",
@@ -617,59 +640,51 @@ async function settleOrRefuse(deps: SettleDeps, input: SettleInput): Promise<Set
     // provider's `retryable` flag cannot separate the two — rate_limited and timeout are both
     // retryable:true — so it is not the discriminator.
     //
-    // Durable local state is. PREFLIGHT_UNAVAILABLE is entered only when no attempt on this
-    // obligation has ever been stamped `first_send_at`, which is the same question as "has
-    // anything ever been handed to the provider under this obligation". If something has, the
-    // uncertainty is about a payment and the reservation must stay held; if nothing has, the
-    // debt is simply unattempted and re-proposing is both safe and correct.
-    const everSent = store.sentAttemptFor(input.obligationId);
-    if (retryable && !everSent) {
-      // The state moves BEFORE the release, not after. Releasing first was the bug: the
-      // obligation was still PAYMENT_PREFLIGHT, which is not replannable, so releaseObligation
-      // answered { released: false } and the return value was discarded. The reservation stuck
-      // to a plan that never ran, and a corrected plan was refused OBLIGATION_RESERVED forever.
-      store.setState(input.obligationId, "PREFLIGHT_UNAVAILABLE", input.now);
-      store.endPreflight(planHash);
-      const release = store.releaseObligation(input.obligationId, planHash);
-      store.audit(input.obligationId, "system", "PREFLIGHT_UNAVAILABLE", {
+    // Durable local state was supposed to be the discriminator: PREFLIGHT_UNAVAILABLE only when
+    // no attempt on this obligation had ever been stamped `first_send_at`. That test is vacuous
+    // HERE. `openAttempt` does not run until after the simulate returns, so on a first proposal
+    // there is no attempt row to inspect and `sentAttemptFor` is structurally null every time.
+    // The condition collapsed to `retryable` -- the flag the comment above correctly says is not
+    // the discriminator -- so a timed-out dry run that had in fact executed was answered with
+    // "nothing has ever been dispatched for this obligation, so no payment is in doubt", the
+    // OBSERVE_PREFLIGHT job committed to ask exactly that question was cancelled, the reservation
+    // was handed back, and the next proposal paid the invoice a second time. Measured, by the
+    // red-team pass that found it: two physical sends for one obligation.
+    //
+    // Nothing reachable from here can separate a busy platform from a dry run that executed and
+    // lost its reply. The chain can, and the job to go and look is already committed and already
+    // pending. So a retryable failure no longer decides anything: the reservation stays held,
+    // OBSERVE_PREFLIGHT stays queued, and the caller is told what is and is not known. The
+    // observer (`npm run resolve`, or the MCP resolve_pending tool) reads the chain and either
+    // finds the leaked execution -- EVIDENCE_CONFLICT, which a human looks at -- or establishes
+    // across the whole window that nothing carrying this reference paid this invoice, and only
+    // then releases to PREFLIGHT_UNAVAILABLE. A truncated scan stays unresolved, because "I could
+    // not tell" must never become "go ahead".
+    //
+    // The cost is a resolver pass before a rate-limited proposal can be proposed again. That is
+    // the price of not guessing, and it is not the payer who should be charged it.
+    if (retryable) {
+      store.audit(input.obligationId, "system", "PREFLIGHT_OUTCOME_UNKNOWN", {
         code,
-        released: release.released,
-        reason: release.reason ?? null,
-      });
-      return out({
-        state: "PREFLIGHT_UNAVAILABLE",
-        refusal: "PREFLIGHT_UNAVAILABLE",
-        detail:
-          `preflight unavailable: ${code}. The platform was busy and nothing has ever been ` +
-          `dispatched for this obligation, so no payment is in doubt. ` +
-          (release.released
-            ? "The reservation has been released; propose again when the platform recovers."
-            : `The reservation could not be released (${release.reason ?? "unknown"}); propose the same plan again.`),
-        providerWriteIssued: false,
-        planHash,
-      });
-    }
-
-    // Either a definite rejection, or retryable with a send already on the record. Both keep
-    // the reservation: the first because the plan is wrong, the second because a payment may
-    // be in flight and handing the claim back is how a second one gets authorised.
-    if (retryable && everSent) {
-      store.audit(input.obligationId, "system", "PREFLIGHT_RESERVATION_HELD", {
-        code,
-        reason: "an attempt on this obligation has already been dispatched",
+        reason: "the simulate did not answer; whether it executed is a question for the chain",
       });
       return out({
         state: "PAYMENT_PREFLIGHT",
-        refusal: code,
+        refusal: "EXECUTION_OUTCOME_UNKNOWN",
         detail:
-          `preflight unavailable: ${code}, and this obligation already has a dispatched attempt ` +
-          `(first sent at ${everSent.firstSendAt}). The reservation is held deliberately — ` +
-          `poll its status and let reconciliation finish it. No new payment was submitted.`,
+          `preflight did not answer: ${code}. Whether that dry run executed is not known here, and ` +
+          `a dry run that times out can still have moved money. The reservation is held and an ` +
+          `observation is already queued: run the resolver (npm run resolve, or the MCP ` +
+          `resolve_pending tool) to settle the question from the chain. Do not propose this ` +
+          `obligation again until it has.`,
         providerWriteIssued: false,
         planHash,
       });
     }
 
+    // A definite rejection. The provider refused the plan rather than failing to answer about
+    // it, so nothing executed and the debt is unattempted: end the observation, hand the
+    // reservation back, and let a corrected plan be proposed.
     store.setState(input.obligationId, "SIMULATION_BLOCKED", input.now);
     store.endPreflight(planHash);
     const release = store.releaseObligation(input.obligationId, planHash);

@@ -57,7 +57,7 @@ read back from the file that reports them. Artifact:
 [`docs/evidence/mcp-settlements.json`](docs/evidence/mcp-settlements.json).
 
 - **Console:** <https://reqkeeper.vercel.app> · **Agent surface:** <https://reqkeeper.vercel.app/api/mcp>
-- **Demo video:** a release asset, not committed — see [Releases](https://github.com/vaibhav4046/reqkeeper/releases)
+- **Demo video:** 95 seconds, no narration, every figure in it read from `docs/evidence/` at render time — [v1.0.0 release asset](https://github.com/vaibhav4046/reqkeeper/releases/tag/v1.0.0) (not committed; six cuts of it were 72 MB of this repository)
 - **Every claim, with its evidence:** [`docs/TRUTH.md`](docs/TRUTH.md) (generated, never typed)
 - **Every open finding:** [`hackathon/audit/STATUS.md`](hackathon/audit/STATUS.md)
 
@@ -77,8 +77,9 @@ Tamper with a summary and leave its rows alone, and this exits 1.
 
 Last run: **21 ok · 0 failed · 0 blocked**, including — checked against the chain with no credentials — a
 successful receipt for `0xb90a0771…` at block 11,665,983, the ERC20FeeProxy event inside that
-receipt's own logs, Request's own detection finding the payment by its reference, and **41/41**
-recorded payment references re-deriving from `keccak256(requestId + salt + paymentAddress)`.
+receipt's own logs, that same payment found again by its reference through the event query
+Request's own detection uses, and **46 of 46** recorded payment references re-deriving from
+`keccak256(requestId + salt + paymentAddress)`.
 
 ## Run everything else
 
@@ -134,8 +135,10 @@ proceed on the agent's word.
 No, and the reason is specific.
 
 Request solves **attribution**: the payment reference ties an on-chain `TransferWithReferenceAndFee`
-event to an invoice, and the API reports `hasBeenPaid` by summing events carrying it. It does not
-solve **submission control**. `ERC20FeeProxy.transferFromWithReferenceAndFee` is a stateless
+event to an invoice, and the balance is computed from the matching events, net of refunds. That
+matching is not loose — `ERC20ProxyInfoRetriever` keeps only logs whose token and `to` also match
+the request, and the TheGraph retriever filters on the proxy contract as well, so the reference
+alone is not what Request trusts either. What Request does not solve is **submission control**. `ERC20FeeProxy.transferFromWithReferenceAndFee` is a stateless
 forwarder with no uniqueness on the reference; `GET /v2/request/{id}/pay` returns calldata with no
 nonce and no idempotency. A payer that retries after a timeout emits a second event, and the
 invoice reads as overpaid.

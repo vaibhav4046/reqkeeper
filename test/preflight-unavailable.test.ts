@@ -26,6 +26,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import { encodeCall } from "../src/abi.ts";
+import type { PaymentSighting } from "../src/chain.ts";
 import { obligationId } from "../src/identity.ts";
 import { PRE_DISPATCH_REFUSALS, REPLANNABLE, TERMINAL, canReplan, canTransition } from "../src/machine.ts";
 import { toBaseUnits } from "../src/money.ts";
@@ -33,6 +34,7 @@ import { NAMESPACE, PAY_SIGNATURE } from "../src/plan.ts";
 import { FixtureProvider, ProviderError, type ExecuteResult, type Receipt, type SimulateResult } from "../src/provider.ts";
 import { settleObligation } from "../src/settle.ts";
 import { Store } from "../src/store.ts";
+import { drainUntilQuiet } from "../src/worker.ts";
 import type { Policy, SourceFacts } from "../src/policy.ts";
 
 const FAU = "0x370DE27fdb7D1Ff1e1BaA7D11c5820a324Cf623C";
@@ -99,52 +101,114 @@ class HardRefusalProvider extends FixtureProvider {
   }
 }
 
+/** The #1959 hazard in its dangerous shape: the dry run executes, and then the reply is lost. */
+class LeakyTimeoutProvider extends FixtureProvider {
+  override async simulate(): Promise<SimulateResult> {
+    this.sendCounts.set("leaked-simulate", (this.sendCounts.get("leaked-simulate") ?? 0) + 1);
+    throw new ProviderError("timeout", "no response from provider", true);
+  }
+}
+
+const unpaid: PaymentSighting = { found: false, corroborated: true, scannedBlocks: 450_000 };
+const paid: PaymentSighting = {
+  found: true,
+  txHash: `0x${"ab".repeat(32)}`,
+  amount: toBaseUnits("50", 18).toString(),
+  to: PAYEE,
+  tokenAddress: FAU,
+  corroborated: true,
+  scannedBlocks: 450_000,
+};
+
+/** The observer the money paths defer to: it reads the chain, and only it may conclude. */
+function drain(store: Store, sighting: PaymentSighting) {
+  return drainUntilQuiet(
+    {
+      store,
+      provider: { receipt: async () => null as unknown as Receipt },
+      sourceSaysPaid: async () => true,
+      sightPayment: async () => sighting,
+    },
+    { now: 1_000_000, maxPasses: 3, lookaheadMs: 120_000 },
+  );
+}
+
 describe("a retryable preflight failure, with nothing ever dispatched", () => {
-  test("lands in PREFLIGHT_UNAVAILABLE at zero sends, and says so", async () => {
+  test("holds the reservation and refuses to conclude, at zero sends", async () => {
     const store = new Store();
     const provider = new FixtureProvider("RATE_LIMITED");
     const requestId = "01req-429";
 
     const first = await propose(store, provider, requestId, "50", 1_000);
 
-    assert.equal(first.state, "PREFLIGHT_UNAVAILABLE");
-    assert.equal(first.refusal, "PREFLIGHT_UNAVAILABLE");
+    // Not PREFLIGHT_UNAVAILABLE. That state is replannable, and entering it asserts that nothing
+    // executed -- which nothing reachable from here is in a position to know.
+    assert.equal(first.state, "PAYMENT_PREFLIGHT");
+    assert.equal(first.refusal, "EXECUTION_OUTCOME_UNKNOWN");
     assert.equal(first.providerWriteIssued, false);
     assert.equal(provider.totalSends(), 0, "a rate limit must never move money");
-    assert.match(first.detail ?? "", /nothing has ever been/i);
+    assert.match(first.detail ?? "", /not known here/i);
+
+    // The observation committed alongside PAYMENT_PREFLIGHT is still queued: the question was
+    // handed to the thing that can answer it, not cancelled.
+    assert.ok(store.pendingJobKinds().includes("OBSERVE_PREFLIGHT"));
     store.close();
   });
 
-  test("the reservation comes back, so a CORRECTED plan is not refused forever", async () => {
-    // This is the F-6 half. The old code left the reservation attached to the plan that never
-    // ran, so changing anything about the plan was answered OBLIGATION_RESERVED for good.
+  test("a second proposal before the observer has looked sends nothing", async () => {
+    // The duplicate-payment path, as a test. The old code released the reservation here on the
+    // strength of `retryable` alone, and the next proposal paid the invoice a second time.
     const store = new Store();
     const provider = new FixtureProvider("RATE_LIMITED");
-    const requestId = "01req-429-corrected";
-
-    const first = await propose(store, provider, requestId, "50", 1_000);
-    assert.equal(first.state, "PREFLIGHT_UNAVAILABLE");
-
-    provider.setFault("NONE");
-    const corrected = await propose(store, provider, requestId, "40", 2_000);
-
-    assert.notEqual(corrected.refusal, "OBLIGATION_RESERVED");
-    assert.notEqual(corrected.refusal, "ALREADY_DISPATCHED");
-    assert.equal(corrected.state, "SETTLED");
-    assert.equal(provider.totalSends(), 1, "the corrected plan pays once, and only once");
-    store.close();
-  });
-
-  test("proposing the SAME plan again once the platform recovers settles it", async () => {
-    const store = new Store();
-    const provider = new FixtureProvider("RATE_LIMITED");
-    const requestId = "01req-429-same";
+    const requestId = "01req-429-second";
 
     await propose(store, provider, requestId, "50", 1_000);
     provider.setFault("NONE");
     const second = await propose(store, provider, requestId, "50", 2_000);
 
-    assert.equal(second.state, "SETTLED");
+    assert.notEqual(second.state, "SETTLED");
+    assert.equal(provider.totalSends(), 0, "the platform recovering is not evidence about the dry run");
+    store.close();
+  });
+
+  test("once the observer establishes nothing paid, the debt is payable again and pays once", async () => {
+    const store = new Store();
+    const provider = new FixtureProvider("RATE_LIMITED");
+    const requestId = "01req-429-resolved";
+
+    await propose(store, provider, requestId, "50", 1_000);
+    await drain(store, unpaid);
+
+    // Only now, and only because the chain was read across the whole window.
+    assert.equal(store.getObligation(obligationId(NAMESPACE, requestId))?.state, "PREFLIGHT_UNAVAILABLE");
+
+    provider.setFault("NONE");
+    const corrected = await propose(store, provider, requestId, "40", 2_000);
+    assert.notEqual(corrected.refusal, "OBLIGATION_RESERVED");
+    assert.equal(corrected.state, "SETTLED");
+    assert.equal(provider.totalSends(), 1, "the corrected plan pays once, and only once");
+    store.close();
+  });
+
+  test("a dry run that executed is found by the observer, and never pays twice", async () => {
+    // #1959 in its dangerous shape: the execution happens and the reply is lost, so the provider
+    // reports exactly what a harmless rate limit reports.
+    const store = new Store();
+    const provider = new LeakyTimeoutProvider();
+    const requestId = "01req-leaked-simulate";
+
+    const first = await propose(store, provider, requestId, "50", 1_000);
+    assert.equal(first.refusal, "EXECUTION_OUTCOME_UNKNOWN");
+    assert.equal(provider.totalSends(), 1, "the dry run moved money; that is the premise");
+
+    // A caller that takes "the platform was busy" at face value and proposes again.
+    const second = await propose(store, provider, requestId, "50", 2_000);
+    assert.notEqual(second.state, "SETTLED");
+    assert.equal(provider.totalSends(), 1, "TWO SENDS HERE IS THE DUPLICATE PAYMENT");
+
+    // The observer looks, finds the leaked execution, and hands it to a human.
+    await drain(store, paid);
+    assert.equal(store.getObligation(obligationId(NAMESPACE, requestId))?.state, "EVIDENCE_CONFLICT");
     assert.equal(provider.totalSends(), 1);
     store.close();
   });
