@@ -15,6 +15,7 @@
     "crash": "node --experimental-strip-types scripts/crash.ts",
     "verify:all": "node --experimental-strip-types scripts/verify-all.ts",
     "mcp:e2e": "node --experimental-strip-types scripts/mcp-e2e.ts",
+    "evidence:mcp": "node --experimental-strip-types scripts/evidence-mcp.ts",
     "harness": "node --experimental-strip-types scripts/harness.ts",
     "verify:onchain": "node --experimental-strip-types scripts/verify-onchain.ts",
     "verify:seam": "node --experimental-strip-types scripts/verify-seam.ts",

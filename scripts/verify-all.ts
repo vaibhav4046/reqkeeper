@@ -141,6 +141,55 @@ if (!liveRace) {
   }
 }
 
+// ---- 1c. the second KeeperHub surface --------------------------------------
+
+interface McpRow {
+  transport?: string;
+  keeperhubExecutionId?: string;
+  txHash?: string;
+  paymentReference?: string;
+  finalState?: string;
+  physicalSends?: number;
+}
+const mcp = readJson<{ rows?: McpRow[] }>("docs/evidence/mcp-settlements.json");
+if (!mcp?.rows?.length) {
+  record("keeperhub.mcp", "value moved through KeeperHub's MCP surface too", "BLOCKED", "docs/evidence/mcp-settlements.json is absent");
+} else {
+  const rows = mcp.rows;
+  const viaMcp = rows.filter((r) => r.transport === "mcp");
+  const withExecId = viaMcp.filter((r) => r.keeperhubExecutionId);
+  const settledOnce = viaMcp.filter((r) => r.finalState === "SETTLED" && r.physicalSends === 1);
+  record(
+    "keeperhub.mcp",
+    "value moved through KeeperHub's MCP surface, not only REST",
+    viaMcp.length >= 3 && settledOnce.length === viaMcp.length ? "ok" : "FAIL",
+    `${viaMcp.length} settlement(s) via mcp, ${settledOnce.length} settled at one send each`,
+  );
+  record(
+    "keeperhub.mcp.execution-ids",
+    "each carries the KeeperHub execution id that produced it",
+    withExecId.length === viaMcp.length ? "ok" : "FAIL",
+    withExecId.map((r) => r.keeperhubExecutionId).join(", ") || "none",
+  );
+
+  // Counted from the chain, not from the artifact: one fee-proxy event per reference.
+  for (const r of viaMcp) {
+    if (!r.paymentReference || !r.txHash) continue;
+    try {
+      const seen = await findPaymentByReference(r.paymentReference, { rpcUrl: RPC, lookbackBlocks: 60_000 });
+      const ok = seen.found && seen.txHash?.toLowerCase() === r.txHash.toLowerCase();
+      record(
+        `keeperhub.mcp.onchain.${r.paymentReference}`,
+        `the MCP settlement for ${r.paymentReference} is on chain`,
+        ok ? "ok" : "FAIL",
+        ok ? `${seen.txHash?.slice(0, 20)}…` : "the artifact's transaction is not what the chain shows",
+      );
+    } catch (e) {
+      record(`keeperhub.mcp.onchain.${r.paymentReference}`, "the MCP settlement is on chain", "BLOCKED", (e as Error).message.slice(0, 70));
+    }
+  }
+}
+
 // ---- 2. the crash matrix ---------------------------------------------------
 
 interface CrashArtifact {

@@ -2,8 +2,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import rnPkg from "@requestnetwork/request-client.js";
 const { RequestNetwork } = rnPkg;
+import { fileURLToPath } from "node:url";
 
-const ENV = "D:/project/reqkeeper/.env";
+const ENV = fileURLToPath(new URL("../../.env", import.meta.url));
 for (const l of existsSync(ENV) ? readFileSync(ENV, "utf8").split(/\r?\n/) : []) {
   const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*)$/.exec(l);
   if (m && !process.env[m[1]]) process.env[m[1]] = m[2].trim();

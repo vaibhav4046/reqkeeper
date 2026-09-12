@@ -11,7 +11,13 @@
  * it thinks the invoice is paid, this reads the ERC20FeeProxy event log off the chain and
  * matches the payment reference — the same evidence Request's own detection uses.
  *
+ * Both KeeperHub surfaces are the same settlement. `KEEPERHUB_TRANSPORT=mcp` dispatches
+ * through KeeperHub's own MCP server instead of its REST API; `settle()`, the policy, the
+ * calldata gate and the refusal table are untouched by the choice. Default is `rest`, so
+ * every existing caller behaves exactly as before.
+ *
  * Usage: node --experimental-strip-types scripts/settle-live.ts
+ *        KEEPERHUB_TRANSPORT=mcp node --experimental-strip-types scripts/settle-live.ts
  */
 
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
@@ -19,6 +25,8 @@ import { encodeCall } from "../src/abi.ts";
 import { obligationId } from "../src/identity.ts";
 import { keccak256Hex } from "../src/keccak.ts";
 import { KeeperHubProvider } from "../src/keeperhub.ts";
+import { KeeperHubMcpProvider } from "../src/keeperhub-mcp.ts";
+import type { ExecutionProvider } from "../src/provider.ts";
 import type { Policy, SourceFacts } from "../src/policy.ts";
 import { settleObligation } from "../src/settle.ts";
 import { Store } from "../src/store.ts";
@@ -121,11 +129,23 @@ const steps = [{ kind: "PAY", to: PROXY, data: calldata, value: "0" }];
 
 if (!existsSync(".data")) mkdirSync(".data");
 const store = new Store(".data/live.sqlite");
-const provider = new KeeperHubProvider({ apiKey: KH_KEY, chainId: SEPOLIA, rpcUrl: RPC });
+
+// An unrecognised value is refused rather than silently defaulted: "MCP", "grpc" or a typo
+// quietly falling back to REST would put the wrong transport in the evidence file.
+const TRANSPORT = (process.env.KEEPERHUB_TRANSPORT ?? "rest").toLowerCase();
+if (TRANSPORT !== "rest" && TRANSPORT !== "mcp") {
+  console.error(`\nKEEPERHUB_TRANSPORT must be "rest" or "mcp", got "${TRANSPORT}".\n`);
+  process.exit(2);
+}
+const provider: ExecutionProvider =
+  TRANSPORT === "mcp"
+    ? new KeeperHubMcpProvider({ apiKey: KH_KEY, chainId: SEPOLIA, rpcUrl: RPC })
+    : new KeeperHubProvider({ apiKey: KH_KEY, chainId: SEPOLIA, rpcUrl: RPC });
 
 const startBlock = Number(BigInt((await rpc("eth_blockNumber", [])) as string)) - 200;
 
 console.log("\nLive settlement — one Request obligation, through the real protocol\n");
+console.log(`transport        : KeeperHub ${TRANSPORT.toUpperCase()}`);
 console.log(`requestId        : ${REQUEST_ID}`);
 console.log(`paymentReference : ${REFERENCE}`);
 console.log(`payee            : ${PAYEE}`);
@@ -183,11 +203,30 @@ console.log(`providerWrite    : ${outcome.providerWriteIssued}`);
 console.log(`txHash           : ${outcome.txHash ?? "(none)"}`);
 if (outcome.restatement) console.log(`\napproval said    : ${outcome.restatement}`);
 
+// The provider's own identifier for what it did, read back out of the durable record rather
+// than off the response — the attempt row is what survives a crash, and it is the field the
+// console's proof strip has been showing a dash for.
+const attempt = store.sentAttemptFor(oid);
+console.log(`executionId      : ${attempt?.executionId ?? "(none)"}`);
+if (attempt?.executionId) {
+  try {
+    const observed = await provider.observe(attempt.executionId);
+    console.log(`observe          : status=${observed.status} tx=${observed.transactionHash ?? "(none)"}`);
+  } catch (e) {
+    // A read that failed is worth saying out loud, and is not a reason to call the settlement
+    // into question — the chain read below is the evidence, not this.
+    console.log(`observe          : unavailable (${String(e).slice(0, 120)})`);
+  }
+}
+
 // ---- independent confirmation --------------------------------------------
 
 if (outcome.txHash) {
   const receipt = await provider.receipt(outcome.txHash);
-  console.log(`\nchain receipt    : ${receipt.receiptStatus}, verified=${receipt.verified}, gasUsed=${receipt.gasUsed}`);
+  console.log(
+    `\nchain receipt    : ${receipt.receiptStatus}, verified=${receipt.verified}, gasUsed=${receipt.gasUsed}, ` +
+      `block=${receipt.blockNumber ?? "?"}, confirmations=${receipt.confirmations ?? "?"}`,
+  );
   console.log(`etherscan        : https://sepolia.etherscan.io/tx/${outcome.txHash}`);
 }
 

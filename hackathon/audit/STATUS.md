@@ -138,7 +138,7 @@ Nothing here is a duplicate-payment path. Each was checked for that specifically
    however it was imported, and narrowing the index would reopen the double-pay door it was
    added to shut. It becomes wrong the day `namespace` becomes a caller-supplied argument.
 
-8. **The recorded live artifact carries no KeeperHub execution id.** `docs/refusals-live.json`
+8. **CLOSED for the MCP rows, still open for the REST ones.** `docs/evidence/mcp-settlements.json` carries a `keeperhubExecutionId` on all three of its rows. The original finding stands for `docs/refusals-live.json`: `docs/refusals-live.json`
    has `tx_hash` and `payment_reference` on all 38 settled rows but no `keeperhub_execution_id`,
    which `CLAUDE.md` specifies for LIVE rows. The console's proof strip therefore shows `—` at
    the KeeperHub step and says why, rather than borrowing the fixture race's id. Closing it means

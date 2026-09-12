@@ -11,6 +11,7 @@
  */
 import { randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import rnPkg from "@requestnetwork/request-client.js";
 import epkPkg from "@requestnetwork/epk-signature";
 import detectionPkg from "@requestnetwork/payment-detection";
@@ -20,8 +21,11 @@ const { RequestNetwork, Types, Utils } = rnPkg;
 const { EthereumPrivateKeySignatureProvider } = epkPkg;
 const { Wallet } = ethersPkg;
 
-const ENV = "D:/project/reqkeeper/.env";
-const OUT = "D:/project/reqkeeper/docs/live-invoices.json";
+// Resolved from this file, not from the shell's cwd and not from one machine's drive letter.
+const ROOT = new URL("../../", import.meta.url);
+const ENV = fileURLToPath(new URL(".env", ROOT));
+const DOCS = fileURLToPath(new URL("docs/", ROOT));
+const OUT = fileURLToPath(new URL("docs/live-invoices.json", ROOT));
 const FAU = "0x370DE27fdb7D1Ff1e1BaA7D11c5820a324Cf623C";
 const KEEPERHUB_PAYER = "0x027D54A692e0e80173141777BdB847c1726FA1F3";
 const AMOUNT = "1000000000000000000"; // 1 FAU each
@@ -109,7 +113,7 @@ async function createOne(index) {
 }
 
 function persist() {
-  if (!existsSync("D:/project/reqkeeper/docs")) mkdirSync("D:/project/reqkeeper/docs");
+  if (!existsSync(DOCS)) mkdirSync(DOCS);
   writeFileSync(
     OUT,
     `${JSON.stringify({ createdAt: new Date().toISOString(), payee: burner.address, invoices }, null, 2)}\n`,

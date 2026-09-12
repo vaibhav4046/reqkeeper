@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-09-12T20:17:05.738Z",
+  "generatedAt": "2026-09-12T20:42:44.492Z",
   "chainId": 11155111,
   "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
   "credentialsUsed": "none",
   "totals": {
-    "checks": 16,
-    "ok": 16,
+    "checks": 21,
+    "ok": 21,
     "failed": 0,
     "blocked": 0
   },
@@ -18,7 +18,7 @@
     },
     {
       "id": "race.exactly-once",
-      "claim": "10 concurrent workers, one payment",
+      "claim": "50 concurrent workers, one payment",
       "status": "ok",
       "detail": "1 broadcast, 1 distinct transaction(s)"
     },
@@ -51,6 +51,36 @@
       "claim": "that live payment is on chain, exactly once",
       "status": "ok",
       "detail": "0x41b01a14cbdb8dd65c… amount 1000000000000000000"
+    },
+    {
+      "id": "keeperhub.mcp",
+      "claim": "value moved through KeeperHub's MCP surface, not only REST",
+      "status": "ok",
+      "detail": "3 settlement(s) via mcp, 3 settled at one send each"
+    },
+    {
+      "id": "keeperhub.mcp.execution-ids",
+      "claim": "each carries the KeeperHub execution id that produced it",
+      "status": "ok",
+      "detail": "a8h3pjg9wymv0b84xllla, wft98bw4s4jzm02ucr21b, 1i5q3nmtdwx5wnw8paami"
+    },
+    {
+      "id": "keeperhub.mcp.onchain.0x7a3496f145f70a31",
+      "claim": "the MCP settlement for 0x7a3496f145f70a31 is on chain",
+      "status": "ok",
+      "detail": "0xe02fd64ced29c8e147…"
+    },
+    {
+      "id": "keeperhub.mcp.onchain.0xd510cbe43703a7f2",
+      "claim": "the MCP settlement for 0xd510cbe43703a7f2 is on chain",
+      "status": "ok",
+      "detail": "0xfe4b0168d7add3aeea…"
+    },
+    {
+      "id": "keeperhub.mcp.onchain.0x461f0e0890226cce",
+      "claim": "the MCP settlement for 0x461f0e0890226cce is on chain",
+      "status": "ok",
+      "detail": "0xf206bbaa9e25309b4c…"
     },
     {
       "id": "crash.no-duplicates",
@@ -86,7 +116,7 @@
       "id": "request.derivation",
       "claim": "every recorded payment reference re-derives from its invoice",
       "status": "ok",
-      "detail": "41/41 reproduce from keccak256(requestId + salt + paymentAddress)"
+      "detail": "46/46 reproduce from keccak256(requestId + salt + paymentAddress)"
     },
     {
       "id": "chain.receipt",

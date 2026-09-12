@@ -39,6 +39,23 @@ fixture can measure and a live run cannot (`postsReachingTheProvider`, `dedupedB
 recorded as `-1` rather than `0`, because `0` would read as the strongest claim on the page and
 this run cannot make it.
 
+### Both KeeperHub surfaces, both with money behind them
+
+38 settlements through the REST direct-execution API, and **3 through KeeperHub's own MCP
+server** — `execute_contract_call` with `simulate: true` first, then with `idempotency_key`, and
+`get_direct_execution_status` polled for the result. Each MCP row carries the KeeperHub execution
+id that produced it:
+
+| execution id | transaction | block |
+|---|---|---|
+| `a8h3pjg9wymv0b84xllla` | [`0xe02fd64c…`](https://sepolia.etherscan.io/tx/0xe02fd64ced29c8e147817077c66eeac6b71b23a629dac6a3f33d73fcd8959119) | 11,691,257 |
+| `wft98bw4s4jzm02ucr21b` | [`0xfe4b0168…`](https://sepolia.etherscan.io/tx/0xfe4b0168d7add3aeeae73a421f0821fa6aab789756960da11f1aeab015a7a0b9) | 11,691,260 |
+| `1i5q3nmtdwx5wnw8paami` | [`0xf206bbaa…`](https://sepolia.etherscan.io/tx/0xf206bbaa9e25309b4c12643dda998b360014136f4a9bc911bc92d70a769bc940) | 11,691,264 |
+
+Exactly one fee-proxy event per reference, verified from the chain by `npm run verify:all`, not
+read back from the file that reports them. Artifact:
+[`docs/evidence/mcp-settlements.json`](docs/evidence/mcp-settlements.json).
+
 - **Console:** <https://reqkeeper.vercel.app> · **Agent surface:** <https://reqkeeper.vercel.app/api/mcp>
 - **Demo video:** a release asset, not committed — see [Releases](https://github.com/vaibhav4046/reqkeeper/releases)
 - **Every claim, with its evidence:** [`docs/TRUTH.md`](docs/TRUTH.md) (generated, never typed)
@@ -58,7 +75,7 @@ Totals are **recomputed from rows**, never read from a summary field: an artifac
 `duplicates: 0` in its own header proves nothing, because that is the number a bug gets wrong.
 Tamper with a summary and leave its rows alone, and this exits 1.
 
-Last run: **14 ok · 0 failed · 0 blocked**, including — checked against the chain with no credentials — a
+Last run: **21 ok · 0 failed · 0 blocked**, including — checked against the chain with no credentials — a
 successful receipt for `0xb90a0771…` at block 11,665,983, the ERC20FeeProxy event inside that
 receipt's own logs, Request's own detection finding the payment by its reference, and **41/41**
 recorded payment references re-deriving from `keccak256(requestId + salt + paymentAddress)`.

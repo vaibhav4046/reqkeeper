@@ -1,0 +1,72 @@
+{
+  "generatedAt": "2026-09-12T20:36:28.478Z",
+  "mode": "LIVE",
+  "chainId": 11155111,
+  "transport": "mcp",
+  "note": "Settled through KeeperHub's MCP server (src/keeperhub-mcp.ts) rather than its REST API, by running scripts/settle-live.ts with KEEPERHUB_TRANSPORT=mcp. settle(), the policy and the calldata gate are the same modules the REST rows used; only the transport differs. Each row's payment reference is derived from the invoice Request itself serves, and each was confirmed by counting ERC20FeeProxy events for that reference from the invoice's own anchor block — one event, one send, one transaction.",
+  "totals": {
+    "rows": 3,
+    "settled": 3,
+    "physicalSends": 3,
+    "withExecutionId": 3
+  },
+  "rows": [
+    {
+      "requestId": "01b7cd715cfe60ac07f637ed0eb62bf5d1c00c56e3599b8ce6b0a962e8b7f49914",
+      "paymentReference": "0x7a3496f145f70a31",
+      "transport": "mcp",
+      "keeperhubExecutionId": "a8h3pjg9wymv0b84xllla",
+      "txHash": "0xe02fd64ced29c8e147817077c66eeac6b71b23a629dac6a3f33d73fcd8959119",
+      "block": 11691257,
+      "explorer": "https://sepolia.etherscan.io/tx/0xe02fd64ced29c8e147817077c66eeac6b71b23a629dac6a3f33d73fcd8959119",
+      "amountBaseUnits": "1000000000000000000",
+      "token": "0x370DE27fdb7D1Ff1e1BaA7D11c5820a324Cf623C",
+      "payee": "0xc43d766CB7c48B9B198db87441b97c09e81717A1",
+      "finalState": "SETTLED",
+      "physicalSends": 1,
+      "feeProxyEventsForReference": 1,
+      "receiptStatus": "success",
+      "corroborated": true,
+      "invoiceAnchorBlock": 11691240,
+      "mode": "LIVE"
+    },
+    {
+      "requestId": "0100050749a02764daf24490bf744e96e0c18dd84ac11d9ba406864b998677ab56",
+      "paymentReference": "0xd510cbe43703a7f2",
+      "transport": "mcp",
+      "keeperhubExecutionId": "wft98bw4s4jzm02ucr21b",
+      "txHash": "0xfe4b0168d7add3aeeae73a421f0821fa6aab789756960da11f1aeab015a7a0b9",
+      "block": 11691260,
+      "explorer": "https://sepolia.etherscan.io/tx/0xfe4b0168d7add3aeeae73a421f0821fa6aab789756960da11f1aeab015a7a0b9",
+      "amountBaseUnits": "1000000000000000000",
+      "token": "0x370DE27fdb7D1Ff1e1BaA7D11c5820a324Cf623C",
+      "payee": "0xc43d766CB7c48B9B198db87441b97c09e81717A1",
+      "finalState": "SETTLED",
+      "physicalSends": 1,
+      "feeProxyEventsForReference": 1,
+      "receiptStatus": "success",
+      "corroborated": true,
+      "invoiceAnchorBlock": 11691240,
+      "mode": "LIVE"
+    },
+    {
+      "requestId": "01bacd26d41e94e7fbd5e22aaa70e888c408fd491281b2cfa2a54278f819c37004",
+      "paymentReference": "0x461f0e0890226cce",
+      "transport": "mcp",
+      "keeperhubExecutionId": "1i5q3nmtdwx5wnw8paami",
+      "txHash": "0xf206bbaa9e25309b4c12643dda998b360014136f4a9bc911bc92d70a769bc940",
+      "block": 11691264,
+      "explorer": "https://sepolia.etherscan.io/tx/0xf206bbaa9e25309b4c12643dda998b360014136f4a9bc911bc92d70a769bc940",
+      "amountBaseUnits": "1000000000000000000",
+      "token": "0x370DE27fdb7D1Ff1e1BaA7D11c5820a324Cf623C",
+      "payee": "0xc43d766CB7c48B9B198db87441b97c09e81717A1",
+      "finalState": "SETTLED",
+      "physicalSends": 1,
+      "feeProxyEventsForReference": 1,
+      "receiptStatus": "success",
+      "corroborated": true,
+      "invoiceAnchorBlock": 11691240,
+      "mode": "LIVE"
+    }
+  ]
+}
