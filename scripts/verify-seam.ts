@@ -113,7 +113,24 @@ console.log("");
 // ---- C. the gate refuses smuggled calldata -------------------------------
 
 console.log("C. does the dispatch gate refuse calldata it cannot reproduce?");
-const provider = new KeeperHubProvider({ apiKey: KH_KEY || "kh_offline", chainId: SEPOLIA, rpcUrl: RPC });
+/**
+ * Pointed at nowhere, on purpose.
+ *
+ * Section C proves the gate refuses smuggled calldata by handing it to `provider.execute`.
+ * That is the right integration claim — the gate lives inside the provider, not beside it —
+ * but against the real base URL it is testing a parachute by jumping: if the gate ever failed
+ * to throw, the very next thing that happens is a real payment, broadcast under a hardcoded
+ * idempotency key. Port 1 on loopback refuses connections, so a gate failure surfaces as a
+ * loud FAIL with nothing sent. The gate runs identically either way: it throws before any
+ * transport is touched.
+ */
+const UNROUTABLE = "http://127.0.0.1:1/api";
+const provider = new KeeperHubProvider({
+  apiKey: KH_KEY || "kh_offline",
+  chainId: SEPOLIA,
+  rpcUrl: RPC,
+  baseUrl: UNROUTABLE,
+});
 
 const tampered: Array<[string, string]> = [
   ["trailing bytes appended", `${APPROVED_CALLDATA}deadbeef`],
@@ -137,9 +154,20 @@ for (const [label, data] of tampered) {
 }
 
 // The canonical calldata must survive the gate and reach the chain.
-if (KH_KEY) {
+//
+// Opt-in, because this is the one check here that talks to the live platform, and
+// `src/provider.ts:12-15` records that a dry run on that route can be ignored and execute for
+// real (#1959). A command a judge is invited to run must not be able to spend, so this is
+// behind a flag and everything above it is offline.
+const LIVE_SIMULATE = process.argv.includes("--live-simulate");
+if (!LIVE_SIMULATE) {
+  console.log("\n  SKIPPED the live dry run - it calls the platform, and that route is");
+  console.log("          documented as possibly executing for real. Opt in with:");
+  console.log("            npm run verify:seam -- --live-simulate");
+} else if (KH_KEY) {
+  const live = new KeeperHubProvider({ apiKey: KH_KEY, chainId: SEPOLIA, rpcUrl: RPC });
   try {
-    const sim = await provider.simulate({ to: PROXY, data: APPROVED_CALLDATA, value: "0" });
+    const sim = await live.simulate({ to: PROXY, data: APPROVED_CALLDATA, value: "0" });
     if (sim.transactionHash) {
       bad("canonical calldata simulate", `dry run returned a hash: ${sim.transactionHash}`);
     } else {

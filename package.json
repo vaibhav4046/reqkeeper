@@ -22,7 +22,7 @@
     "build": "node tools/web/build.mjs && tsc -p tsconfig.api.json",
     "build:web": "node tools/web/build.mjs",
     "harness:live": "node --experimental-strip-types scripts/live-harness.ts",
-    "verify:mcp": "node --experimental-strip-types scripts/verify-mcp.ts",
+    "probe:mcp": "node --experimental-strip-types scripts/verify-mcp.ts",
     "invoices": "node tools/invoice/create-batch.mjs",
     "verify:live": "node --experimental-strip-types scripts/verify-live.ts",
     "resolve": "node --experimental-strip-types scripts/resolve.ts",

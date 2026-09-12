@@ -203,7 +203,8 @@ npm test                  # 239 unit tests
 npm run harness           # 26 cases, 24 of them refusals -> docs/refusals.json
 npm run verify:onchain    # reads Sepolia via public RPC, no credentials
 npm run verify:seam       # proves the calldata gate against the live API (needs the KeeperHub key)
-npm run verify:mcp        # the same, through KeeperHub's own MCP server
+npm run probe:mcp         # the same, through KeeperHub's own MCP server (read-only;
+                          # the live dry run is opt-in: -- --live-simulate)
 npm run harness:live      # the refusal table against real invoices -> docs/refusals-live.json
 npm run verify:live       # re-derives every live row from a public RPC, no credentials
 npm run settle:live       # settles one real Request obligation; run twice to see the refusal
@@ -366,8 +367,8 @@ guard whose safety depends on its transport is not a duplicate guard.
 | Surface | Provider | Verified by |
 |---|---|---|
 | Direct execution REST (`/api/execute/contract-call`) | [`src/keeperhub.ts`](src/keeperhub.ts) | `npm run verify:seam` |
-| KeeperHub's own MCP server (`https://app.keeperhub.com/mcp`, 44 tools) | [`src/keeperhub-mcp.ts`](src/keeperhub-mcp.ts) | `npm run verify:mcp` |
-| Audit trail (`get_direct_execution_status` over MCP) | same | `npm run verify:mcp` |
+| KeeperHub's own MCP server (`https://app.keeperhub.com/mcp`, 44 tools) | [`src/keeperhub-mcp.ts`](src/keeperhub-mcp.ts) | `npm run probe:mcp` |
+| Audit trail (`get_direct_execution_status` over MCP) | same | `npm run probe:mcp` |
 
 The calldata gate is one module, [`src/calldata-gate.ts`](src/calldata-gate.ts), that both
 providers call — two copies of that rule would be a hole in the exact defence this project exists

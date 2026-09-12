@@ -1,11 +1,21 @@
 /**
- * Prove the MCP surface, not just claim it.
+ * Probe the MCP surface, not just claim it.
  *
  * Runs the same calldata through KeeperHub's own MCP server that `verify-seam.ts` runs
- * through the REST route, and reads the audit trail back. Every check needs only the
- * KeeperHub API key; nothing here signs or broadcasts.
+ * through the REST route, and reads the audit trail back.
  *
- * Usage: node --experimental-strip-types scripts/verify-mcp.ts
+ * This script used to be `npm run verify:mcp`, and that name was a lie by omission. Check 1
+ * calls `provider.simulate(...)`, which is `execute_contract_call` with `simulate: true`
+ * against the live platform with a real key and a real payee — and this repository's own
+ * hazard note (`src/provider.ts:12-15`) says that route can be ignored and execute for real
+ * (#1959). `src/settle.ts` carries a whole branch for a dry run that broadcast. So the
+ * dangerous check is opt-in behind `--live-simulate`, and the command is named for what it
+ * does. Nothing called `verify:*` in this repository can move money; that is the whole point
+ * of handing a judge the verify commands.
+ *
+ * Usage:
+ *   npm run probe:mcp                     read-only: the calldata gate and the audit read
+ *   npm run probe:mcp -- --live-simulate  also dry-runs a real payment through the platform
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -56,8 +66,17 @@ const approved = encodeCall(PAY_SIGNATURE, [
   `0x${"0".repeat(40)}`,
 ]);
 
+const LIVE_SIMULATE = process.argv.includes("--live-simulate");
+
 console.log("1. dispatching approved calldata through the MCP tool");
-try {
+if (!LIVE_SIMULATE) {
+  console.log("  SKIPPED - this check calls execute_contract_call against the live platform.");
+  console.log("           A dry run on that route is documented as possibly executing for");
+  console.log("           real (src/provider.ts:12-15, #1959), so it is not run by default");
+  console.log("           and it is not part of any verify:* command. Opt in with:");
+  console.log("             npm run probe:mcp -- --live-simulate");
+  console.log("           Checks 2 and 3 below move nothing and run either way.");
+} else try {
   const sim = await provider.simulate({ to: ERC20_FEE_PROXY, data: approved, value: "0" });
   if (sim.transactionHash) {
     bad("dry run", `returned a transaction hash: ${sim.transactionHash}`);
@@ -118,7 +137,7 @@ try {
 
 console.log(
   failures === 0
-    ? "\nMCP surface holds: handshake, execution tool, calldata gate, audit read.\n"
+    ? `\nMCP surface holds: ${LIVE_SIMULATE ? "handshake, execution tool, " : ""}calldata gate, audit read.${LIVE_SIMULATE ? "" : "\nThe live dry run was skipped; pass --live-simulate to include it."}\n`
     : `\n${failures} check(s) FAILED.\n`,
 );
 process.exit(failures === 0 ? 0 : 1);

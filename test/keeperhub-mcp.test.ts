@@ -4,7 +4,7 @@ import { KeeperHubMcpProvider } from "../src/keeperhub-mcp.ts";
 import { ProviderError } from "../src/provider.ts";
 
 // Every case refuses before any network call, so none of this reaches KeeperHub. The live
-// handshake and dry run are covered by `npm run verify:mcp` instead, because asserting a
+// handshake and dry run are covered by `npm run probe:mcp` instead, because asserting a
 // remote server's behaviour from a unit test only proves the mock.
 const provider = new KeeperHubMcpProvider({
   apiKey: "kh_test_key_not_real",
