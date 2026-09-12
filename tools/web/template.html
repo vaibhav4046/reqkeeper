@@ -1,5 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ReqKeeper Console</title>
+<meta property="og:title" content="ReqKeeper Console">
+<meta property="og:description" content="Recorded evidence for exactly-once settlement of Request Network obligations through KeeperHub on Sepolia.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Crect width='8' height='8' fill='%2305080A'/%3E%3Cpath fill='%2335F0A0' d='M2 1h4v1H2zM2 2h1v1H2zM5 2h1v1H5zM2 3h4v1H2zM2 4h1v1H2zM4 4h1v1H4zM2 5h1v1H2zM5 5h1v1H5z'/%3E%3C/svg%3E">
 <script id="reqkeeper-data" type="application/json">__DATA__</script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=JetBrains+Mono:wght@400;500;700&display=swap">
 <style>
@@ -107,13 +115,6 @@
   .stat .v { font-family: var(--pixel); font-size: 13px; margin-top: 7px; color: var(--text); }
   .stat .v.good { color: var(--signal); }
   .stat .v.warn { color: var(--amber); }
-  .live {
-    margin-left: auto; display: flex; align-items: center; gap: 7px;
-    padding: 11px 18px; color: var(--signal); font-size: 10px; letter-spacing: .1em; flex: none;
-  }
-  .live i { width: 6px; height: 6px; background: var(--signal); animation: pulse 1.6s steps(2,end) infinite; }
-  @keyframes pulse { 0%,50% { opacity: 1 } 51%,100% { opacity: .25 } }
-
   main { min-width: 0; }
   .view { padding: 20px 22px 40px; }
   .view[hidden] { display: none; }
@@ -136,9 +137,17 @@
   }
   .card > .body { padding: 13px; }
 
-  .kv { display: grid; grid-template-columns: max-content minmax(0,1fr); gap: 7px 14px; font-size: 12px; }
+  /* fit-content caps the label track instead of letting max-content take whatever a long label
+     wants: in a 240px card, "distinct transactions" starved the value column until "11155111
+     sepolia" wrapped mid-word. overflow-wrap: anywhere still breaks an unbreakable 66-character
+     hash, but plain word-break: break-all would chop at a character even when a space was
+     available, which is what made the short values unreadable. */
+  .kv { display: grid; grid-template-columns: fit-content(45%) minmax(0,1fr); gap: 7px 14px; font-size: 12px; }
   .kv dt { color: var(--faint); }
-  .kv dd { margin: 0; word-break: break-all; }
+  .kv dd { margin: 0; overflow-wrap: anywhere; }
+  /* The inspector host carries .kv, so its "select a row" placeholder has to span both columns
+     instead of being squeezed into the max-content label track. */
+  .kv > .empty { grid-column: 1 / -1; }
 
   /* --- bars -------------------------------------------------------------- */
   /* 83 bars have to fit whatever width the card gets, so no min-width and a hairline gap:
@@ -181,8 +190,11 @@
   .tag { font-size: 10px; padding: 2px 6px; border: 1px solid currentColor; }
   .tag.ok { color: var(--signal); }
   .tag.no { color: var(--amber); }
-  .tag.live { font-family: var(--pixel); font-size: 7px; color: var(--bg); background: var(--signal); border-color: var(--signal); padding: 3px 5px; }
-  .tag.fix { font-family: var(--pixel); font-size: 7px; color: var(--faint); border-color: var(--line-2); padding: 3px 5px; }
+  /* Provenance tags carry a claim a reader has to be able to read, so they are mono at a
+     legible size rather than 7px pixel type. RECORDED is violet, never the signal green the
+     rest of the console uses for "now" — a run from 2026-09-09 must not be dressed as live. */
+  .tag.rec { font-size: 11px; color: var(--violet); border-color: var(--violet); }
+  .tag.test { font-size: 11px; color: var(--faint); border-color: var(--line-2); }
   .zero { color: var(--signal); }
   .one { color: var(--amber); }
 
@@ -217,8 +229,14 @@
     aside { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center }
     nav { flex-direction: row; flex-wrap: wrap; padding: 8px }
     .rail-foot { display: none }
+    /* Two columns at phone width leaves the value track so narrow that break-all chops
+       words mid-syllable ("11155111 se / polia"). Stack label over value instead. */
+    .kv { grid-template-columns: minmax(0, 1fr); gap: 2px 0 }
+    .kv dd { margin-bottom: 7px }
   }
 </style>
+</head>
+<body>
 
 <div class="app">
   <aside>
@@ -249,7 +267,7 @@
       <div class="h"><h1>OVERVIEW</h1><span id="dash-sub"></span></div>
       <div class="grid g3">
         <div class="card">
-          <header>Sends per live row<span id="bars-n"></span></header>
+          <header>Sends per recorded row<span id="bars-n"></span></header>
           <div class="body">
             <div class="bars" id="bars"></div>
             <div class="legend">
@@ -259,7 +277,7 @@
           </div>
         </div>
         <div class="card">
-          <header>Chain verification</header>
+          <header>Recorded run<span class="mut">counted from the artifact</span></header>
           <div class="body"><dl class="kv" id="verify-kv"></dl></div>
         </div>
         <div class="card">
@@ -271,7 +289,7 @@
         <div class="card" style="grid-column:1/-1">
           <header>Latest settlements<span class="mut">click a row to inspect</span></header>
           <div class="tw" style="max-height:34vh"><table id="recent"><thead><tr>
-            <th>Row</th><th>Obligation</th><th>Result</th><th class="n">Sends</th><th>Transaction</th>
+            <th>Row</th><th>Obligation</th><th>Result</th><th class="n">Sends</th><th>Transaction</th><th>Provenance</th>
           </tr></thead><tbody></tbody></table></div>
         </div>
       </div>
@@ -285,12 +303,12 @@
           <div class="toolbar" id="chips"></div>
           <input type="search" id="q" placeholder="filter by code, scenario, hash…" aria-label="Filter rows">
           <div class="tw" style="margin-top:10px"><table id="rows"><thead><tr>
-            <th>Row</th><th>Scenario</th><th>Result</th><th class="n">Sends</th><th>Pre-write</th><th>Mode</th>
+            <th>Row</th><th>Scenario</th><th>Result</th><th class="n">Sends</th><th>Pre-write</th><th>Provenance</th>
           </tr></thead><tbody></tbody></table></div>
         </div>
         <div class="card" id="detail">
           <header>Inspector</header>
-          <div class="body" id="detail-body"><div class="empty">Select a row.</div></div>
+          <div class="body kv" id="detail-body"><div class="empty">Select a row.</div></div>
         </div>
       </div>
     </section>
@@ -442,15 +460,25 @@
       setTimeout(() => type(0), start);
     }
   })();
-  const liveRows = (D.live?.rows ?? []).map((r) => ({ ...r, mode: "LIVE" }));
-  const fixRows = (D.refusals.rows ?? []).map((r) => ({ ...r, mode: "FIXTURE" }));
+  // Provenance, stated once and used everywhere. The live artifact says LIVE_TESTNET, but it is
+  // a run that finished on its generatedAt date — nothing on this page is happening now. RECORDED
+  // rows came off Sepolia during that run; TEST rows came from the in-memory fixture harness and
+  // their hashes are placeholders, which is why only RECORDED rows are ever linked to an explorer.
+  const runDate = String(D.live?.generatedAt || "").slice(0, 10);
+  const liveRows = (D.live?.rows ?? []).map((r) => ({ ...r, mode: "RECORDED" }));
+  const fixRows = (D.refusals.rows ?? []).map((r) => ({ ...r, mode: "TEST" }));
   const ALL = [...liveRows, ...fixRows];
   const T = D.live?.totals;
   const el = (id) => document.getElementById(id);
   const short = (h, n = 12) => (h ? h.slice(0, n) + "…" : "—");
+  const modeTag = (r) =>
+    r.mode === "RECORDED"
+      ? `<span class="tag rec" title="recorded on ${runDate}">RECORDED</span>`
+      : '<span class="tag test">TEST</span>';
 
   // --- top strip ----------------------------------------------------------
-  const settled = liveRows.filter((r) => r.tx_hash).length;
+  const paidRows = liveRows.filter((r) => r.tx_hash);
+  const settled = paidRows.length;
   const replays = liveRows.filter((r) => r.expected === "ALREADY_SETTLED");
   const replaySends = replays.reduce((a, r) => a + r.physical_sends, 0);
   el("strip").innerHTML =
@@ -458,15 +486,17 @@
       ["payments", settled, "good"],
       ["replays refused", replays.length, "good"],
       ["sends by replays", replaySends, replaySends === 0 ? "good" : "warn"],
-      ["live rows", liveRows.length, ""],
-      ["fixture cases", D.refusals.totals.cases, ""],
+      ["recorded rows", liveRows.length, ""],
+      ["test cases", D.refusals.totals.cases, ""],
       ["tests", D.tests, ""],
     ]
       .map(([k, v, c]) => `<div class="stat"><div class="k">${k}</div><div class="v ${c}">${v}</div></div>`)
-      .join("") + '<div class="live"><i></i>SEPOLIA</div>';
+      .join("");
 
-  el("dash-sub").textContent = T ? `${T.asSpecified}/${T.rows} rows as specified` : "no live artifact";
-  el("foot-run").textContent = "RUN " + String(D.live?.generatedAt || "").slice(0, 10);
+  el("dash-sub").textContent = T
+    ? `${T.asSpecified}/${T.rows} rows as specified · recorded ${runDate}`
+    : "no recorded run";
+  el("foot-run").textContent = "RUN " + runDate;
   el("bars-n").textContent = liveRows.length + " rows";
 
   // --- bars ---------------------------------------------------------------
@@ -482,13 +512,25 @@
     host.innerHTML = pairs.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
   };
 
+  // Three counts, three different computations over the recorded rows. The old pair printed the
+  // same field twice ("receipts N/N", "references N/N") and called it two chain verifications;
+  // N/N could never be anything else, so it proved nothing. Distinctness is the exactly-once
+  // claim: a reused transaction hash or a reused payment reference breaks one of these counts
+  // and it stops matching the row count. The chain re-read itself is the verify:live command's
+  // job — this page reads the artifact that command wrote, and says so.
+  const distinctTx = new Set(paidRows.map((r) => r.tx_hash)).size;
+  const distinctRefs = new Set(paidRows.map((r) => r.payment_reference).filter(Boolean)).size;
+  const count = (n) => `<span class="${n === settled ? "zero" : "one"}">${n}</span>`;
+
   kv(el("verify-kv"), [
     ["chain", "11155111 sepolia"],
-    ["receipts", `<span class="zero">${settled}/${settled}</span> success`],
-    ["references", `<span class="zero">${settled}/${settled}</span> in proxy log`],
+    ["payments recorded", count(settled)],
+    ["distinct transactions", count(distinctTx)],
+    ["distinct references", count(distinctRefs)],
     ["amount", "1000000000000000000 each"],
     ["command", "<code>npm run verify:live</code>"],
     ["credentials", "none required"],
+    ["chain re-read", `<span class="mut">that command re-reads Sepolia; this page reads its artifact</span>`],
   ]);
 
   // Codes, counted from the artifact rather than listed by hand.
@@ -508,22 +550,28 @@
   );
 
   // --- recent table -------------------------------------------------------
-  const rowHtml = (r, sel) => {
-    const tx = r.tx_hash
-      ? `<a href="https://sepolia.etherscan.io/tx/${r.tx_hash}" target="_blank" rel="noopener">${short(r.tx_hash, 14)}</a>`
-      : '<span class="mut">no send</span>';
-    return `<tr data-id="${r.case_id}" aria-selected="${sel ? "true" : "false"}">
+  // Only a RECORDED row's hash exists on Sepolia. The fixture harness writes placeholders
+  // (0x00…01 four times over, and one that is not even hex), so linking a TEST row to a block
+  // explorer sends a reader to a dead page from a console whose whole job is verification.
+  // Plain text plus the TEST tag, never a link.
+  const txCell = (r) => {
+    if (!r.tx_hash) return '<span class="mut">no send</span>';
+    if (r.mode !== "RECORDED") return `<span class="mut">${short(r.tx_hash, 14)}</span>`;
+    return `<a href="https://sepolia.etherscan.io/tx/${r.tx_hash}" target="_blank" rel="noopener">${short(r.tx_hash, 14)}</a>`;
+  };
+
+  const rowHtml = (r, sel) => `<tr data-id="${r.case_id}" aria-selected="${sel ? "true" : "false"}">
       <td class="mut">${r.case_id}</td>
       <td>${short(r.request_id || "", 16)}</td>
       <td><span class="tag ${r.actual === "SETTLED" ? "one" : "ok"}">${r.actual}</span></td>
       <td class="n ${r.physical_sends ? "one" : "zero"}">${r.physical_sends}</td>
-      <td>${tx}</td></tr>`;
-  };
+      <td>${txCell(r)}</td>
+      <td>${modeTag(r)}</td></tr>`;
   el("recent").tBodies[0].innerHTML = liveRows.slice(0, 12).map((r) => rowHtml(r, false)).join("");
 
   // --- obligations table --------------------------------------------------
   const FILTERS = [
-    ["live", (r) => r.mode === "LIVE"],
+    ["recorded", (r) => r.mode === "RECORDED"],
     ["all", () => true],
     ["settled", (r) => r.actual === "SETTLED"],
     ["refused", (r) => r.actual !== "SETTLED"],
@@ -553,7 +601,7 @@
         <td><span class="tag ${r.actual === "SETTLED" ? "one" : "ok"}">${r.actual}</span></td>
         <td class="n ${r.physical_sends ? "one" : "zero"}">${r.physical_sends}</td>
         <td>${r.refused_before_provider_write ? '<span class="zero">yes</span>' : '<span class="mut">no</span>'}</td>
-        <td>${r.mode === "LIVE" ? '<span class="tag live">LIVE</span>' : '<span class="tag fix">FIX</span>'}</td></tr>`,
+        <td>${modeTag(r)}</td></tr>`,
           )
           .join("")
       : '<tr><td colspan="6" class="empty">No rows match.</td></tr>';
@@ -565,7 +613,7 @@
     selected = id;
     kv(el("detail-body"), [
       ["row", r.case_id],
-      ["mode", r.mode],
+      ["provenance", r.mode === "RECORDED" ? `${modeTag(r)} run ${runDate}` : `${modeTag(r)} fixture harness`],
       ["scenario", r.scenario],
       ["expected", r.expected],
       ["actual", `<span class="tag ${r.actual === "SETTLED" ? "one" : "ok"}">${r.actual}</span>`],
@@ -575,9 +623,11 @@
       ["reference", r.payment_reference ? `<code>${r.payment_reference}</code>` : "—"],
       [
         "transaction",
-        r.tx_hash
-          ? `<a href="https://sepolia.etherscan.io/tx/${r.tx_hash}" target="_blank" rel="noopener"><code>${r.tx_hash}</code></a>`
-          : '<span class="mut">nothing was sent</span>',
+        !r.tx_hash
+          ? '<span class="mut">nothing was sent</span>'
+          : r.mode === "RECORDED"
+            ? `<a href="https://sepolia.etherscan.io/tx/${r.tx_hash}" target="_blank" rel="noopener"><code>${r.tx_hash}</code></a>`
+            : `<code class="mut">${r.tx_hash}</code> <span class="mut">placeholder, not on chain</span>`,
       ],
     ]);
     draw();
@@ -704,3 +754,5 @@
   addEventListener("hashchange", () => show(location.hash.replace(/^#/, "")));
   show(location.hash.replace(/^#/, "") || "dash");
 </script>
+</body>
+</html>
