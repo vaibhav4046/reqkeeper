@@ -37,7 +37,9 @@ import {
   type SourceFacts,
 } from "../src/policy.ts";
 import { canonicalReference, idempotencyKey, obligationId } from "../src/identity.ts";
+import { FixtureProvider } from "../src/provider.ts";
 import { Store } from "../src/store.ts";
+import { drainOnce } from "../src/worker.ts";
 import { ProviderError } from "../src/provider.ts";
 import { handlePublic, PUBLIC_TOOLS } from "../src/mcp-public.ts";
 import handler from "../api/mcp.ts";
@@ -251,7 +253,11 @@ describe("2. Money, BigInt, and Policy Edge Cases", () => {
     );
   });
 
-  test("BUG: checkPolicy crashes with unhandled MoneyError when total debit exceeds uint256", () => {
+  // Named for what it asserts. It read "BUG: checkPolicy crashes with unhandled MoneyError" while
+  // asserting the opposite -- a clean LIMIT_EXCEEDED refusal -- so a reader skimming names came
+  // away with the wrong list of what is broken, and the name would have gone on saying "crashes"
+  // long after nothing did.
+  test("checkPolicy refuses a total debit beyond uint256 rather than throwing", () => {
     const policy: Policy = {
       version: 1,
       chainId: 11155111,
@@ -536,11 +542,20 @@ describe("3. Idempotency Store Concurrency, Fencing, and Rollback", () => {
     );
   });
 
-  test("releaseObligation prematurely releases if attempt exists but not yet sent", () => {
+  test("a queued but unsent attempt does not hold the obligation, and cannot pay", async () => {
+    // This test used to be called "releaseObligation prematurely releases if attempt exists but
+    // not yet sent" and asserted exactly what the code does, so it locked the behaviour in under a
+    // name that called it a defect -- the worst of both: nobody could tell whether a change here
+    // was a fix or a regression.
+    //
+    // The behaviour is correct, and the reason is in the worker rather than in the store. Release
+    // is gated on a SENT attempt (`first_send_at IS NOT NULL`), not on a queued one, because a
+    // queued attempt has moved no money and holding the obligation for it would wedge a debt
+    // behind a job that may never run. What makes that safe is that the queued job cannot pay
+    // either: `drainOnce` defers an attempt with no `firstSendAt` as AWAITING_DISPATCH and never
+    // dispatches it. So the test asserts BOTH halves now -- the release, and the silence.
     const s = createDb();
     s.reserveObligation(OID, PLAN);
-
-    // openAttempt queues job and creates attempt row (first_send_at is null)
     s.openAttempt({
       obligationId: OID,
       planHash: PLAN,
@@ -551,13 +566,8 @@ describe("3. Idempotency Store Concurrency, Fencing, and Rollback", () => {
       now: 1000,
     });
 
-    // An outbound attempt is pending in the queue!
-    // But releaseObligation checks `WHERE first_send_at IS NOT NULL`
-    // So releaseObligation succeeds:
-    const res = s.releaseObligation(OID, PLAN);
-    assert.equal(res.released, true, "released obligation even though attempt was queued in outbox");
+    assert.equal(s.releaseObligation(OID, PLAN).released, true, "a queued attempt is not a payment in flight");
 
-    // Now a rival plan can reserve the obligation while a job for the first plan is still queued:
     s.savePlan({
       planHash: PLAN_B,
       obligationId: OID,
@@ -569,8 +579,57 @@ describe("3. Idempotency Store Concurrency, Fencing, and Rollback", () => {
       expiresAt: 10_000,
       now: 1000,
     });
-    const resB = s.reserveObligation(OID, PLAN_B);
-    assert.equal(resB.ok, true, "rival plan reserved while prior dispatch job is still pending");
+    assert.equal(s.reserveObligation(OID, PLAN_B).ok, true, "a rival plan may take an obligation nothing has sent for");
+
+    // And the abandoned job pays nothing. A provider that is asked to execute here is the failure
+    // this asserts against, so it counts calls rather than trusting a status.
+    const provider = new FixtureProvider("NONE");
+    const result = await drainOnce(
+      { store: s, provider, sourceSaysPaid: async () => false } as never,
+      { now: 2_000, lookaheadMs: 60_000 },
+    );
+    assert.equal(provider.totalSends(), 0, "the released plan's queued job dispatched a payment");
+    assert.equal(result.advanced.length, 0);
+    s.close();
+  });
+
+  test("but an attempt that HAS been sent holds the obligation, whatever the state says", () => {
+    // The two guards in `releaseObligation` are not the same guard. This one is the attempt:
+    // `markSent` stamps `first_send_at` BEFORE the provider call and before the state moves, so
+    // between those writes the state is still replannable while money may already be in flight.
+    // Releasing there hands the debt to a rival plan that would pay it again.
+    const s = createDb();
+    s.reserveObligation(OID, PLAN);
+    const { attemptId } = s.openAttempt({
+      obligationId: OID,
+      planHash: PLAN,
+      stepIndex: 0,
+      idempotencyKey: idempotencyKey(OID, PLAN, 0),
+      endpoint: "/api/execute",
+      bodyJson: "{}",
+      now: 1000,
+    });
+    assert.equal(s.markSent(attemptId, 1_100), true);
+
+    const res = s.releaseObligation(OID, PLAN);
+    assert.equal(res.released, false);
+    assert.equal(res.reason, "plan has a dispatched attempt", JSON.stringify(res));
+    s.close();
+  });
+
+  test("and a state past the point of no return holds it even with no attempt at all", () => {
+    // The other guard, on its own. Nothing was sent under this plan -- the obligation got there
+    // by another route, which is what reconciliation of a payment made outside this system looks
+    // like -- and a release would let a fresh plan propose over a settled debt.
+    const s = createDb();
+    s.reserveObligation(OID, PLAN);
+    for (const state of ["VALIDATING", "AWAITING_APPROVAL", "APPROVED", "PAYMENT_PREFLIGHT", "PAYMENT_EXECUTING"] as const) {
+      s.setState(OID, state, 1_000);
+    }
+
+    const res = s.releaseObligation(OID, PLAN);
+    assert.equal(res.released, false);
+    assert.match(String(res.reason), /already dispatched \(PAYMENT_EXECUTING\)/, JSON.stringify(res));
     s.close();
   });
 });
