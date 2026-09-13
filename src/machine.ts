@@ -124,7 +124,15 @@ const TRANSITIONS: Readonly<Record<State, readonly State[]>> = {
   CHAIN_PENDING: ["CHAIN_CONFIRMED", "EXECUTION_REVERTED", "EXECUTION_OUTCOME_UNKNOWN", "EVIDENCE_CONFLICT"],
 
   // Cannot jump straight to SETTLED. Reconciliation is a mandatory stop.
-  CHAIN_CONFIRMED: ["RECONCILING"],
+  // EVIDENCE_CONFLICT and EXECUTION_REVERTED are reachable from here, because a confirmed
+  // transaction can stop being one. `RECONCILE_SOURCE` re-reads the chain deliberately -- between
+  // the send and that job a transaction can be reorged out or found reverted -- and both of its
+  // failure branches called `move()` into states this table did not allow. The move threw, the
+  // worker's catch-all deferred the job, and the obligation sat in CHAIN_CONFIRMED for ever:
+  // never SETTLED, never refused, not replannable, and with no operator door, which only accepts
+  // PAYMENT_PREFLIGHT. The money had not moved, so the debt still stood. Nobody has to attack
+  // this -- they wait for it.
+  CHAIN_CONFIRMED: ["RECONCILING", "EVIDENCE_CONFLICT", "EXECUTION_REVERTED"],
 
   RECONCILING: ["SETTLED", "RECONCILIATION_PENDING", "EVIDENCE_CONFLICT"],
   RECONCILIATION_PENDING: ["RECONCILING", "SETTLED", "EVIDENCE_CONFLICT"],

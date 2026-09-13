@@ -486,6 +486,20 @@ async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Reso
       return { done: true, advanced };
     }
     if (!receipt.verified || receipt.receiptStatus !== "success") {
+      // A transaction that is GONE is not one that is pending. `not_found` for a transaction this
+      // obligation had already CONFIRMED means the block it was in is no longer canonical, and
+      // re-asking for ever is how an obligation waits on an answer that will never come --
+      // silently, with no audit row, in a state that is neither terminal nor replannable and has
+      // no operator door. The money did not move, so the debt still stands and a human has to
+      // know that.
+      if (receipt.receiptStatus === "not_found") {
+        move("EVIDENCE_CONFLICT");
+        store.audit(job.obligationId, "worker", "CONFIRMED_TRANSACTION_VANISHED", {
+          txHash: attempt.txHash,
+          reason: "a transaction this obligation had already confirmed is no longer on chain",
+        });
+        return { done: true, advanced };
+      }
       return { done: false, reason: "RECEIPT_NOT_FINAL", advanced };
     }
 

@@ -317,3 +317,70 @@ describe("a signature authorises one action, on one invoice", () => {
     assert.equal(invoice.invoiceBaseUnits, (BigInt(ONE) + 500n).toString());
   });
 });
+
+describe("one authorisation has one meaning, however it is spelled", () => {
+  /**
+   * The replay guard keyed on the signature STRING, and one authorised signature has at least
+   * four accepted spellings: with or without the `0x` prefix, and with `s` or `N - s`, because
+   * ECDSA is malleable and the recovery accepts both. So a gateway holding one payer-signed
+   * increase of 500 could serve it four times and apply 2,000 -- defeating, by dropping two
+   * characters, the guard added because a reviewer measured exactly that inflation.
+   *
+   * What a signature authorises is one action by one party. The key is the digest and the signer.
+   */
+  const N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
+
+  /** The same authorisation, re-spelled: `s` flipped to `N - s`, recovery parity flipped with it. */
+  function malleate(signature: string): string {
+    const raw = signature.replace(/^0x/, "");
+    const r = raw.slice(0, 64);
+    const s = BigInt(`0x${raw.slice(64, 128)}`);
+    const v = Number.parseInt(raw.slice(128, 130), 16);
+    const flipped = (N - s).toString(16).padStart(64, "0");
+    const parity = (v === 27 ? 28 : 27).toString(16).padStart(2, "0");
+    return `0x${r}${flipped}${parity}`;
+  }
+
+  test("the same increase, re-signed as N - s, is still one authorisation", async () => {
+    const action = increase("500");
+    const original = signAction(action, PAYER_KEY);
+    const respelled = { data: action, signature: { method: "ecdsa", value: malleate(original.signature.value) } };
+    // The premise: both spellings must actually be accepted signatures, or this proves nothing.
+    assert.notEqual(original.signature.value, respelled.signature.value);
+    assert.equal(
+      recoverAddress(actionDigest(action), respelled.signature.value),
+      addressOf(PAYER_KEY),
+      "the malleated signature must still recover to the payer, or the test is about a broken signature",
+    );
+
+    assert.equal(await refusalFrom(serve([original, respelled])), "ACTION_REPLAYED");
+  });
+
+  test("and the same increase with the 0x dropped is still one authorisation", async () => {
+    const action = increase("500");
+    const original = signAction(action, PAYER_KEY);
+    const bare = { data: action, signature: { method: "ecdsa", value: original.signature.value.replace(/^0x/, "") } };
+    assert.equal(await refusalFrom(serve([original, bare])), "ACTION_REPLAYED");
+  });
+
+  test("all four spellings of one signature apply one delta, or none", async () => {
+    const action = increase("500");
+    const original = signAction(action, PAYER_KEY);
+    const flipped = malleate(original.signature.value);
+    const spellings = [
+      original.signature.value,
+      flipped,
+      original.signature.value.replace(/^0x/, ""),
+      flipped.replace(/^0x/, ""),
+    ].map((value) => ({ data: action, signature: { method: "ecdsa", value } }));
+    assert.equal(await refusalFrom(serve(spellings)), "ACTION_REPLAYED");
+  });
+
+  test("but two genuinely different authorisations still both apply", async () => {
+    // The control. A payer who really agreed twice has agreed twice, and refusing that would make
+    // every amended invoice unpayable.
+    const id = serve([signAction(increase("500"), PAYER_KEY), signAction(increase("300"), PAYER_KEY)]);
+    const invoice = await read(id);
+    assert.equal(invoice.invoiceBaseUnits, (BigInt(ONE) + 800n).toString());
+  });
+});

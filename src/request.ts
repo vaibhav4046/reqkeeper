@@ -777,7 +777,16 @@ function assertActionsAreSigned(
       );
     }
 
-    if (seen.has(value.toLowerCase())) {
+    // Keyed on the DIGEST and the signer, not on the signature's spelling.
+    //
+    // One authorised signature has four accepted spellings: with or without `0x`, and with `s` or
+    // `N - s` (ECDSA is malleable and `recoverAddress` accepts both). A gateway replaying the
+    // same authorisation in two spellings applied two deltas -- so the guard that exists because a
+    // reviewer measured one increase of 500 becoming 2,500 was defeated by dropping two
+    // characters, with no cryptography involved at all. What a signature authorises is one action
+    // by one party, and that is what the key says now.
+    const authorised = `${signer}:${Buffer.from(digest).toString("hex")}`;
+    if (seen.has(authorised)) {
       throw new RequestError(
         "ACTION_REPLAYED",
         `action ${action.index} (${name}) on invoice ${id} carries a signature that already appears ` +
@@ -785,7 +794,7 @@ function assertActionsAreSigned(
           "actions on one authorisation.",
       );
     }
-    seen.add(value.toLowerCase());
+    seen.add(authorised);
 
     // And it has to be about THIS invoice.
     //

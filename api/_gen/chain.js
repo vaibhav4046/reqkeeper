@@ -132,12 +132,18 @@ export async function rpcCall(rpcUrl, method, params, timeoutMs = 30_000) {
         if (alt === rpcUrl)
             continue;
         try {
+            // The chain first. This loop covers exactly the methods `assertChainId` exists for -- a
+            // transaction hash is only unique WITHIN a chain -- and it was the one fallback path that
+            // skipped the assertion, so a mainnet endpoint could answer a Sepolia receipt query about a
+            // colliding hash and its answer would be returned as this chain's. Every other fallback
+            // (`corroborate`, the negative re-scan) asserts; this one did not.
+            await ensureChain(alt);
             const second = await rpcCallOnce(alt, method, params, timeoutMs);
             if (second !== null && second !== undefined)
                 return second;
         }
         catch {
-            // an unreachable fallback tells us nothing; keep asking
+            // an unreachable fallback, or one on the wrong chain, tells us nothing; keep asking
         }
     }
     return result;
@@ -396,16 +402,36 @@ export async function findPaymentByReference(reference, opts = {}) {
     // Counted, not assumed. An endpoint that threw told us nothing, and the difference between
     // "they agreed" and "they never answered" is the difference between evidence and silence.
     let negativeCorroborations = 0;
+    /**
+     * Every conflicting log ANY endpoint saw, unioned and de-duplicated by transaction.
+     *
+     * This used to keep the primary's conflicts and take a fallback's only when the primary had
+     * none. So one pre-existing junk log paying a stranger kept the primary's list non-empty for
+     * ever, and a fallback that later saw the log paying OUR payee in OUR token for the wrong
+     * amount had it discarded: `conflictVerdict` read NOT_OURS, `verdictFor` read NOT_PAID, and
+     * NOT_PAID is the answer that releases an obligation and lets a fresh proposal through -- over
+     * our own money that had already moved. Endpoints genuinely see different log sets; that is the
+     * entire reason this loop exists.
+     */
+    const byTransaction = new Map();
+    const conflictText = new Set(first.conflicts ?? []);
+    for (const log of first.conflictingLogs ?? [])
+        byTransaction.set(log.txHash ?? `unnamed:${byTransaction.size}`, log);
     for (const alt of rpcFallbacks()) {
         if (alt === rpcUrl)
             continue;
         try {
             await ensureChain(alt);
-            // Conflicts from the FIRST scan survive the fallback. The re-scan exists because a public
-            // endpoint can return zero logs for a log that plainly exists -- measured against this
-            // project's own payment -- but rescuing `found` while dropping `conflicts` throws away the
-            // one field that says "a log carried this reference and paid something else".
-            const second = await scanForReference(reference, alt, head, floor, opts.expect);
+            // This endpoint's OWN head, not the primary's.
+            //
+            // The re-scan passed the primary's `head` to every fallback, so a primary reporting a stale
+            // tip made all three endpoints answer about a window that excluded the payment -- and the
+            // result was `negativeCorroborations: 2, truncated: false`, a confident NOT_PAID from three
+            // endpoints that all hold the payment and none of which was asked about the blocks that
+            // contain it. Ordinary RPC lag reproduces it; no attacker is needed. The re-scan exists
+            // because one endpoint's answer cannot be trusted, and it was inheriting the primary's lie.
+            const altHead = await currentBlock(alt);
+            const second = await scanForReference(reference, alt, Math.max(altHead, head), floor, opts.expect);
             if (second.found) {
                 // The primary said no and this endpoint says yes. The primary IS the second opinion
                 // here — it has already disagreed — so the sighting is reported uncorroborated and the
@@ -414,27 +440,29 @@ export async function findPaymentByReference(reference, opts = {}) {
             }
             // This endpoint answered, and answered no, over the same window.
             negativeCorroborations++;
-            // A negative from the fallback can still carry conflicts the primary never saw, and those
-            // outrank a bare negative: a log that carries this reference and pays the wrong amount is
-            // not "no payment", it is a question. Merged rather than dropped.
-            if (second.conflicts && second.conflicts.length > 0 && !(first.conflicts && first.conflicts.length > 0)) {
-                return {
-                    ...first,
-                    conflicts: second.conflicts,
-                    ...(second.conflictingLogs ? { conflictingLogs: second.conflictingLogs } : {}),
-                    truncated,
-                    scannedFrom: floor,
-                    negativeCorroborations,
-                };
+            for (const line of second.conflicts ?? [])
+                conflictText.add(line);
+            for (const log of second.conflictingLogs ?? []) {
+                byTransaction.set(log.txHash ?? `unnamed:${byTransaction.size}`, log);
             }
         }
         catch {
-            // an unreachable endpoint is not a second opinion; keep asking
+            // an unreachable endpoint, or one on the wrong chain, is not a second opinion; keep asking
         }
     }
     // The window is reported with the negative, not separately: a caller that has to ask a second
     // question to find out whether the first answer meant anything will eventually stop asking.
-    return { ...first, truncated, scannedFrom: floor, negativeCorroborations };
+    //
+    // `conflictingLogs` is stated even when empty, because absent means "nobody looked" and that is
+    // a different answer from "we looked and there were none".
+    return {
+        ...first,
+        truncated,
+        scannedFrom: floor,
+        negativeCorroborations,
+        ...(conflictText.size > 0 ? { conflicts: [...conflictText] } : {}),
+        conflictingLogs: [...byTransaction.values()],
+    };
 }
 async function scanForReference(reference, rpcUrl, head, floor, expect) {
     const topics = [EVENT_TOPIC, referenceTopic(reference)];
