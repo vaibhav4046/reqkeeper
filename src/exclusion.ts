@@ -33,7 +33,7 @@
  * move is a liveness cost measured in one operator action; being wrong here is measured in money.
  */
 
-import { amountOrFeeConflict, type ConflictKind } from "./chain.ts";
+import { conflictVerdict, type ConflictKind } from "./chain.ts";
 
 /** Why the exclusion could not be proven. Each one is "I do not know", never "no". */
 export type ExclusionGap =
@@ -269,8 +269,12 @@ export function operatorReleaseDecision(input: {
   // that did not say is not a reader that said no.
   if (input.sighting.truncated !== false) return { kind: "REFUSE_INCONCLUSIVE" };
 
-  // The same test the worker applies, from the same function, so the two exits cannot disagree.
-  if (amountOrFeeConflict(input.sighting)) return { kind: "REFUSE_CONFLICT" };
+  // The same test the worker applies, from the same function, so the two exits cannot disagree —
+  // including the third answer. A sighting that never says what conflicting logs it saw has not
+  // concluded, and a human cannot release on a scan that did not finish deciding.
+  const conflict = conflictVerdict(input.sighting);
+  if (conflict === "OURS_AND_WRONG") return { kind: "REFUSE_CONFLICT" };
+  if (conflict === "UNKNOWN") return { kind: "REFUSE_INCONCLUSIVE" };
 
   return { kind: "RELEASE" };
 }

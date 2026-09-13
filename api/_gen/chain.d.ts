@@ -137,6 +137,18 @@ export declare function matchPaymentLog(log: PaymentLogFields & {
  * Nobody else has a reason to pay our payee, in our token, under our reference. That shape is our
  * money moving in a plan we did not make, and it is the one that belongs in front of a human.
  */
+/**
+ * Three answers, not two: this log is ours and wrong, it is somebody else's, or nobody checked.
+ *
+ * This returned a boolean, and `undefined` — a reader that never populated the field — took the
+ * same branch as "no conflicting log was seen". Both released. `scanForReference` now always
+ * states the list, so an absent one can only come from a reader that did not conclude, and that
+ * is not something to release on.
+ */
+export type ConflictVerdict = "OURS_AND_WRONG" | "NOT_OURS" | "UNKNOWN";
+export declare function conflictVerdict(sighting: {
+    readonly conflictKinds?: readonly ConflictKind[];
+}): ConflictVerdict;
 export declare function amountOrFeeConflict(sighting: {
     readonly conflictKinds?: readonly ConflictKind[];
 }): boolean;

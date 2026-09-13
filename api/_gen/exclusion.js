@@ -32,7 +32,7 @@
  * option and no timeout: an obligation with an unexcluded leak waits for a human. Refusing to
  * move is a liveness cost measured in one operator action; being wrong here is measured in money.
  */
-import { amountOrFeeConflict } from "./chain.js";
+import { conflictVerdict } from "./chain.js";
 /**
  * The account whose nonce excludes the leak, or undefined when the operator has not named one.
  *
@@ -138,8 +138,13 @@ export function operatorReleaseDecision(input) {
     // that did not say is not a reader that said no.
     if (input.sighting.truncated !== false)
         return { kind: "REFUSE_INCONCLUSIVE" };
-    // The same test the worker applies, from the same function, so the two exits cannot disagree.
-    if (amountOrFeeConflict(input.sighting))
+    // The same test the worker applies, from the same function, so the two exits cannot disagree —
+    // including the third answer. A sighting that never says what conflicting logs it saw has not
+    // concluded, and a human cannot release on a scan that did not finish deciding.
+    const conflict = conflictVerdict(input.sighting);
+    if (conflict === "OURS_AND_WRONG")
         return { kind: "REFUSE_CONFLICT" };
+    if (conflict === "UNKNOWN")
+        return { kind: "REFUSE_INCONCLUSIVE" };
     return { kind: "RELEASE" };
 }

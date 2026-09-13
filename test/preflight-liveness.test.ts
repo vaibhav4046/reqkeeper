@@ -119,6 +119,9 @@ function scanner(anchorSeenBy: { value?: number }) {
       corroborated: true,
       scannedBlocks: 300_000,
       truncated: floor > (anchorBlock ?? 0),
+      // Stated, because this fixture is modelling a reader that CONCLUDED. Leaving it off would
+      // mean "this reader did not decide", which must not release.
+      conflictKinds: [],
       // Read after the chain moved past the preflight, which is what makes absence evidence.
       scannedTo: AGED_CEILING,
     };

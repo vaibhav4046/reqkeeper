@@ -175,19 +175,16 @@ export function matchPaymentLog(log, expect) {
     }
     return { ok: conflicts.length === 0, conflicts, kinds };
 }
-/**
- * Is this a log that paid OUR payee in OUR token under our reference, but for the wrong amount or
- * fee?
- *
- * The distinction decides whether an obligation is released or escalated, and getting it wrong is
- * costly in both directions. Escalate on every conflicting log and anyone who can read a public
- * payment reference can wedge any invoice for ever with one junk log. Release on every conflicting
- * log and a dry run that leaked (#1959) with different fields gets paid a second time, out of our
- * own funds.
- *
- * Nobody else has a reason to pay our payee, in our token, under our reference. That shape is our
- * money moving in a plan we did not make, and it is the one that belongs in front of a human.
- */
+export function conflictVerdict(sighting) {
+    const kinds = sighting.conflictKinds;
+    if (!kinds)
+        return "UNKNOWN";
+    if (kinds.length === 0)
+        return "NOT_OURS";
+    const wrongCounterparty = kinds.includes("token") || kinds.includes("to") || kinds.includes("emitter");
+    const wrongValue = kinds.includes("amount") || kinds.includes("fee") || kinds.includes("feeAddress");
+    return wrongValue && !wrongCounterparty ? "OURS_AND_WRONG" : "NOT_OURS";
+}
 export function amountOrFeeConflict(sighting) {
     const kinds = sighting.conflictKinds;
     if (!kinds || kinds.length === 0)
@@ -422,7 +419,15 @@ async function scanForReference(reference, rpcUrl, head, floor, expect) {
         // Only the ceiling can tell a caller whether enough chain has passed for that to matter.
         scannedTo: head,
         ...(conflicts.length > 0 ? { conflicts } : {}),
-        ...(conflictKinds.length > 0 ? { conflictKinds } : {}),
+        // Always stated, including as an empty list.
+        //
+        // Omitting it when there were none makes absence mean two different things — "this reader
+        // looked and saw no conflicting log" and "this reader never looked" — and
+        // `amountOrFeeConflict` reads both as "no conflict", which releases. That is the exact shape
+        // that cost this project three separate duplicate-payment findings under `truncated` and
+        // `confirmations`. A reader that concluded says what it saw; a reader that did not conclude
+        // leaves the field off, and the callers treat that as unknown.
+        conflictKinds,
     };
 }
 /**

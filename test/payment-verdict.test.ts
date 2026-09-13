@@ -72,7 +72,8 @@ describe("verdictFor turns a sighting into one of three answers", () => {
   });
 
   test("only a covered window with nothing in it is NOT_PAID", () => {
-    const v = verdictFor({ found: false, truncated: false, scannedFrom: 100, scannedTo: 200 });
+    const v = verdictFor({ found: false, truncated: false,
+    conflictKinds: [], scannedFrom: 100, scannedTo: 200 });
     assert.equal(v.kind, "NOT_PAID");
   });
 
@@ -90,7 +91,8 @@ describe("verdictFor turns a sighting into one of three answers", () => {
       { found: false, truncated: false },
       { found: false, truncated: true },
       { found: false },
-      { found: false, truncated: false, conflicts: ["x"] } as PaymentSighting,
+      { found: false, truncated: false,
+    conflictKinds: [], conflicts: ["x"] } as PaymentSighting,
       null,
     ];
     for (const c of cases) {

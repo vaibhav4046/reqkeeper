@@ -19,7 +19,7 @@ import { describe, test } from "node:test";
 
 import { operatorReleaseDecision } from "../src/exclusion.ts";
 
-const conclusiveNegative = { found: false, truncated: false };
+const conclusiveNegative = { found: false, truncated: false, conflictKinds: [] };
 
 describe("an operator may release a wedged preflight, but not over a payment", () => {
   test("a conclusive negative on a waiting obligation releases", () => {
@@ -32,7 +32,8 @@ describe("an operator may release a wedged preflight, but not over a payment", (
     // it twice, and being certain does not change that.
     const d = operatorReleaseDecision({
       state: "PAYMENT_PREFLIGHT",
-      sighting: { found: true, truncated: false, txHash: "0xabc" },
+      sighting: { found: true, truncated: false,
+    conflictKinds: [], txHash: "0xabc" },
     });
     assert.equal(d.kind, "REFUSE_PAID");
     assert.equal(d.kind === "REFUSE_PAID" ? d.txHash : undefined, "0xabc");
@@ -81,6 +82,18 @@ describe("an operator may release a wedged preflight, but not over a payment", (
       sighting: { found: false, truncated: false, conflictKinds: ["to", "amount"] },
     });
     assert.equal(d.kind, "RELEASE");
+  });
+
+  test("a sighting that never says what conflicting logs it saw has not concluded", () => {
+    // `conflictKinds` absent used to take the same branch as `conflictKinds: []` — "no conflict"
+    // — and released. Both readings are now distinct: a reader that concluded states the list,
+    // even when it is empty, and one that did not leaves it off. Same shape as `truncated` and
+    // `confirmations`, which cost this project three separate duplicate-payment findings.
+    const d = operatorReleaseDecision({
+      state: "PAYMENT_PREFLIGHT",
+      sighting: { found: false, truncated: false },
+    });
+    assert.equal(d.kind, "REFUSE_INCONCLUSIVE");
   });
 
   test("an obligation that is not waiting on a dry run is refused by state", () => {

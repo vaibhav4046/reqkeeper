@@ -20,6 +20,7 @@ import type { ExecutionProvider } from "./provider.ts";
 import { belowConfirmationDepth, minConfirmations } from "./provider.ts";
 import { amountOrFeeConflict } from "./chain.ts";
 import { excludeByNonce, payerAddress, payerIsDedicated, type PayerReading } from "./exclusion.ts";
+import { conflictVerdict } from "./chain.ts";
 import type { PaymentExpectation, PaymentSighting } from "./chain.ts";
 import type { Fence, Job, Store } from "./store.ts";
 
@@ -328,7 +329,14 @@ async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Reso
     // amount or the fee. Nobody else has a reason to pay our payee, in our token, under our
     // reference: that shape is our own money moving in a plan we did not make -- the #1959 leak
     // executing with different fields -- and releasing on it is a double spend of our funds.
-    if (amountOrFeeConflict(sighting)) {
+    // Three answers. A reader that never stated what conflicting logs it saw has not concluded,
+    // and "did not conclude" must not take the same branch as "saw none" — which is what a boolean
+    // made it do, and which releases.
+    const conflict = conflictVerdict(sighting);
+    if (conflict === "UNKNOWN") {
+      return { done: false, reason: "CONFLICTS_NOT_STATED", advanced };
+    }
+    if (conflict === "OURS_AND_WRONG") {
       move("EVIDENCE_CONFLICT");
       store.audit(job.obligationId, "worker", "PAYMENT_FIELDS_DISAGREE", {
         conflicts: sighting.conflicts ?? null,

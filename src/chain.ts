@@ -307,6 +307,25 @@ export function matchPaymentLog(
  * Nobody else has a reason to pay our payee, in our token, under our reference. That shape is our
  * money moving in a plan we did not make, and it is the one that belongs in front of a human.
  */
+/**
+ * Three answers, not two: this log is ours and wrong, it is somebody else's, or nobody checked.
+ *
+ * This returned a boolean, and `undefined` — a reader that never populated the field — took the
+ * same branch as "no conflicting log was seen". Both released. `scanForReference` now always
+ * states the list, so an absent one can only come from a reader that did not conclude, and that
+ * is not something to release on.
+ */
+export type ConflictVerdict = "OURS_AND_WRONG" | "NOT_OURS" | "UNKNOWN";
+
+export function conflictVerdict(sighting: { readonly conflictKinds?: readonly ConflictKind[] }): ConflictVerdict {
+  const kinds = sighting.conflictKinds;
+  if (!kinds) return "UNKNOWN";
+  if (kinds.length === 0) return "NOT_OURS";
+  const wrongCounterparty = kinds.includes("token") || kinds.includes("to") || kinds.includes("emitter");
+  const wrongValue = kinds.includes("amount") || kinds.includes("fee") || kinds.includes("feeAddress");
+  return wrongValue && !wrongCounterparty ? "OURS_AND_WRONG" : "NOT_OURS";
+}
+
 export function amountOrFeeConflict(sighting: { readonly conflictKinds?: readonly ConflictKind[] }): boolean {
   const kinds = sighting.conflictKinds;
   if (!kinds || kinds.length === 0) return false;
@@ -630,7 +649,15 @@ async function scanForReference(
     // Only the ceiling can tell a caller whether enough chain has passed for that to matter.
     scannedTo: head,
     ...(conflicts.length > 0 ? { conflicts } : {}),
-    ...(conflictKinds.length > 0 ? { conflictKinds } : {}),
+    // Always stated, including as an empty list.
+    //
+    // Omitting it when there were none makes absence mean two different things — "this reader
+    // looked and saw no conflicting log" and "this reader never looked" — and
+    // `amountOrFeeConflict` reads both as "no conflict", which releases. That is the exact shape
+    // that cost this project three separate duplicate-payment findings under `truncated` and
+    // `confirmations`. A reader that concluded says what it saw; a reader that did not conclude
+    // leaves the field off, and the callers treat that as unknown.
+    conflictKinds,
   };
 }
 
