@@ -592,34 +592,6 @@ async function settleOrRefuse(
       });
     }
 
-    // A row the duplicate defence cannot see must not be paid through.
-    //
-    // `importObligation` back-fills a NULL reference on re-import, so the only way to reach this
-    // is a row created before that back-fill existed and never re-imported since -- a legacy row
-    // in a database in the field. The uniqueness index is partial (`WHERE payment_reference IS NOT
-    // NULL`) and the cross-namespace lookup matches on equality, so such a row is invisible to
-    // both defences at once: the same debt can be opened again under another request id and paid
-    // twice, with the index built to stop it looking straight through the row.
-    //
-    // The back-fill below happens on the way through this function, which is why this check sits
-    // AFTER the import rather than instead of it: the refusal is for a row that still has no
-    // reference once everything that could supply one has run.
-    const unindexed = store
-      .obligationsWithoutReference()
-      .find((row) => row.obligationId === input.obligationId);
-    if (unindexed) {
-      store.audit(input.obligationId, "system", "REFUSED", { code: "REFERENCE_UNRECORDED" });
-      return out({
-        state: "IMPORTED",
-        refusal: "REFERENCE_UNRECORDED",
-        detail:
-          "this obligation is stored with no payment reference, so neither the uniqueness index " +
-          "nor the cross-namespace lookup can see it, and the debt could be opened again under " +
-          "another request id. Re-import it with its reference before anything is dispatched.",
-        providerWriteIssued: false,
-      });
-    }
-
     if (holder && holder.obligationId !== input.obligationId) {
       store.audit(input.obligationId, "system", "REFUSED", {
         code: "REFERENCE_ALREADY_CLAIMED",
@@ -659,6 +631,38 @@ async function settleOrRefuse(
     now: input.now,
   });
   store.audit(input.obligationId, "agent", "PROPOSED", { requestId: input.requestId });
+
+  // --- 0c. a row the duplicate defence cannot see must not be paid through ---
+  //
+  // `importObligation` back-fills a NULL reference on re-import, so the only way to reach this
+  // is a row created before that back-fill existed and never re-imported since -- a legacy row
+  // in a database in the field. The uniqueness index is partial (`WHERE payment_reference IS NOT
+  // NULL`) and the cross-namespace lookup matches on equality, so such a row is invisible to
+  // both defences at once: the same debt can be opened again under another request id and paid
+  // twice, with the index built to stop it looking straight through the row.
+  //
+  // This check sits AFTER the import above rather than instead of it: the import is the back-fill,
+  // so the refusal is for a row that still has no reference once everything that could supply one
+  // has run. It used to sit before the import, which refused every legacy row on the very call
+  // that carried its reference -- the harness's rival-plan case, imported without a reference,
+  // was refused REFERENCE_UNRECORDED instead of reaching the reservation.
+  {
+    const unindexed = store
+      .obligationsWithoutReference()
+      .find((row) => row.obligationId === input.obligationId);
+    if (unindexed) {
+      store.audit(input.obligationId, "system", "REFUSED", { code: "REFERENCE_UNRECORDED" });
+      return out({
+        state: "IMPORTED",
+        refusal: "REFERENCE_UNRECORDED",
+        detail:
+          "this obligation is stored with no payment reference, so neither the uniqueness index " +
+          "nor the cross-namespace lookup can see it, and the debt could be opened again under " +
+          "another request id. Re-import it with its reference before anything is dispatched.",
+        providerWriteIssued: false,
+      });
+    }
+  }
 
   // --- 1. policy, before anything else can cost money ---------------------
   //

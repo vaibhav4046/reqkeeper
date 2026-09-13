@@ -8,7 +8,7 @@ still breaks or is unfinished?" and the last section is the source for that answ
 
 Reproduce any probe with `node --experimental-strip-types hackathon/audit/probes/<probe>.ts`.
 
-Gates: `npm test` 714 pass / 0 fail / 141 suites · `npm run typecheck` clean · `npm run build`
+Gates: `npm test` 715 pass / 0 fail / 141 suites · `npm run typecheck` clean · `npm run build`
 clean, and reproducible from a bare clone: the page is a function of the committed evidence and
 reads no environment at all, so `git diff --exit-code web api/_gen` passes on a machine that has
 never had a `.env` · `npm run gate-a` 10 ok / 0 failed / 2 blocked here, 9 ok / 0 failed / 3
@@ -307,3 +307,16 @@ Still open (not enough budget this session):
 - The 46 live invoices are one generator's shape: no live `ecdsa-ethereum`, `addFee`, pending, or
   reduce-then-increase channel exists in the evidence.
 - Owner-gated: a credentialed live run so REST rows carry execution ids; rotate the ElevenLabs key.
+
+## Round 12b (2026-09-13) — CI was red on the last three commits, and the evidence file said so
+
+`npm run harness` case C15 ("a rival plan already holds the obligation") returned
+`REFERENCE_UNRECORDED` instead of `OBLIGATION_RESERVED` on `07e693e`, `689532d`, `860c554` and
+`42c104b`; CI failed on every one, and the committed `docs/refusals.json` recorded 29 passed /
+1 failed the whole time. The runbook's "harness 30/30" for those commits was not measured.
+
+Cause: the legacy-row check added in round 11g ran BEFORE the import that back-fills a NULL
+reference, while its own comment said it sat after. Every legacy row was refused on the very call
+that carried its reference. Moved after the import; `test/legacy-reference.test.ts` gained the
+case that fails without the fix (a NULL-reference row, no re-import, no stub: settle back-fills and
+settles). Harness 30/30 again; 715 tests / 141 suites.

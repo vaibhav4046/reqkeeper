@@ -130,6 +130,22 @@ describe("an obligation no index can see is not one this system will pay", () =>
     assert.equal(sends, 1);
   });
 
+  test("a legacy row whose reference arrives with the dispatch is back-filled by settle itself", async () => {
+    // No re-import, no stub: the row has a NULL reference and the settle call is the first thing
+    // to carry one. The check must run AFTER the import that back-fills, or every legacy row is
+    // refused on the very call that would have indexed it (the harness rival-plan case hit this).
+    const store = legacyStore();
+    assert.equal(store.obligationsWithoutReference().length, 1);
+
+    const { outcome, sends } = await settle(store);
+    const unindexedAfter = store.obligationsWithoutReference();
+    store.close();
+
+    assert.equal(outcome.state, "SETTLED", JSON.stringify(outcome).slice(0, 300));
+    assert.equal(sends, 1);
+    assert.deepEqual(unindexedAfter, [], "the dispatch that carried the reference must have indexed the row");
+  });
+
   test("a row still carrying no reference at dispatch refuses, and sends nothing", async () => {
     // `settleObligation` back-fills on its way through, so reaching this means the row had no
     // reference after everything that could supply one had run.
