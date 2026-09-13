@@ -31,7 +31,7 @@ payment reference               idempotencyKey               (REST or MCP)
 issues one per invoice, and it survives a payer wallet change, a key rotation, a re-import,
 regenerated calldata and a 24-hour cache expiry. `src/request.ts` reads the invoice from the
 public Sepolia gateway with no credential and derives the payment reference from the invoice's
-own salt and payment address (`src/request.ts:108`). The reference is a *consequence* of the
+own salt and payment address (`src/request.ts#derivePaymentReference`). The reference is a *consequence* of the
 obligation, never an input to it. That matters because every guard downstream protects,
 faithfully, whatever reference it is handed: a wrong reference does not break the machine, it
 aims it.
@@ -261,7 +261,7 @@ is the difference between "trust me" and "check it".
 
 ## Execution: one interface, two transports
 
-`ExecutionProvider` (`src/provider.ts:91`) is four methods: `simulate`, `execute`, `observe`,
+`ExecutionProvider` (`src/provider.ts#classifySimulateReply`) is four methods: `simulate`, `execute`, `observe`,
 `receipt`. `settle.ts` knows nothing else about how a payment is sent.
 
 | | REST | MCP |
@@ -321,7 +321,7 @@ The only write surface is `(contractAddress, functionName, functionArgs)`, which
 re-encodes with an ABI it resolves on its own side. So a decode/re-encode step sits between the
 bytes a human approved and the bytes a signer signs, and it is performed by the platform. The
 providers refuse to be where that goes wrong: they decode the approved calldata, re-encode it
-locally (`src/abi.ts:181`, `decodeAndVerify`), and require byte identity before sending. What
+locally (`src/abi.ts#decodeAndVerify`, `decodeAndVerify`), and require byte identity before sending. What
 they cannot verify is KeeperHub's own re-encoding, because the request that would prove it is
 the one that spends the money. That is exactly why `receipt()` reads the chain.
 `npm run verify:seam` is the standalone proof of the same claim.
@@ -391,8 +391,8 @@ scheduled a moment out.
 
 ## Policy, and where it actually applies
 
-`src/policy.ts:90` (`checkPolicy`) is the gate; `src/plan.ts:86` (`buildPolicy`) constructs
-what it checks against; `src/standing-policy.ts:61` (`loadStandingPolicy`) reads the operator's
+`src/policy.ts#Decision` (`checkPolicy`) is the gate; `src/plan.ts#knownTokenDecimals` (`buildPolicy`) constructs
+what it checks against; `src/standing-policy.ts#loadStandingPolicy` (`loadStandingPolicy`) reads the operator's
 ceilings from the environment first and then `policy.json`.
 
 Two things are easy to get wrong here and were:
@@ -407,8 +407,8 @@ Two things are easy to get wrong here and were:
   is told they are protected when they are not.
 
 `scripts/settle-live.ts` does not use `buildPolicy`. It constructs a `Policy` inline from the
-invoice it just read. So `policy.json` constrains the agent surface (`src/mcp.ts:476`), the
-approval CLI (`scripts/approve.ts:61`) and the watcher (`src/watch.ts:261`), but not the live
+invoice it just read. So `policy.json` constrains the agent surface (`src/mcp.ts#callTool`), the
+approval CLI (`scripts/approve.ts#policy`) and the watcher (`src/watch.ts#watchPass`), but not the live
 settlement script. See `docs/RUNBOOK.md` step 6.
 
 ## Entry points

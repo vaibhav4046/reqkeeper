@@ -19,6 +19,7 @@ import { existsSync, mkdirSync } from "node:fs";
 import { obligationId, sourceFactsHash } from "../src/identity.ts";
 import { checkPolicy } from "../src/policy.ts";
 import { buildPolicy, buildSourceFacts, buildSteps, NAMESPACE, type InvoiceFacts } from "../src/plan.ts";
+import { toHuman } from "../src/money.ts";
 import { derivePlan, restate } from "../src/settle.ts";
 import { Store } from "../src/store.ts";
 
@@ -116,7 +117,12 @@ if (reserved && reserved !== planHash) {
   process.exit(1);
 }
 
-const sentence = restate(policy, sourceFacts, decision.totalDebitBaseUnits);
+// The same identity the MCP surface puts in its sentence, so a human comparing what an agent
+// showed them against what this prints is comparing the same string rather than two paraphrases.
+const sentence = restate(policy, sourceFacts, decision.totalDebitBaseUnits, {
+  requestId: facts.requestId,
+  paymentReference: facts.paymentReference,
+});
 
 console.log("\n" + "=".repeat(78));
 console.log(reject ? "REJECT this payment?" : "APPROVE this payment?");
@@ -127,6 +133,23 @@ console.log(`  reference   : ${facts.paymentReference}`);
 console.log(`  obligation  : ${oid}`);
 console.log(`  plan hash   : ${planHash}`);
 console.log(`  calldata    : ${steps[0].data}`);
+// An amount that moved since the invoice was raised gets its own line, not a clause at the end
+// of a paragraph. It is the one figure on this screen the approver cannot check against what the
+// creditor first showed them, and a person skimming a confirmation prompt reads the shape of it
+// before the words: a banner is seen, a subordinate clause is not.
+if (sourceFacts.amountChangedBy) {
+  const from = toHuman(BigInt(sourceFacts.amountChangedBy.fromBaseUnits), policy.token.decimals);
+  const now = toHuman(BigInt(sourceFacts.invoiceBaseUnits), policy.token.decimals);
+  console.log("\n" + "!".repeat(78));
+  console.log(`  THE AMOUNT CHANGED after this invoice was raised.`);
+  console.log(`    raised at   : ${from} ${policy.token.symbol}`);
+  console.log(`    now         : ${now} ${policy.token.symbol}`);
+  console.log(`    changed by  : ${sourceFacts.amountChangedBy.actions} later signed action(s) on the Request channel`);
+  console.log(`  Each of those carries a signature this tool verified, by the party Request allows`);
+  console.log(`  to take that action. That is not the same as you expecting it. Check with the`);
+  console.log(`  creditor before approving.`);
+  console.log("!".repeat(78));
+}
 console.log(`\n  recomputed from the invoice you typed, not from what the agent claimed.`);
 console.log("=".repeat(78) + "\n");
 

@@ -204,20 +204,40 @@ function out(o: SettleOutcome): SettleOutcome {
  * line like this, because the human-readable figure and the base units are derived from the
  * same value at the same moment.
  */
-export function restate(policy: Policy, facts: SourceFacts, totalDebitBaseUnits: string): string {
+export function restate(
+  policy: Policy,
+  facts: SourceFacts,
+  totalDebitBaseUnits: string,
+  /**
+   * Which invoice this is, in the two identifiers a human can check independently.
+   *
+   * Optional only because older callers exist; every path that shows a human a sentence supplies
+   * it. Without them the sentence is "pay 1 FAU to 0xc43d…" and there is nothing on the screen a
+   * person could take to Request, or to a block explorer, to see the debt for themselves. The
+   * request id is the invoice; the payment reference is the string that will appear in the log
+   * the payment writes, so it is also how they check afterwards that this is the payment that
+   * happened.
+   */
+  identity?: { readonly requestId?: string; readonly paymentReference?: string },
+): string {
   const d = policy.token.decimals;
   return (
     `Pay ${toHuman(BigInt(facts.invoiceBaseUnits), d)} ${policy.token.symbol} to ${facts.payee}` +
     ` on chain ${policy.chainId}, plus ${toHuman(BigInt(facts.feeBaseUnits), d)} fee.` +
     ` Total leaving the wallet: ${toHuman(BigInt(totalDebitBaseUnits), d)} ${policy.token.symbol}` +
     ` (${totalDebitBaseUnits} base units).` +
+    (identity?.requestId ? ` Request invoice ${identity.requestId}.` : "") +
+    (identity?.paymentReference ? ` Payment reference ${identity.paymentReference}.` : "") +
     // An amount the creditor changed after raising the invoice is the one figure here a human
-    // cannot check against anything they were shown earlier, and this reader cannot authenticate
-    // the actions that changed it. So it is named rather than folded into the number.
+    // cannot check against anything they were shown earlier. The actions that changed it ARE
+    // authenticated now -- `src/request.ts` recovers each signer and enforces Request's role
+    // rules, so an increase really was signed by the payer -- but "signed by the right party" is
+    // not "expected by the person about to approve it". So it is named rather than folded into
+    // the number.
     (facts.amountChangedBy
       ? ` NOTE: this invoice was raised at ${toHuman(BigInt(facts.amountChangedBy.fromBaseUnits), d)}` +
-        ` ${policy.token.symbol} and changed by ${facts.amountChangedBy.actions} later action(s) on its` +
-        " Request channel, which this system cannot authenticate. Confirm the figure with the creditor."
+        ` ${policy.token.symbol} and changed by ${facts.amountChangedBy.actions} later signed action(s) on` +
+        " its Request channel. The signatures check out; confirm the figure with the creditor anyway."
       : "")
   );
 }
@@ -598,7 +618,10 @@ async function settleOrRefuse(
     expiresAt,
     now: input.now,
   });
-  const restatement = restate(policy, input.facts, decision.totalDebitBaseUnits);
+  const restatement = restate(policy, input.facts, decision.totalDebitBaseUnits, {
+    requestId: input.requestId,
+    paymentReference: input.paymentReference,
+  });
 
   // --- 3. exclusive ownership --------------------------------------------
   const reservation = store.reserveObligation(input.obligationId, planHash);

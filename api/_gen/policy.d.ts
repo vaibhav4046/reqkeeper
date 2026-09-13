@@ -41,14 +41,15 @@ export interface SourceFacts {
      * How many later channel actions changed the amount the create stated, and by how much.
      *
      * Request channels are append-only and a creditor can increase or reduce the expected amount
-     * after raising the invoice. This reader applies those deltas — and cannot authenticate them:
-     * every action carries an ECDSA signature and nothing here recovers a signer, so the bytes the
-     * gateway serves are taken at their word. A reviewer raised an amount with a signature of
-     * sixty-five 0xab bytes and watched it apply.
+     * after raising the invoice. This reader applies those deltas, and authenticates them:
+     * `src/request.ts` recovers the ECDSA signer of every action and enforces Request's role rules,
+     * so an increase must really have been signed by the PAYER. It did not always. A reviewer
+     * raised an amount with a signature of sixty-five 0xab bytes and watched it apply.
      *
-     * What bounds it is the human and the ceiling, so this is carried into the sentence the human
-     * reads: an amount that was changed after the invoice was raised says so, rather than arriving
-     * as a plain figure indistinguishable from the one the creditor first asked for.
+     * Authenticated is still not expected. The person approving was shown a figure by the creditor
+     * at some point, and an amount that moved since then is the one number on the screen they
+     * cannot check against that -- so it is carried into the sentence they read rather than
+     * arriving as a plain figure indistinguishable from the one first asked for.
      */
     readonly amountChangedBy?: {
         readonly actions: number;

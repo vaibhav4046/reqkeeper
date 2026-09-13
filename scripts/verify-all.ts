@@ -1055,16 +1055,20 @@ if (payeeSet.size === 0) {
 
 // ---- the citations the prose makes ----------------------------------------
 //
-// Every `src/x.ts:123` in the documentation is a claim, and claims here are checked. This one is
-// deliberately modest about what it proves: that the file exists and the line is in range. It
-// catches a citation to a deleted file or past the end of one; it does NOT catch drift, where the
-// file grew and the line now points at unrelated code.
+// Every citation in the documentation is a claim, and claims here are checked.
 //
-// Drift is the failure that actually happened — a reviewer found `src/settle.ts:724` cited as a
-// compare-and-set on `first_send_at` while pointing at a quorum check, and two more like it in the
-// same table. Those were rewritten to name the SYMBOL instead of a line number, which cannot
-// drift, and that is the direction the rest should go. Saying so here rather than letting a
-// passing check imply more than it means.
+// The claims used to be line numbers, and line numbers rot: a reviewer found `src/settle.ts:724`
+// cited as a compare-and-set on `first_send_at` while pointing at a quorum check, and two more
+// like it in the same table. The old check could not see that -- it proved the file existed and
+// the line was in range, which a drifted citation satisfies perfectly. Measured across the whole
+// documentation set, 55 of 120 citations landed on a blank line, a closing brace, or the middle
+// of somebody else's comment.
+//
+// So the citations name SYMBOLS now -- `src/settle.ts#markSent` -- and this checks the symbol is
+// still declared in that file. A rename breaks it, a deletion breaks it, and inserting a hundred
+// lines above it does not, because there is nothing left to drift. The line-number form is still
+// accepted and still checked for range, for the few citations that point at something with no
+// name (a file header, a table of constants).
 {
   const NEWLINE = String.fromCharCode(10);
   const docFiles = ["README.md", ...jsonFilesUnder("docs").filter(() => false)];
@@ -1074,32 +1078,56 @@ if (payeeSet.size === 0) {
       if (entry.isFile() && entry.name.endsWith(".md")) docFiles.push(`${dir}/${entry.name}`);
     }
   }
-  const pattern = /`((?:src|scripts|tools|api)\/[A-Za-z0-9_./-]+\.(?:ts|mjs|html)):(\d+)(?:-(\d+))?`/g;
+  const pattern = /`((?:src|scripts|tools|api)\/[A-Za-z0-9_./-]+\.(?:ts|mjs|html))(?::(\d+)(?:-(\d+))?|#([A-Za-z_$][\w$]*))`/g;
   const broken: string[] = [];
   let counted = 0;
+  let named = 0;
+
+  /** Is `symbol` declared in this source? A rename or a deletion has to fail here. */
+  const declares = (source: string, symbol: string): boolean => {
+    const escaped = symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return [
+      // a top-level declaration
+      new RegExp(`^(?:export\\s+)?(?:default\\s+)?(?:async\\s+)?(?:function|const|let|class|interface|type|enum)\\s+${escaped}\\b`, "m"),
+      // a class member, private or not
+      new RegExp(`^\\s{2}(?:readonly\\s+|static\\s+|override\\s+|async\\s+|get\\s+|#)?${escaped}\\s*[(<:=]`, "m"),
+      // an arm of a switch, which is how several of the state machine's behaviours are cited
+      new RegExp(`^\\s*case\\s+"${escaped}"`, "m"),
+    ].some((r) => r.test(source));
+  };
+
   for (const doc of docFiles) {
     if (!existsSync(doc)) continue;
     for (const m of readFileSync(doc, "utf8").matchAll(pattern)) {
       counted++;
-      const [, path, from, to] = m;
+      const [, path, from, to, symbol] = m;
       if (!existsSync(path)) {
         broken.push(`${doc} cites ${path}, which does not exist`);
         continue;
       }
-      const lineCount = readFileSync(path, "utf8").split(NEWLINE).length;
+      const source = readFileSync(path, "utf8");
+      if (symbol !== undefined) {
+        named++;
+        if (!declares(source, symbol)) {
+          broken.push(`${doc} cites ${path}#${symbol}, and ${path} declares no such symbol`);
+        }
+        continue;
+      }
+      const lineCount = source.split(NEWLINE).length;
       const highest = Number(to ?? from);
       if (highest > lineCount) broken.push(`${doc} cites ${path}:${to ?? from} but it has ${lineCount} lines`);
     }
   }
   record(
     "docs.citations",
-    "every file:line the documentation cites still exists",
+    "every citation the documentation makes still resolves",
     broken.length === 0 ? "ok" : "FAIL",
     broken.length > 0
       ? `${broken.length} of ${counted} citation(s) do not resolve — ${broken.slice(0, 3).join(" · ")}`
-      : `${counted} citation(s) across ${docFiles.length} document(s) point at a file that exists and a line within it. ` +
-        `This does not prove the line still says what the prose claims — citations that name a symbol instead of a ` +
-        `number cannot drift, and the ones a reviewer caught drifting were rewritten that way.`,
+      : `${counted} citation(s) across ${docFiles.length} document(s) resolve: ${named} name a symbol that is still ` +
+        `declared in the file they name, and ${counted - named} name a line that is still inside it. A symbol ` +
+        `citation cannot drift — inserting code above it moves nothing — which is why the line-numbered form was ` +
+        `converted after a reviewer found three citations pointing at unrelated code.`,
   );
 }
 

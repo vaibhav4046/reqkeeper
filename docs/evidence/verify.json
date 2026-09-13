@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-13T13:39:58.595Z",
+  "generatedAt": "2026-09-13T13:56:58.326Z",
   "chainId": 11155111,
   "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
   "credentialsUsed": "none",
@@ -169,13 +169,13 @@
       "id": "chain.completeness",
       "claim": "no payment on chain is missing from the evidence",
       "status": "ok",
-      "detail": "every fee-proxy payment to this deployment's 1 payee(s) over 11665964..11696242, asked of 4 endpoint(s): 44 found across their union, every one accounted for by an evidence file. The payee set comes from docs/, the payments come from the chain."
+      "detail": "every fee-proxy payment to this deployment's 1 payee(s) over 11665964..11696324, asked of 4 endpoint(s): 44 found across their union, every one accounted for by an evidence file. The payee set comes from docs/, the payments come from the chain."
     },
     {
       "id": "docs.citations",
-      "claim": "every file:line the documentation cites still exists",
+      "claim": "every citation the documentation makes still resolves",
       "status": "ok",
-      "detail": "120 citation(s) across 12 document(s) point at a file that exists and a line within it. This does not prove the line still says what the prose claims — citations that name a symbol instead of a number cannot drift, and the ones a reviewer caught drifting were rewritten that way."
+      "detail": "120 citation(s) across 12 document(s) resolve: 117 name a symbol that is still declared in the file they name, and 3 name a line that is still inside it. A symbol citation cannot drift — inserting code above it moves nothing — which is why the line-numbered form was converted after a reviewer found three citations pointing at unrelated code."
     }
   ]
 }

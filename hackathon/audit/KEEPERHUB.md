@@ -18,12 +18,12 @@ session changes (RPC fallback); both were read as-is, neither reverted.
 | `curl` GET + unauthenticated `initialize` POST to `https://app.keeperhub.com/mcp` | HTTP 200, `serverInfo keeperhub 1.2.0`, `authentication.required: true` |
 | 4 offline probes (stubbed `fetch` / in-memory `Store` / stub provider) | outputs quoted inline |
 
-**`npm run verify:mcp` was NOT run.** It is not write-free. `scripts/verify-mcp.ts:61`
+**`npm run verify:mcp` was NOT run.** It is not write-free. `scripts/verify-mcp.ts#provider`
 calls `provider.simulate(...)`, which is `execute_contract_call` with `simulate: true`
-(`src/keeperhub-mcp.ts:222-226`) against the live platform with a real API key and a real
+(`src/keeperhub-mcp.ts#KeeperHubMcpProvider`) against the live platform with a real API key and a real
 payee. This repository's own hazard model says that route can execute for real
-(`src/provider.ts:12-15`, "`?simulate=true` is ignored ... and the transaction really
-executes"), and `src/settle.ts:417-428` exists specifically to handle a dry run that
+(`src/provider.ts#Fault`, "`?simulate=true` is ignored ... and the transaction really
+executes"), and `src/settle.ts#receiptDisagreesWithPayment` exists specifically to handle a dry run that
 broadcast. A script that dispatches on a route documented as possibly-executing does not
 meet "dispatches nothing", so it was skipped rather than run.
 
@@ -50,7 +50,7 @@ meet "dispatches nothing", so it was skipped rather than run.
 
 ## 1. The two providers
 
-Identical `ExecutionProvider` contract (`src/provider.ts:64-71`), identical calldata gate
+Identical `ExecutionProvider` contract (`src/provider.ts#SimulateOutcome`), identical calldata gate
 (`decodeAllowedCall`, imported by both), different transport.
 
 **REST — `src/keeperhub.ts`**
@@ -289,14 +289,14 @@ promise the code cannot keep.
 
 | Surface | Tools | Can move money? |
 |---|---|---|
-| Hosted, `api/mcp.ts` then `src/mcp-public.ts:20-60` | **4**: `settlement_evidence`, `verify_payment`, `refusal_codes`, `how_it_works` | **No.** All four read a generated evidence file, a credential-free public RPC, or a static table. No store and no provider is imported. |
-| stdio, `src/mcp.ts:60-115` | **6**: `propose_payment`, `settle_obligation`, `obligation_status`, `verify_payment`, `resolve_pending`, `refusal_codes` | 3 read-only; `propose_payment` writes locally but passes no approval so it always stops at `AWAITING_APPROVAL` before preflight; `resolve_pending` only drains jobs, no send path; **`settle_obligation` is the one dispatch-capable tool.** |
+| Hosted, `api/mcp.ts` then `src/mcp-public.ts#PUBLIC_TOOLS` | **4**: `settlement_evidence`, `verify_payment`, `refusal_codes`, `how_it_works` | **No.** All four read a generated evidence file, a credential-free public RPC, or a static table. No store and no provider is imported. |
+| stdio, `src/mcp.ts#McpContext` | **6**: `propose_payment`, `settle_obligation`, `obligation_status`, `verify_payment`, `resolve_pending`, `refusal_codes` | 3 read-only; `propose_payment` writes locally but passes no approval so it always stops at `AWAITING_APPROVAL` before preflight; `resolve_pending` only drains jobs, no send path; **`settle_obligation` is the one dispatch-capable tool.** |
 
 `settle_obligation` cannot supply its own authority: the approval is read from the store by
 plan hash and can only have been written by the human CLI (`src/mcp.ts`, settle handler —
 `const reserved = ctx.store.getObligation(oid)?.reservedByPlan; const recorded = reserved ?
 ctx.store.getApproval(reserved) : undefined`). No MCP tool on either surface can write an
-approval. `scripts/mcp-server.ts:36-40` refuses to start without `KEEPERHUB_API_KEY` and
+approval. `scripts/mcp-server.ts#apiKey` refuses to start without `KEEPERHUB_API_KEY` and
 writes only to stderr (`:52-54`), keeping stdout clean for JSON-RPC.
 
 ## 6. Live surface check (read-only)
@@ -338,7 +338,7 @@ trusting the earlier pass (`worker.ts:186-210`). Unrecognised provider statuses 
 `"pending"`, never `"completed"` (`keeperhub.ts:216-219`, `keeperhub-mcp.ts:298-305`).
 
 **F-5 (MEDIUM) — the settlement receipt read does not use the RPC fallback.** Both
-providers do a bare single-endpoint `fetch` to `cfg.rpcUrl`. `src/chain.ts:11-25`
+providers do a bare single-endpoint `fetch` to `cfg.rpcUrl`. `src/chain.ts#RPC_FALLBACKS`
 (uncommitted session change) documents that publicnode answers
 `eth_getTransactionReceipt` with `result: null` for transactions it still has, and adds
 `RPC_FALLBACKS` plus `NULLABLE_IS_UNKNOWN` so a null is treated as "this endpoint does not

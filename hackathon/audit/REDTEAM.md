@@ -18,7 +18,7 @@ races and 6 real mid-flight process kills, `provider.execute()` was never called
 obligation, and no retry path ever re-broadcast. Two things broke anyway:
 
 * **BREAK-1 (evidence) — FIXED IN THE WORKING TREE WHILE THIS AUDIT WAS RUNNING.**
-  `scripts/settle-live.ts:147` — the reconciler on the live money path — ignored both of its
+  `scripts/settle-live.ts#policy` — the reconciler on the live money path — ignored both of its
   arguments. Combined with BREAK-2 it lands `SETTLED` on a transaction nobody checked belonged to
   this invoice. Reproduced against the committed code; the uncommitted tree now binds the hash and
   the amount. See section 6 for the before/after.
@@ -89,7 +89,7 @@ That is the designed behaviour — step 0b's re-entry refusal. It happened in 1 
 spanning them. Under a race the second process gets a raw
 `UNIQUE constraint failed: obligations.payment_reference` thrown out of `settleObligation` instead of
 the `REFERENCE_ALREADY_CLAIMED` / `OBLIGATION_RESERVED` refusal, and no `REFUSED` audit row is written
-for the correct code. On the MCP surface this is caught in-band (`src/mcp.ts:388-398`) and returned as
+for the correct code. On the MCP surface this is caught in-band (`src/mcp.ts#settle_obligation`) and returned as
 `refused: UNIQUE constraint failed: ...`, so it is not a crash — it is a misleading refusal and a hole
 in the audit trail. `scripts/watch-request.ts` has no such catch. **Fails closed.**
 
@@ -172,7 +172,7 @@ after worker2: state = CHAIN_PENDING outcome = SENT txHash = 0x11111111
 `completeJob` and `deferJob` do put the generation in the `WHERE` clause — that half of the claim in
 the `store.ts` comment is true and I could not break it. But `recordOutcome`, `setState` and `enqueue`
 carry no generation at all, and `drainOnce` swallows the eventual `STALE_FENCE` with `continue`
-(`src/worker.ts:83`) *after* those writes have already landed. So a zombie worker cannot finish a job
+(`src/worker.ts#WorkerDeps`) *after* those writes have already landed. So a zombie worker cannot finish a job
 it no longer owns, but it can rewrite the obligation's state and the attempt's recorded evidence.
 
 The blast radius is limited by the transition table (`setState` refuses illegal moves, which is why a
@@ -205,14 +205,14 @@ the one the design is proudest of: `AFTER_SEND` (money moved, response lost) rec
 Convergence is a different story:
 
 * **`SIMULATE`** — crash after `setState(PAYMENT_PREFLIGHT)` and before the attempt row exists.
-  Nothing was sent. But `PAYMENT_PREFLIGHT` is not in `REPLANNABLE` (`src/machine.ts:157-170`), so
+  Nothing was sent. But `PAYMENT_PREFLIGHT` is not in `REPLANNABLE` (`src/machine.ts#TRANSITIONS`), so
   step 0b refuses re-entry with `ALREADY_DISPATCHED`, and there is no job. Zero sends, zero jobs, zero
   ways forward: the invoice is permanently unpayable by this system.
 * **`BEFORE_SEND`** — attempt committed and `first_send_at` stamped, nothing sent. The worker does the
   honest thing (`EXECUTION_OUTCOME_UNKNOWN`, one job deferring on `NOT_SEEN_ON_CHAIN`) and will defer
   that job forever, because the payment it is waiting to see will never appear. Money safe, invoice dead.
 * **`RECEIPT` and `RECONCILE`** — the bad ones. Money moved. The `DISPATCH_STEP` job completes the
-  moment `attempt.outcome` is non-null (`src/worker.ts:126`), and **the settle success path never
+  moment `attempt.outcome` is non-null (`src/worker.ts#drainOnce`), and **the settle success path never
   enqueues `OBSERVE_EXECUTION`** — the only `enqueue` calls on that path are in the
   `ALREADY_DISPATCHED` branch (`settle.ts:481`), the `execute` catch (`:521`) and
   `RECONCILIATION_PENDING` (`:571`). So after the crash the outbox is **empty** while the obligation
@@ -288,7 +288,7 @@ comment at `store.ts:518-519` says "never another workspace's invoice data", whi
 invoice but not of the identifier and state.
 
 Not exploitable in this checkout: `namespace` is the module constant `NAMESPACE` at every entry point
-(`src/plan.ts:14`) and is absent from the MCP invoice schema, so no caller can choose it. It becomes
+(`src/plan.ts#NAMESPACE`) and is absent from the MCP invoice schema, so no caller can choose it. It becomes
 live the moment namespace becomes an argument.
 
 ## 6. Evidence spoofing — 6a still live, 6b fixed mid-audit
@@ -313,7 +313,7 @@ Reachable by the zombie worker of attack 2 without any privileged access.
 **6b. `scripts/settle-live.ts` reconciled on the wrong question. FIXED MID-AUDIT.** `SettleDeps.sourceSaysPaid` is
 documented at `settle.ts:53-58`: "Must confirm THIS transaction paid THIS amount: a boolean over the
 payment reference alone accepts a different transaction's evidence." The live script passes
-`sourceSaysPaid: async () => (await proxySawPayment(startBlock)).found` (`scripts/settle-live.ts:147`)
+`sourceSaysPaid: async () => (await proxySawPayment(startBlock)).found` (`scripts/settle-live.ts#policy`)
 — both parameters dropped. `proxySawPayment` computes `txHash` and `amount` on the lines immediately
 above and the closure throws them away.
 
@@ -328,7 +328,7 @@ Driving the **real worker** with a foreign hash in the attempt row and each reco
   final state: RECONCILIATION_PENDING <- refuses to settle on the foreign hash
 ```
 
-`src/mcp.ts:288-297` and `scripts/resolve.ts:80-88` got it right and refused. The one script that
+`src/mcp.ts#callTool` and `scripts/resolve.ts#receipt` got it right and refused. The one script that
 spends real money did not.
 
 **Status at the end of this audit.** `scripts/settle-live.ts` was edited in the working tree while
@@ -357,7 +357,7 @@ three points below:
 
 * No `eth_chainId` check anywhere on the settle path — `grep -rn "eth_chainId" src/` returns
   nothing, still true of the current working tree. `rpcUrl` comes from `SEPOLIA_RPC`
-  (`src/chain.ts:9`). A receipt from a different chain for a colliding hash is accepted as this
+  (`src/chain.ts#DEFAULT_RPC`). A receipt from a different chain for a colliding hash is accepted as this
   chain's receipt. The chain-id assertions that do exist live only in `scripts/gate-a.ts`,
   `verify-live.ts` and `verify-onchain.ts`, which the settle path never calls.
 * The receipt is still parsed as `{ status?, gasUsed? }`. `to` and `logs` are never read, so nothing
@@ -365,7 +365,7 @@ three points below:
   amount. Those are bound pre-dispatch only (`settle.ts:104-115`).
 * `r.status === "0x1" ? success : reverted` — strict, no truthiness bug, but a receipt with a missing
   or malformed status is reported as `verified: true, "reverted"`, which is terminal. A real payment
-  can be permanently labelled reverted by a malformed RPC response. `scripts/resolve.ts:62-65` does
+  can be permanently labelled reverted by a malformed RPC response. `scripts/resolve.ts#args` does
   the correct three-way split; the production provider still does not
   (`r.status === "0x1" ? success : reverted`, verified as of the current working tree).
 * The uncommitted `src/chain.ts` fallback is first-wins, not agreement: `if (second !== null && second
@@ -392,22 +392,22 @@ are durable but the read-then-write pair is not one transaction.
 * **SQL:** every statement is a bound `prepare(...).run(...)`. The only interpolation is
   `store.ts:161`, a loop over the two hardcoded literals `prev_hash` and `row_hash`. `rawExecForTests`
   (`store.ts:247`) has zero callers outside `test/`.
-* **Shell:** one `execFileSync` in `scripts/demo.ts:37` with a fixed argv. No `exec`, no `spawn` with
+* **Shell:** one `execFileSync` in `scripts/demo.ts#TEST_COUNT` with a fixed argv. No `exec`, no `spawn` with
   a shell, no caller-controlled path.
 * **Decisions:** there is no `memo`, `contentData`, `description` or free-text note anywhere in
-  `InvoiceFacts` (`src/plan.ts:24-49`) or `SourceFacts`. Every field a decision reads is an address, a
+  `InvoiceFacts` (`src/plan.ts#InvoiceFacts`) or `SourceFacts`. Every field a decision reads is an address, a
   base-units string, a chain id or a boolean. Nothing free-text reaches a policy branch.
 * **Model output:** no AI endpoint in the codebase; the idempotency key is `sha256` over persisted
-  state only (`src/identity.ts:112-135`).
+  state only (`src/identity.ts#idempotencyKey`).
 
 The only text field that flows anywhere untrusted is `requestId`, interpolated unquoted into a
-copy-pasteable command string printed by `src/watch.ts:148-163`. It is printed, never executed — but
+copy-pasteable command string printed by `src/watch.ts#factsFor`. It is printed, never executed — but
 it is a shell-paste hazard for the operator.
 
 **Separate finding, same area:** with no standing policy configured — and this checkout has none (no
 `policy.json`, no `REQKEEPER_*` in `.env`) — `buildPolicy` falls back to the caller's own values for
 `allowedPayees`, `allowedFeeRecipients`, `maxTotalDebitBaseUnits` and `maxFeeBaseUnits`
-(`src/plan.ts:70-75`). The agent is then checked against the ceiling the agent supplied. The code
+(`src/plan.ts#TOKEN_DECIMALS`). The agent is then checked against the ceiling the agent supplied. The code
 comment acknowledges this and `policySource` reports it, and the human approval gate still stands in
 front — but as deployed, `POLICY_DENIED` is decorative. Ship a `policy.json`.
 
@@ -426,7 +426,7 @@ front — but as deployed, `POLICY_DENIED` is decorative. Ship a `policy.json`.
 
 ## Priority
 
-1. ~~`scripts/settle-live.ts:147` — bind the reconciler to the hash and the amount.~~ **Already done
+1. ~~`scripts/settle-live.ts#policy` — bind the reconciler to the hash and the amount.~~ **Already done
    in the working tree.** *(BREAK-1, closed)*
 2. `Store.recordOutcome` — `WHERE tx_hash IS NULL` (or a fencing generation) so recorded evidence is
    write-once, matching `markSent`. *(BREAK-2)*

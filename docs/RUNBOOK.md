@@ -149,7 +149,7 @@ BLOCKED 5  payment calldata fetched from the hosted REST API — optional: …
 they exercise Request's hosted REST API, which needs a dashboard Client ID and which this project
 deliberately does not depend on. Blocked is not failed — it is "I could not check this", the same
 distinction every other command here draws — so a clean clone exits 0 and the commands chain with
-`&&` safely. Only a FAIL exits non-zero (`scripts/gate-a.ts:322`).
+`&&` safely. Only a FAIL exits non-zero (`scripts/gate-a.ts#passed`).
 
 This paragraph used to say the opposite, because the script used to exit 2 on any BLOCKED step and
 that was the first hard failure a stranger hit on a clean clone. The code was fixed and the page
@@ -172,7 +172,7 @@ This is the only credential the settle path needs. `scripts/settle-live.ts` chec
 `REQUEST_ID`, so a bare `cp .env.example .env` fails on the key first, not on the invoice.
 
 The wallet that pays is KeeperHub's, bound to that key. The execute request carries no `from`
-(`src/keeperhub.ts:105-115`), so you do not choose the payer: KeeperHub does. Find your
+(`src/keeperhub.ts#body`), so you do not choose the payer: KeeperHub does. Find your
 wallet's address in the KeeperHub dashboard before step 5, because step 5 is about that
 address and no other.
 
@@ -195,7 +195,7 @@ The addresses, in full:
 | ERC20FeeProxy (the spender) | `0x399F5EE127ce7432E4921a61b8CF52b0af52cbfE` |
 | The payer | your KeeperHub wallet, from the dashboard |
 
-Both are `src/calldata-gate.ts:21-22`, and `npm run verify:onchain` re-reads the deployed code
+Both are `src/calldata-gate.ts#ERC20_FEE_PROXY`, and `npm run verify:onchain` re-reads the deployed code
 and `decimals()` for both from a public RPC.
 
 ### There is no tool in this repository that grants it
@@ -210,17 +210,17 @@ The settlement path structurally cannot do it either, and that is deliberate rat
 oversight:
 
 - `approve(address,uint256)` **is** on the calldata allowlist, bound to the FAU token only
-  (`src/calldata-gate.ts:36-40`).
+  (`src/calldata-gate.ts#ALLOWED`).
 - But `settleOrRefuse` dispatches `steps[steps.length - 1]` and nothing else
-  (`src/settle.ts:604`), and `calldataDisagreesWithFacts` refuses any plan whose last step is
-  not the payment (`src/settle.ts:131-134`), with the reason stated in the refusal: "only the
+  (`src/settle.ts#settleOrRefuse`), and `calldataDisagreesWithFacts` refuses any plan whose last step is
+  not the payment (`src/settle.ts#calldataDisagreesWithFacts`), with the reason stated in the refusal: "only the
   last step is dispatched; the payment would never be sent".
-- `mint` is deliberately absent from the allowlist (`src/calldata-gate.ts:24-30`): "a payment
+- `mint` is deliberately absent from the allowlist (`src/calldata-gate.ts#ALLOWED`): "a payment
   gate that allowlists a mint function is indefensible: setup happens out of band, not through
   the settlement path."
 
 So the allowance is granted out of band, by hand, by making your KeeperHub wallet call FAU's
-`approve`. `src/keeperhub.ts:223-227` records that `mint` and `approve` were both executed
+`approve`. `src/keeperhub.ts#toExecuteResult` records that `mint` and `approve` were both executed
 against Sepolia through KeeperHub's own REST route on 2026-09-09, which is how it was done
 here. Concretely, that is one `POST https://app.keeperhub.com/api/execute/contract-call` with
 `Authorization: Bearer $KEEPERHUB_API_KEY` and a body shaped like the one
@@ -269,9 +269,9 @@ invoices on the strength of a number that is now stale.
 
 which is the burner that received the 38 recorded settlements. Your `pnpm create` generated a
 *different* burner. Every path that builds its policy through `buildPolicy`
-(`src/plan.ts:86-105`) therefore refuses your invoice with `PAYEE_NOT_ALLOWED`: the MCP
-`settle_obligation` tool (`src/mcp.ts:476`), `npm run approve` (`scripts/approve.ts:61`),
-`npm run watch` (`src/watch.ts:261`), the race and crash harnesses. Its own `_comment` says so:
+(`src/plan.ts#knownTokenDecimals`) therefore refuses your invoice with `PAYEE_NOT_ALLOWED`: the MCP
+`settle_obligation` tool (`src/mcp.ts#callTool`), `npm run approve` (`scripts/approve.ts#policy`),
+`npm run watch` (`src/watch.ts#watchPass`), the race and crash harnesses. Its own `_comment` says so:
 "Change it before settling anything of your own: an allowlist naming somebody else's address is
 worse than none, because it reads as a control."
 
@@ -413,7 +413,7 @@ to a relayer fleet, this needs the set of accounts, not one.
 |---|---|
 | `missing KEEPERHUB_API_KEY in .env — run the invoice creation step first.` | The message names the wrong step. It is `need()` in `scripts/settle-live.ts` reporting whichever variable is absent, and the key is checked first. Set the key. |
 | `missing REQUEST_ID in .env — run the invoice creation step first.` | This one is accurate. Do step 2. |
-| `REFUSED before any write (BAD_IDENTIFIER)` | `REQUEST_ID` is `0x`-prefixed. Request channel ids are bare hex starting `01…`, and the payment reference is derived from that recorded spelling, so a `0x` prefix hashes to a different reference. `assertBareHex` (`src/request.ts:359`) refuses it rather than quietly stripping it, and the error says "drop the 0x: it is part of the preimage". |
+| `REFUSED before any write (BAD_IDENTIFIER)` | `REQUEST_ID` is `0x`-prefixed. Request channel ids are bare hex starting `01…`, and the payment reference is derived from that recorded spelling, so a `0x` prefix hashes to a different reference. `assertBareHex` (`src/request.ts#fetchInvoice`) refuses it rather than quietly stripping it, and the error says "drop the 0x: it is part of the preimage". |
 | `REFUSED before any write (REFERENCE_MISMATCH)` | The `PAYMENT_REFERENCE` in `.env` is not the one this invoice derives. They are different debts. Nothing downstream re-derives the reference, so this is refused rather than preferred either way. |
 | `REFUSED before any write (FACT_MISMATCH)` | A payee, fee, fee recipient or amount in `.env` disagrees with what Request states. Amounts compare as exact strings on purpose: `1000000000000000000` and `01000000000000000000` differ because one of them was typed by something other than Request. |
 | `REFUSED before any write (GATEWAY_UNAVAILABLE)` | Request's gateway did not answer. An unreadable gateway is not permission to proceed on the caller's word, so this fails closed. |

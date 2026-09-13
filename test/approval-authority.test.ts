@@ -264,7 +264,7 @@ describe("a decision authorises the plan it was given for, and no other", () => 
   });
 });
 
-describe("the sentence a human approves names an unauthenticated amount change", () => {
+describe("the sentence a human approves says everything that person needs", () => {
   test("restate warns when the channel moved the amount, and is silent when it did not", () => {
     const quiet = restate(policy, { ...factsFor(HONEST_PAYEE, ONE) }, ONE);
     assert.ok(!/NOTE/.test(quiet), "an ordinary invoice gets no warning, or nobody reads them");
@@ -275,7 +275,40 @@ describe("the sentence a human approves names an unauthenticated amount change",
       FIVE,
     );
     assert.match(changed, /raised at 1 FAU/);
-    assert.match(changed, /2 later action\(s\)/);
-    assert.match(changed, /cannot authenticate/);
+    assert.match(changed, /2 later signed action\(s\)/);
+    // It used to say the change could not be authenticated, and that was true when it was
+    // written. `src/request.ts` recovers each action's signer and enforces Request's role rules
+    // now, so the sentence would be telling a human something false about their own system --
+    // and the one place a false statement costs most is the screen where consent is given.
+    assert.doesNotMatch(changed, /cannot authenticate/);
+    assert.match(changed, /signatures check out/i);
+    assert.match(changed, /confirm the figure with the creditor/i);
+  });
+
+  test("it names the invoice, so the person approving can go and look at it", () => {
+    // Without these the sentence is "pay 1 FAU to 0xc43d…" and there is nothing on the screen a
+    // human could take to Request, or to a block explorer, to see the debt for themselves. The
+    // reference is also what will appear in the log the payment writes, so it is how they check
+    // afterwards that the payment they approved is the payment that happened.
+    const named = restate(policy, { ...factsFor(HONEST_PAYEE, ONE) }, ONE, {
+      requestId: "01cafebabe",
+      paymentReference: "0x0056a1b2c3d4e5f6",
+    });
+    assert.match(named, /01cafebabe/);
+    assert.match(named, /0x0056a1b2c3d4e5f6/);
+  });
+
+  test("and the sentence settle stores is the one carrying them", async () => {
+    // The property that matters is not that `restate` CAN take them: it is that the path a human
+    // actually reads passes them. A sentence assembled correctly in a function nobody calls with
+    // the identity is the same as no sentence at all.
+    const store = new Store();
+    const provider = new FixtureProvider();
+    const outcome = await settle(store, provider, plan(HONEST_PAYEE, ONE), {});
+    assert.equal(outcome.state, "AWAITING_APPROVAL");
+    assert.ok(outcome.restatement, "an obligation awaiting a human decision must carry the sentence");
+    assert.match(outcome.restatement, new RegExp(REQUEST_ID), outcome.restatement);
+    assert.match(outcome.restatement, new RegExp(REFERENCE), outcome.restatement);
+    store.close();
   });
 });
