@@ -14,8 +14,8 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { FixtureProvider, type Fault } from "../src/provider.ts";
 import { Store } from "../src/store.ts";
-import { settleObligation } from "../src/settle.ts";
-import { obligationId } from "../src/identity.ts";
+import { derivePlan, settleObligation } from "../src/settle.ts";
+import { obligationId, sourceFactsHash } from "../src/identity.ts";
 import { toBaseUnits } from "../src/money.ts";
 import { encodeCall } from "../src/abi.ts";
 import { PAY_SIGNATURE } from "../src/plan.ts";
@@ -63,7 +63,7 @@ const REFERENCE = "0x0056a1b2c3d4e5f6";
  * exercised the argument bytes — which is the entire thesis. A stub cannot disagree with an
  * invoice, so a suite built on stubs can never catch calldata that does.
  */
-function stepsFor(f: SourceFacts) {
+function stepsFor(f: SourceFacts, reference: string = REFERENCE) {
   const total = (BigInt(f.invoiceBaseUnits) + BigInt(f.feeBaseUnits)).toString();
   return [
     {
@@ -79,7 +79,7 @@ function stepsFor(f: SourceFacts) {
         f.tokenAddress,
         f.payee,
         f.invoiceBaseUnits,
-        REFERENCE,
+        reference,
         f.feeBaseUnits,
         f.feeRecipient,
       ]),
@@ -110,7 +110,7 @@ let n = 0;
 async function run(
   scenario: string,
   expected: string,
-  build: () => { facts: SourceFacts; fault?: Fault; approval?: typeof APPROVED | { approver: string; decision: "REJECTED" }; now?: number; factsAtDispatch?: SourceFacts; requestId?: string; pre?: (s: Store, o: string) => void; steps?: ReturnType<typeof stepsFor> },
+  build: () => { facts: SourceFacts; fault?: Fault; approval?: { approver: string; decision: "APPROVED" | "REJECTED"; decidedAt?: number }; now?: number; factsAtDispatch?: SourceFacts; requestId?: string; pre?: (s: Store, o: string) => void; steps?: ReturnType<typeof stepsFor> },
 ): Promise<void> {
   n++;
   const cfg = build();
@@ -192,6 +192,38 @@ await run("a rival plan already holds the obligation", "OBLIGATION_RESERVED", ()
     s.savePlan({ planHash: "9".repeat(64), obligationId: oid, version: 1, policyHash: "d".repeat(64), sourceFactsHash: "a".repeat(64), planJson: "{}", totalDebitBaseUnits: "1", expiresAt: 9e12 });
     s.reserveObligation(oid, "9".repeat(64));
   },
+}));
+
+// ---- the bytes, and the clock ---------------------------------------------
+//
+// README.md names these among the things this system refuses, and until now neither refusal
+// artifact carried a row for any of them: the defences existed, the tests proved them, and the
+// matrix a reader is pointed at did not contain them. A claim whose evidence file does not hold
+// it is a claim, however true it happens to be.
+await run("calldata mutated after the facts were cleared", "CALLDATA_MISMATCH", () => ({
+  facts: facts(),
+  // One byte of the amount, in the bytes actually handed to the provider. Policy clears the
+  // invoice; the gate at the provider proves the bytes decode to an allowlisted call and has no
+  // idea what this invoice says. This is the only place both halves are in scope at once.
+  steps: stepsFor(facts({ invoiceBaseUnits: toBaseUnits("50.000000000000000001", 18).toString() })),
+}));
+await run("payment step pointed at a different contract", "CALLDATA_MISMATCH", () => ({
+  facts: facts(),
+  steps: stepsFor(facts()).map((step) => ({ ...step, to: STRANGER })),
+}));
+await run("calldata carrying somebody else's payment reference", "CALLDATA_MISMATCH", () => ({
+  facts: facts(),
+  steps: stepsFor(facts(), "0xfaac1220a314c4a9"),
+}));
+await run("a human's approval older than the window it authorises", "PLAN_EXPIRED", () => ({
+  facts: facts(),
+  requestId: "req-stale-approval",
+  // The plan's own window restarts whenever the plan is proposed again -- otherwise a
+  // deterministic plan hash would make an expired debt permanently unpayable. A DECISION's window
+  // does not, and nothing restarts it but another human. So the dispatch happens two hours after
+  // a decision that authorises fifteen minutes.
+  approval: { approver: "human:owner", decision: "APPROVED", decidedAt: 1_000_000 },
+  now: 1_000_000 + 2 * 3600 * 1000,
 }));
 
 // ---- platform faults ------------------------------------------------------

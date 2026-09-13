@@ -206,11 +206,25 @@ scheme.
 
 ## What it refuses, and what it costs
 
-45 recorded refusals happened before any provider write — zero gas. Mutated calldata, a changed
-payee, amount, token, chain, proxy or reference, an expired approval, a foreign log, a
-dust-griefed reference, a wrong-chain RPC, a receipt whose own logs do not contain the payment.
-Full matrix in [`docs/refusals.json`](docs/refusals.json) and
-[`docs/refusals-live.json`](docs/refusals-live.json).
+45 refusals in the live matrix and 23 in the fixture matrix happened before any provider write —
+zero gas. Between them the rows cover a recipient off the allowlist, a debit over the cap, a fee
+over its ceiling, the wrong chain, the wrong token, token decimals that disagree with policy, a
+zero amount, an unrecognised fee recipient, an invoice Request already reports paid, mutated
+calldata, a payment step pointed at another contract, calldata carrying somebody else's payment
+reference, a selector the provider does not allow, no human decision yet, a reviewer's rejection,
+an approval older than the window it authorises, facts that changed between approval and dispatch,
+a rival plan already holding the obligation, a provider whose outcome is unknown, and a replay of
+something already settled or already dispatched.
+
+Full matrix in [`docs/refusals.json`](docs/refusals.json) (FIXTURE) and
+[`docs/refusals-live.json`](docs/refusals-live.json) (LIVE and RECORDED).
+
+Three defences in this system have no row in either file, and are named here rather than implied
+by them: a foreign log carrying a public payment reference
+(`test/log-matching.test.ts`, `test/conflict-review.test.ts`), a wrong-chain RPC
+(`src/chain.ts#assertChainId`, `test/provider-faults.test.ts`), and a receipt whose own logs do not
+contain the payment (`test/receipt-evidence.test.ts`). They are covered by tests, not by the
+matrices, and the difference is the point of saying so.
 
 The invariant, stated plainly: **the system may be temporarily uncertain; it never resolves
 uncertainty by paying again.** Crash it at any of 9 checkpoints and it converges or stays

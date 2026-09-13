@@ -106,6 +106,10 @@ const facts = {
   replays: fromCheck("live.replays-cost-nothing", /^(\d+) replays/),
   replaySends: fromCheck("live.replays-cost-nothing", /(\d+) send/),
   refusals: fromCheck("live.refused-before-write", /^(\d+) row/),
+  /** Pre-write refusals in the FIXTURE matrix, counted from the artifact rather than typed. */
+  fixtureRefusals: (json("docs/refusals.json").rows as Array<{ refused_before_provider_write?: boolean }>).filter(
+    (r) => r.refused_before_provider_write === true,
+  ).length,
   rows: json("docs/refusals-live.json").rows.length,
   derivations: fromCheck("request.derivation", /^(\d+)\//),
   raceWorkers: json("docs/evidence/race.json").workers,
@@ -138,7 +142,11 @@ const claims: Array<{ file: string; what: string; re: RegExp; expected: number }
   { file: "README.md", what: "the sampled receipt block", re: /at block ([\d,]+)/, expected: facts.receiptBlock },
   { file: "README.md", what: "verify:all failed", re: /\*\*\d+ ok · (\d+) failed · \d+ blocked/, expected: facts.verifyFailed },
   { file: "README.md", what: "verify:all blocked", re: /\*\*\d+ ok · \d+ failed · (\d+) blocked/, expected: facts.verifyBlocked },
-  { file: "README.md", what: "refusals (prose)", re: /(\d+) recorded refusals happened before/, expected: facts.refusals },
+  { file: "README.md", what: "refusals (prose, live)", re: /(\d+) refusals in the live matrix/, expected: facts.refusals },
+  // The fixture matrix is cited beside the live one now, so it is checked beside it. The prose
+  // used to name one number and point at both files, which is how a reader ends up counting rows
+  // in an artifact that was never what the sentence meant.
+  { file: "README.md", what: "refusals (prose, fixture)", re: /and (\d+) in the fixture matrix/, expected: facts.fixtureRefusals },
   { file: "README.md", what: "settlements (limitations)", re: /(\d+) recorded settlements predate/, expected: facts.settlements },
   { file: "README.md", what: "race workers (headline)", re: /(\d+) workers\. 1 payment/, expected: facts.raceWorkers },
   { file: "README.md", what: "race workers (command)", re: /npm run race +# (\d+) processes/, expected: facts.raceWorkers },
