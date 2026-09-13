@@ -124,7 +124,8 @@ class CountingProvider implements ExecutionProvider {
   }
 }
 
-const APPROVED = { approver: "owner@reqkeeper.local", decision: "APPROVED" as const };
+// Named for what it is. It is not a person, and the audit trail records it as asserted.
+const APPROVED = { approver: "harness:asserted-not-a-human", decision: "APPROVED" as const };
 
 type Row = {
   case_id: string;
@@ -229,6 +230,15 @@ for (const inv of payable) {
     store,
     provider,
     policy: buildPolicy(facts),
+    // The approval this harness supplies is ASSERTED by the caller, and says so.
+    //
+    // Without this the default authority is the store, `input.approval` is ignored, and every run
+    // stops at AWAITING_APPROVAL -- which is why `STATUS.md`'s stated remedy ("re-run
+    // harness:live with credentials") could not have worked. With it, `settleObligation` writes
+    // `APPROVAL_ASSERTED_BY_CALLER` into the audit trail, so a row produced here can never again
+    // be mistaken for one a human decided. The 38 rows this file produced before that distinction
+    // existed are disclosed in TRUTH.md and STATUS.md rather than quietly relabelled.
+    approvalAuthority: "caller" as const,
     currentBlock: () => currentBlock(DEFAULT_RPC),
     payerNonce: async () => {
       const payer = payerAddress();

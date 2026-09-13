@@ -24,9 +24,35 @@ export interface StandingPolicy {
   /** Ceiling on the TOTAL debit. An agent's own cap is clamped to this, never above it. */
   readonly maxTotalDebitBaseUnits: string | null;
   readonly maxFeeBaseUnits: string | null;
-  /** Which of the above the operator actually set. The UI and the docs must not overstate. */
-  readonly source: "environment" | "file" | "none" | "mixed";
+  /**
+   * Which of the above the operator actually set. The UI and the docs must not overstate.
+   *
+   * `unreadable` is the fourth state and the reason this type changed: an operator wrote a policy
+   * and nothing in it could be loaded. That is not `none`, and treating it as `none` handed the
+   * invoice its own payee as the allowlist.
+   */
+  readonly source: "environment" | "file" | "none" | "mixed" | "unreadable";
+  /** Everything the loader had to drop, so a caller can refuse rather than silently narrow. */
+  readonly gaps: readonly PolicyGap[];
 }
+
+/**
+ * What the loader could not make sense of.
+ *
+ * Empty means "the operator set none", and empty is what an unreadable file used to produce -- so
+ * a trailing comma, an address one hex character short, or a ceiling written as a JSON number all
+ * became "no standing policy", and `buildPolicy` then substituted the INVOICE's own payee as the
+ * allowlist and the caller's own number as the ceiling. Measured: an attacker payee that the
+ * correct file refuses was approved in all three cases. `docs/RUNBOOK.md` tells every new operator
+ * to hand-edit that file and promises PAYEE_NOT_ALLOWED until they do; one missing character
+ * returns the opposite, and the run looks clean.
+ *
+ * So the third state is named. A policy that failed to load is not a policy that is absent.
+ */
+export type PolicyGap =
+  | { readonly field: "file"; readonly detail: string }
+  | { readonly field: "allowedPayees" | "allowedFeeRecipients"; readonly detail: string }
+  | { readonly field: "maxTotalDebitBaseUnits" | "maxFeeBaseUnits"; readonly detail: string };
 
 export const NO_STANDING_POLICY: StandingPolicy = {
   allowedPayees: [],
@@ -34,20 +60,25 @@ export const NO_STANDING_POLICY: StandingPolicy = {
   maxTotalDebitBaseUnits: null,
   maxFeeBaseUnits: null,
   source: "none",
+  gaps: [],
 };
 
-function list(raw: string | undefined): string[] {
-  if (!raw) return [];
-  return raw
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter((s) => /^0x[0-9a-f]{40}$/.test(s));
+/** Addresses, and whatever was there instead. A dropped entry is not an entry never written. */
+function list(raw: string | undefined): { ok: string[]; rejected: string[] } {
+  if (!raw) return { ok: [], rejected: [] };
+  const entries = raw.split(",").map((s) => s.trim().toLowerCase()).filter((s) => s.length > 0);
+  return {
+    ok: entries.filter((s) => /^0x[0-9a-f]{40}$/.test(s)),
+    rejected: entries.filter((s) => !/^0x[0-9a-f]{40}$/.test(s)),
+  };
 }
 
-function baseUnits(raw: string | undefined): string | null {
-  if (!raw) return null;
+function baseUnits(raw: unknown): { value: string | null; rejected: boolean } {
+  if (raw === undefined || raw === null) return { value: null, rejected: false };
+  if (typeof raw !== "string") return { value: null, rejected: true };
   const t = raw.trim();
-  return /^\d+$/.test(t) ? t : null;
+  if (t.length === 0) return { value: null, rejected: false };
+  return /^\d+$/.test(t) ? { value: t, rejected: false } : { value: null, rejected: true };
 }
 
 /**
@@ -62,11 +93,25 @@ export function loadStandingPolicy(
   env: Record<string, string | undefined> = process.env,
   filePath = "policy.json",
 ): StandingPolicy {
+  const gaps: PolicyGap[] = [];
+  const envPayees = list(env.REQKEEPER_ALLOWED_PAYEES);
+  const envFees = list(env.REQKEEPER_ALLOWED_FEE_RECIPIENTS);
+  const envDebit = baseUnits(env.REQKEEPER_MAX_DEBIT);
+  const envFee = baseUnits(env.REQKEEPER_MAX_FEE);
+  if (envPayees.rejected.length > 0) {
+    gaps.push({ field: "allowedPayees", detail: `REQKEEPER_ALLOWED_PAYEES: ${envPayees.rejected.join(", ")}` });
+  }
+  if (envFees.rejected.length > 0) {
+    gaps.push({ field: "allowedFeeRecipients", detail: `REQKEEPER_ALLOWED_FEE_RECIPIENTS: ${envFees.rejected.join(", ")}` });
+  }
+  if (envDebit.rejected) gaps.push({ field: "maxTotalDebitBaseUnits", detail: "REQKEEPER_MAX_DEBIT is not a decimal string" });
+  if (envFee.rejected) gaps.push({ field: "maxFeeBaseUnits", detail: "REQKEEPER_MAX_FEE is not a decimal string" });
+
   const fromEnv = {
-    allowedPayees: list(env.REQKEEPER_ALLOWED_PAYEES),
-    allowedFeeRecipients: list(env.REQKEEPER_ALLOWED_FEE_RECIPIENTS),
-    maxTotalDebitBaseUnits: baseUnits(env.REQKEEPER_MAX_DEBIT),
-    maxFeeBaseUnits: baseUnits(env.REQKEEPER_MAX_FEE),
+    allowedPayees: envPayees.ok,
+    allowedFeeRecipients: envFees.ok,
+    maxTotalDebitBaseUnits: envDebit.value,
+    maxFeeBaseUnits: envFee.value,
   };
 
   let fromFile = {
@@ -78,17 +123,40 @@ export function loadStandingPolicy(
   if (existsSync(filePath)) {
     try {
       const raw = JSON.parse(readFileSync(filePath, "utf8")) as Record<string, unknown>;
+      const filePayees = list(Array.isArray(raw.allowedPayees) ? raw.allowedPayees.join(",") : undefined);
+      const fileFees = list(Array.isArray(raw.allowedFeeRecipients) ? raw.allowedFeeRecipients.join(",") : undefined);
+      const fileDebit = baseUnits(raw.maxTotalDebitBaseUnits);
+      const fileFee = baseUnits(raw.maxFeeBaseUnits);
+      // A key that is present and the wrong SHAPE is a gap too: `allowedPayees` written as a
+      // string rather than an array reaches `list(undefined)` and vanishes without a trace.
+      if (raw.allowedPayees !== undefined && !Array.isArray(raw.allowedPayees)) {
+        gaps.push({ field: "allowedPayees", detail: `${filePath}: allowedPayees is not an array` });
+      }
+      if (raw.allowedFeeRecipients !== undefined && !Array.isArray(raw.allowedFeeRecipients)) {
+        gaps.push({ field: "allowedFeeRecipients", detail: `${filePath}: allowedFeeRecipients is not an array` });
+      }
+      if (filePayees.rejected.length > 0) {
+        gaps.push({ field: "allowedPayees", detail: `${filePath}: ${filePayees.rejected.join(", ")}` });
+      }
+      if (fileFees.rejected.length > 0) {
+        gaps.push({ field: "allowedFeeRecipients", detail: `${filePath}: ${fileFees.rejected.join(", ")}` });
+      }
+      if (fileDebit.rejected) {
+        gaps.push({ field: "maxTotalDebitBaseUnits", detail: `${filePath}: maxTotalDebitBaseUnits must be a decimal STRING` });
+      }
+      if (fileFee.rejected) {
+        gaps.push({ field: "maxFeeBaseUnits", detail: `${filePath}: maxFeeBaseUnits must be a decimal STRING` });
+      }
       fromFile = {
-        allowedPayees: list(Array.isArray(raw.allowedPayees) ? raw.allowedPayees.join(",") : undefined),
-        allowedFeeRecipients: list(
-          Array.isArray(raw.allowedFeeRecipients) ? raw.allowedFeeRecipients.join(",") : undefined,
-        ),
-        maxTotalDebitBaseUnits: baseUnits(typeof raw.maxTotalDebitBaseUnits === "string" ? raw.maxTotalDebitBaseUnits : undefined),
-        maxFeeBaseUnits: baseUnits(typeof raw.maxFeeBaseUnits === "string" ? raw.maxFeeBaseUnits : undefined),
+        allowedPayees: filePayees.ok,
+        allowedFeeRecipients: fileFees.ok,
+        maxTotalDebitBaseUnits: fileDebit.value,
+        maxFeeBaseUnits: fileFee.value,
       };
-    } catch {
-      // A malformed policy file is not a reason to fall back to "no limits" quietly, but it
-      // is also not this module's job to crash a process. The caller reports `source`.
+    } catch (e) {
+      // A malformed policy file is not "no policy". It is an operator who meant something this
+      // process could not read, and the difference decides whether the payee allowlist exists.
+      gaps.push({ field: "file", detail: `${filePath} did not parse: ${(e as Error).message.slice(0, 120)}` });
       fromFile = { allowedPayees: [], allowedFeeRecipients: [], maxTotalDebitBaseUnits: null, maxFeeBaseUnits: null };
     }
   }
@@ -113,13 +181,30 @@ export function loadStandingPolicy(
     fromFile.maxFeeBaseUnits !== null;
 
   const source: StandingPolicy["source"] =
-    usedEnv && usedFile ? "mixed" : usedEnv ? "environment" : usedFile ? "file" : "none";
+    gaps.length > 0 && !usedEnv && !usedFile
+      ? "unreadable"
+      : usedEnv && usedFile
+        ? "mixed"
+        : usedEnv
+          ? "environment"
+          : usedFile
+            ? "file"
+            : "none";
 
-  return { ...merged, source };
+  return { ...merged, source, gaps };
 }
 
 /** Human-readable statement of what is actually enforced. Used by the CLI and the docs. */
 export function describeStandingPolicy(p: StandingPolicy): string {
+  if (p.gaps.length > 0) {
+    // Named first, and never folded into the "none" sentence. An operator who wrote a policy and
+    // is told "no standing policy set" reads it as their choice rather than their typo.
+    return (
+      `standing policy PARTIALLY UNREADABLE (${p.gaps.map((g) => g.detail).join("; ")}). ` +
+      "What could not be read is NOT in force. Fix it before approving anything: an allowlist " +
+      "that silently became empty looks exactly like a working gate."
+    );
+  }
   if (p.source === "none") {
     return (
       "no standing policy set — every ceiling and allowlist in this plan comes from the " +

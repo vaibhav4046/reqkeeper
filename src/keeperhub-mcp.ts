@@ -68,7 +68,31 @@ interface ExecutePayload {
   gasEstimate?: string;
   error?: string;
   idempotentReplay?: boolean;
+  /** The REST transport's spelling of the same thing. Recognised here so a cached FAILURE is
+   * reported as CACHED_FAILURE on both transports -- which is what carries the "do not rotate
+   * the key" guidance, and rotating the key is how you pay twice. */
+  replayed?: boolean;
   receipts?: Array<{ verified?: boolean; receiptStatus?: string; gasUsed?: string }>;
+}
+
+/**
+ * The 409's own words, not 300 characters of whatever came back.
+ *
+ * The REST transport matches on the parsed `code` and `error` fields. This one matched on the raw
+ * body, which is a far wider surface: a stack trace or a documentation URL containing the words
+ * "in progress" flips a conflict into a retry, and the two verdicts decide whether a payment that
+ * may already have happened is retried or handed to a human.
+ */
+function labelFrom(body: string): string {
+  try {
+    const parsed = JSON.parse(body) as { code?: unknown; error?: unknown; message?: unknown };
+    const fields = [parsed.code, parsed.error, parsed.message].filter((v) => typeof v === "string");
+    if (fields.length > 0) return fields.join(" ");
+  } catch {
+    // Not JSON. Fall through: an unparseable 409 is exactly the unlabelled case, and
+    // `idempotencyVerdict` now has a third answer for it.
+  }
+  return body.slice(0, 300);
 }
 
 export class KeeperHubMcpProvider implements ExecutionProvider {
@@ -164,7 +188,7 @@ export class KeeperHubMcpProvider implements ExecutionProvider {
     // branch on the literal code `idempotency_conflict`, so on this surface "the platform holds
     // a different body for this key" was being recorded as an ordinary unknown outcome instead
     // of the incident it is.
-    if (res.status === 409) throw idempotencyVerdict(text.slice(0, 300));
+    if (res.status === 409) throw idempotencyVerdict(labelFrom(text));
     if (res.status >= 500) {
       throw new ProviderError("provider_error", `HTTP ${res.status}: ${text.slice(0, 200)}`, true);
     }
@@ -319,7 +343,7 @@ export class KeeperHubMcpProvider implements ExecutionProvider {
       executionId: id,
       status: mapped,
       ...(hash ? { transactionHash: hash } : {}),
-      ...(payload.idempotentReplay === true ? { idempotentReplay: true } : {}),
+      ...(payload.idempotentReplay === true || payload.replayed === true ? { idempotentReplay: true } : {}),
     };
   }
 }

@@ -79,7 +79,7 @@ never links.
 cp .env.example .env
 cd tools/invoice
 pnpm install
-pnpm create          # -> node create-invoice.mjs
+pnpm run create      # -> node create-invoice.mjs
 cd ../..
 ```
 
@@ -179,7 +179,7 @@ address and no other.
 ## 5. FAU balance and the allowance
 
 **This is the step that is documented nowhere else, and it is the one a first-timer will get
-stuck on.** `README.md:199` says only "The token allowance was granted out of band."
+stuck on.** `README.md` says only "The token allowance was granted out of band."
 
 The payment is `ERC20FeeProxy.transferFromWithReferenceAndFee`, which calls `transferFrom` on
 FAU. So the payer wallet must have:
@@ -200,8 +200,8 @@ and `decimals()` for both from a public RPC.
 
 ### There is no tool in this repository that grants it
 
-`.claude/agents/builder-reliability.md:16` records the intent to add `npm run fund` "that
-documents and performs the approve". It was never added: there is no `fund` script in
+An internal working note recorded the intent to add `npm run fund` "that documents and
+performs the approve" — that file is gitignored, so take the checkable half: it was never added: there is no `fund` script in
 `package.json`, and no script under `scripts/` or `tools/` calls `approve` or `mint` on FAU.
 `grep -rni allowance` across the tree returns design notes and one README sentence, and no
 procedure.
@@ -253,8 +253,10 @@ allowance  54000000000000000000 base units (54.0000 FAU)
 balance    54000000000000000000 base units (54.0000 FAU)
 ```
 
-(`allowance(address,address)` is `0xdd62ed3e`, `balanceOf(address)` is `0x70a08231`; both
-selectors are computed and checked by `npm run verify:onchain`.) Note that
+(`allowance(address,address)` is `0xdd62ed3e` and `balanceOf(address)` is `0x70a08231`.
+`npm run verify:onchain` computes `allowance` among others and asserts the presence of
+`approve` and `mint` in the deployed bytecode; it does not assert these two, and this line used
+to say it did.) Note that
 `create-batch.mjs:42` still says "the payer holds 98 FAU" in its argument-range message. That
 was true when it was written; the chain says 54 today. The message caps the batch at 90
 invoices on the strength of a number that is now stale.
@@ -293,20 +295,34 @@ npm run settle:live
 
 What it does, in order: reads the invoice from Request's public gateway and refuses before any
 write if anything in `.env` disagrees with it; builds the payment calldata locally; opens
-`.data/live.sqlite`; and calls `settleObligation` with an inline approval
-(`approver: "owner@reqkeeper.local"`). It is one process doing propose, approve and settle,
-not three commands. For the three-actor flow (an agent proposes, a human approves at a CLI,
-the agent settles) use the MCP server and `npm run approve`; `npm run watch` prints a
-ready-to-run approve command for every invoice waiting on one.
+`.data/live.sqlite`; and calls `settleObligation` **with no approval**.
+
+So a first run stops at `AWAITING_APPROVAL` and sends nothing. That is the point, and it is a
+change: this script used to pass `approval: { approver: "owner@reqkeeper.local", decision:
+"APPROVED" }` — a hardcoded yes on the one path that moves real money. An adversarial pass found
+it. `settleObligation` reads the decision from the store now, keyed by the plan hash it was given
+for, so **the settle path takes three commands, not one**:
+
+```bash
+npm run settle:live      # 1. proposes, prints the plan hash, stops at AWAITING_APPROVAL
+npm run approve -- --requestId <id> --reference <ref> --payee <addr> \
+                   --amount <baseUnits> --max <baseUnits> --approver you@example.com
+npm run settle:live      # 2. now there is a decision for this plan, and it dispatches
+```
+
+`npm run approve` refuses to take a plan hash: it recomputes one from the invoice facts you type
+and compares. If they disagree, something proposed a payment other than the one you are being
+shown, and nothing is recorded. `npm run watch` prints a ready-to-run approve command for every
+invoice waiting on one.
 
 `KEEPERHUB_TRANSPORT=mcp npm run settle:live` dispatches through KeeperHub's own MCP server
 instead of its REST API. Nothing else changes. An unrecognised value is refused rather than
 silently defaulted, so a typo cannot put the wrong transport in the evidence.
 
-A first run that works usually ends in `RECONCILIATION_PENDING`, not `SETTLED`. That is
+The run that dispatches usually ends in `RECONCILIATION_PENDING`, not `SETTLED`. That is
 correct: settlement requires a minimum confirmation depth (`REQKEEPER_MIN_CONFIRMATIONS`,
 default 2) and a fresh receipt is one block deep. The payment is on chain; the system is
-declining to call it settled yet.
+declining to call it settled yet. `npm run resolve` finishes it.
 
 ### Run it twice
 
@@ -314,8 +330,8 @@ declining to call it settled yet.
 npm run settle:live     # again, same invoice
 ```
 
-The second run must refuse with `ALREADY_DISPATCHED` (or `ALREADY_SETTLED`) and leave
-`providerWrite` false. That pair is the whole thesis, and the durable store under `.data/` is
+A third run — after the dispatch — must refuse with `ALREADY_DISPATCHED` (or `ALREADY_SETTLED`)
+and leave `providerWrite` false. That pair is the whole thesis, and the durable store under `.data/` is
 what makes the refusal survive a process restart, a rotated key, and KeeperHub's 24-hour
 idempotency window expiring.
 
@@ -349,8 +365,11 @@ these two is that neither reads back the file that reported the payment.
 Optional, and everything works without it — but a dry run that never comes back will then wait for
 you instead of recovering on its own.
 
-`?simulate=true` is not a safety boundary on KeeperHub's transfer routes (issues #1959 / #1929):
-the call can really execute. When the reply is also lost, one question decides whether the debt may
+`?simulate=true` is treated as not being a safety boundary (issues #1959 / #1929 describe it
+being ignored on the protocol-action and node routes). A probe on 2026-09-09 did NOT reproduce
+it, and this deployment's only write route is `/execute/contract-call`, which those issues do not
+cover — so this is modelled, not observed. The defence stays regardless: a dry run is never
+treated as a safety boundary, because the cost of being wrong is a double payment. When the reply is also lost, one question decides whether the debt may
 be proposed again: is there a transaction out there that will pay this invoice? A log scan cannot
 answer it, because `eth_getLogs` reads blocks and a pending transaction is not in one. Elapsed time
 cannot answer it either — there is no number of blocks after which a pending transaction becomes
@@ -435,7 +454,8 @@ to a relayer fleet, this needs the set of accounts, not one.
 
 | What you see | What it means |
 |---|---|
-| `missing KEEPERHUB_API_KEY in .env — run the invoice creation step first.` | The message names the wrong step. It is `need()` in `scripts/settle-live.ts` reporting whichever variable is absent, and the key is checked first. Set the key. |
+| `eth_getLogs: Rate limit exceeded` from a public endpoint | The free tier of `ethereum-sepolia-rpc.publicnode.com`, hit on the first `npm run watch` of a fresh clone. Set `SEPOLIA_RPC` to an endpoint you control, and `REQKEEPER_RPC_ENDPOINTS` to a comma-separated list that a negative is corroborated against. One of the three built-in fallbacks, `sepolia.drpc.org`, refuses free-tier traffic outright, so the quorum is two endpoints unless you set your own. |
+| `missing KEEPERHUB_API_KEY in .env — get one from KeeperHub and put it in .env.` | The message names the wrong step. It is `need()` in `scripts/settle-live.ts` reporting whichever variable is absent, and the key is checked first. Set the key. |
 | `missing REQUEST_ID in .env — run the invoice creation step first.` | This one is accurate. Do step 2. |
 | `REFUSED before any write (BAD_IDENTIFIER)` | `REQUEST_ID` is `0x`-prefixed. Request channel ids are bare hex starting `01…`, and the payment reference is derived from that recorded spelling, so a `0x` prefix hashes to a different reference. `assertBareHex` (`src/request.ts#fetchInvoice`) refuses it rather than quietly stripping it, and the error says "drop the 0x: it is part of the preimage". |
 | `REFUSED before any write (REFERENCE_MISMATCH)` | The `PAYMENT_REFERENCE` in `.env` is not the one this invoice derives. They are different debts. Nothing downstream re-derives the reference, so this is refused rather than preferred either way. |

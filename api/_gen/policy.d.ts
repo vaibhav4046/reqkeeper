@@ -6,7 +6,9 @@
  * are the rows of the refusal table that the submission is scored on, so they are part of
  * the contract, not debug output.
  */
-export type RefusalCode = "UNSUPPORTED_CHAIN" | "UNSUPPORTED_TOKEN" | "TOKEN_DECIMALS_MISMATCH" | "PAYEE_NOT_ALLOWED" | "LIMIT_EXCEEDED" | "SOURCE_ALREADY_PAID" | "FEE_RECIPIENT_UNKNOWN" | "FEE_EXCEEDS_CEILING" | "AMOUNT_NOT_POSITIVE";
+export type RefusalCode = "UNSUPPORTED_CHAIN" | "UNSUPPORTED_TOKEN" | "TOKEN_DECIMALS_MISMATCH" | "PAYEE_NOT_ALLOWED"
+/** The operator set a standing policy and this process could not read part of it. */
+ | "POLICY_UNREADABLE" | "LIMIT_EXCEEDED" | "SOURCE_ALREADY_PAID" | "FEE_RECIPIENT_UNKNOWN" | "FEE_EXCEEDS_CEILING" | "AMOUNT_NOT_POSITIVE";
 export interface Policy {
     /** Bumped on every change; committed into the plan via policyHash. */
     readonly version: number;
@@ -26,6 +28,16 @@ export interface Policy {
     readonly maxFeeBaseUnits: string;
     /** How long an approved plan stays valid. */
     readonly planTtlSeconds: number;
+    /**
+     * What the operator's standing policy said that could not be read.
+     *
+     * Carried into the policy rather than left in the loader, because the loader's caller is not
+     * the one who decides. An unreadable allowlist used to arrive here as an EMPTY allowlist, and
+     * `buildPolicy` reads empty as "the operator set none" and substitutes the invoice's own payee
+     * -- so a payee allowlist with one hex character missing approved an attacker, and the run
+     * looked clean. Measured in three separate spellings of one typo.
+     */
+    readonly standingGaps?: readonly string[];
 }
 /** Facts read from Request. Untrusted input: shape-checked, never assumed. */
 export interface SourceFacts {

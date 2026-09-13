@@ -77,7 +77,16 @@ export const PUBLIC_TOOLS = [
 ] as const;
 
 /** Named here rather than imported so the hosted bundle carries no store and no provider. */
-const RETRY_GUIDANCE: Record<string, string> = {
+export const RETRY_GUIDANCE: Record<string, string> = {
+  REFERENCE_MISMATCH:
+    "The payment reference supplied does not match the one this invoice derives. That is a " +
+    "different debt, or a forged one: do not retry with the same value.",
+  FACTS_DISAGREE_WITH_INVOICE:
+    "What was supplied disagrees with what Request serves for this invoice. Read the invoice " +
+    "again and propose from it; retrying the same facts is refused the same way.",
+  REQUEST_UNREADABLE:
+    "Request's gateway could not be read, so nothing is asserted about the invoice either way. " +
+    "This is a read failure, not a refusal of the payment; try again when the gateway answers.",
   // Not "Request agrees": nothing in the settle path asks Request anything. Both signals are
   // read from a public RPC by this project -- the receipt, and the fee-proxy event for that
   // same transaction. Claiming another system vouched for our own read is the thing this

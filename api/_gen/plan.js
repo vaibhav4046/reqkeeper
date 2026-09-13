@@ -69,6 +69,10 @@ export function buildPolicy(f, standing = loadStandingPolicy()) {
         allowedFeeRecipients: standing.allowedFeeRecipients.length > 0 ? standing.allowedFeeRecipients : [f.feeAddress.toLowerCase()],
         maxFeeBaseUnits: lower(f.feeAmount, standing.maxFeeBaseUnits),
         planTtlSeconds: 3600,
+        // Carried, not swallowed. `checkPolicy` refuses on a non-empty list: the substitutions above
+        // are safe only when the operator really set nothing, and a policy that failed to load is not
+        // a policy that is absent.
+        ...(standing.gaps.length > 0 ? { standingGaps: standing.gaps.map((g) => g.detail) } : {}),
     };
 }
 export function buildSourceFacts(f) {

@@ -77,6 +77,8 @@ export declare const PUBLIC_TOOLS: readonly [{
         readonly properties: {};
     };
 }];
+/** Named here rather than imported so the hosted bundle carries no store and no provider. */
+export declare const RETRY_GUIDANCE: Record<string, string>;
 export interface PublicDeps {
     readonly findPayment?: typeof findPaymentByReference;
     readonly rpcUrl?: string;

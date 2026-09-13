@@ -8,7 +8,7 @@ still breaks or is unfinished?" and the last section is the source for that answ
 
 Reproduce any probe with `node --experimental-strip-types hackathon/audit/probes/<probe>.ts`.
 
-Gates: `npm test` 566 pass / 0 fail / 113 suites · `npm run typecheck` clean · `npm run build`
+Gates: `npm test` 575 pass / 0 fail / 114 suites · `npm run typecheck` clean · `npm run build`
 clean, and reproducible from a bare clone: the page is a function of the committed evidence and
 reads no environment at all, so `git diff --exit-code web api/_gen` passes on a machine that has
 never had a `.env` · `npm run gate-a` 10 ok / 0 failed / 2 blocked here, 9 ok / 0 failed / 3
@@ -175,6 +175,18 @@ Crash matrix now, `p3-crash.ts`, total sends never above 1:
 ---
 
 ## What still breaks — the candid list
+
+0. **The 38 recorded settlements were dispatched on a synthetic approval, and this is the most
+   serious thing on this list.** `scripts/live-harness.ts` passed `approver:
+   "owner@reqkeeper.local"` inline; `settleObligation` minted the approval row from that literal at
+   send time. Every row in `docs/refusals-live.json` therefore carries an approver string that
+   reads as a person and was not one, and the artifact is tagged `LIVE`, not `TEST`. An adversarial
+   pass found it and the hardcoded yes is gone: approvals are read from the store keyed by plan
+   hash, and a caller that asserts one is audited as `APPROVAL_ASSERTED_BY_CALLER` so the two can
+   never be confused again. The payments are real, the receipts are real, the refusals are real —
+   what those rows do not evidence is the human-approval gate, because it did not exist when they
+   were made. Closing it means a fresh credentialed run through the real three-command flow.
+
 
 Nothing here is a duplicate-payment path. Each was checked for that specifically.
 

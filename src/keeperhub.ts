@@ -76,7 +76,26 @@ export function idempotencyVerdict(said: string): ProviderError {
   if (/in[_\s-]?progress/i.test(text)) {
     return new ProviderError("idempotency_in_progress", text || "409 in progress", true);
   }
-  return new ProviderError("idempotency_conflict", text || "409 from KeeperHub", false);
+  // Three states, and this function used to have two returns.
+  //
+  // "In progress" and "conflict" are the labelled pair. The third is a 409 whose body said
+  // NEITHER -- an empty body, an edge's HTML error page, a shape KeeperHub has not documented --
+  // and it fell into `conflict`, which `settle.ts` treats as an integrity incident: it writes
+  // EVIDENCE_CONFLICT, which is not replannable, and enqueues nothing. A recoverable wait became
+  // a permanent wedge because the reply was silent rather than because it said anything.
+  //
+  // This is the same defect the labelled pair was split to fix, one layer in. An unlabelled 409
+  // is retryable and says so, and the caller's own reconciliation decides what happened.
+  if (/conflict/i.test(text) || /idempot/i.test(text)) {
+    return new ProviderError("idempotency_conflict", text, false);
+  }
+  return new ProviderError(
+    "idempotency_unlabelled",
+    text
+      ? `409 from KeeperHub, which said neither in-progress nor conflict: ${text.slice(0, 160)}`
+      : "409 from KeeperHub with no body; it said neither in-progress nor conflict",
+    true,
+  );
 }
 
 export class KeeperHubProvider implements ExecutionProvider {

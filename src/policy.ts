@@ -14,6 +14,8 @@ export type RefusalCode =
   | "UNSUPPORTED_TOKEN"
   | "TOKEN_DECIMALS_MISMATCH"
   | "PAYEE_NOT_ALLOWED"
+  /** The operator set a standing policy and this process could not read part of it. */
+  | "POLICY_UNREADABLE"
   | "LIMIT_EXCEEDED"
   | "SOURCE_ALREADY_PAID"
   | "FEE_RECIPIENT_UNKNOWN"
@@ -39,6 +41,16 @@ export interface Policy {
   readonly maxFeeBaseUnits: string;
   /** How long an approved plan stays valid. */
   readonly planTtlSeconds: number;
+  /**
+   * What the operator's standing policy said that could not be read.
+   *
+   * Carried into the policy rather than left in the loader, because the loader's caller is not
+   * the one who decides. An unreadable allowlist used to arrive here as an EMPTY allowlist, and
+   * `buildPolicy` reads empty as "the operator set none" and substitutes the invoice's own payee
+   * -- so a payee allowlist with one hex character missing approved an attacker, and the run
+   * looked clean. Measured in three separate spellings of one typo.
+   */
+  readonly standingGaps?: readonly string[];
 }
 
 /**
@@ -114,6 +126,24 @@ function refuse(code: RefusalCode, detail: string): Decision {
  * names the root problem rather than a downstream symptom.
  */
 export function checkPolicy(policy: Policy, facts: SourceFacts): Decision {
+  // First, before the already-paid check and before the mainnet floor.
+  //
+  // An operator who wrote a standing policy this process could not read has not consented to
+  // whatever the invoice happens to say — and the substitution `buildPolicy` makes when no policy
+  // is set (the invoice's OWN payee as the allowlist, the caller's OWN number as the ceiling) is
+  // safe only when the operator really set nothing. An unreadable allowlist used to arrive here
+  // as an empty one, which is indistinguishable. Measured: an attacker payee the correct file
+  // refuses was approved by a file with one hex character missing, by a trailing comma, and by a
+  // ceiling written as a JSON number. `docs/RUNBOOK.md` asks every new operator to hand-edit
+  // exactly that file.
+  if (policy.standingGaps && policy.standingGaps.length > 0) {
+    return refuse(
+      "POLICY_UNREADABLE",
+      `the standing policy could not be read in full, so it is not in force: ${policy.standingGaps.join("; ")}. ` +
+        "Nothing settles under a policy nobody could load. Fix it and run this again.",
+    );
+  }
+
   if (facts.hasBeenPaid) {
     return refuse("SOURCE_ALREADY_PAID", "the invoice facts say this obligation is already paid");
   }

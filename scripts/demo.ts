@@ -85,10 +85,38 @@ say("  Nothing owned obligation identity across runs. That is this.");
 heading("1", "An agent proposes. It cannot approve.", "FIXTURE");
 
 const provider = new FixtureProvider();
+const INVOICE = {
+  requestId: REQUEST_ID || "0120demo",
+  paymentReference: REFERENCE || "0x0102030405060708",
+  payee: PAYEE || "0xc43d766cb7c48b9b198db87441b97c09e81717a1",
+  amountBaseUnits: ONE,
+  maxTotalDebitBaseUnits: "2000000000000000000",
+};
+
 const ctx: McpContext = {
   store: new Store(),
   provider,
-  findPayment: async () => ({ found: false }),
+  // A conclusive negative, stated the way a real reader states one: the window reached the floor,
+  // the scan said which conflicting logs it saw, and another endpoint agreed. A stub that says
+  // only `found: false` means "I could not tell", which the already-paid gate refuses -- correctly,
+  // and this demo then printed a refusal at step 1 of 9 under a [FIXTURE] heading.
+  findPayment: async () => ({ found: false, truncated: false, conflictingLogs: [], negativeCorroborations: 2 }),
+  // And the invoice is a fixture too. It used to read Request's live gateway for a made-up
+  // request id -- so the demo depended on a public endpoint, refused when it answered "no such
+  // channel", and labelled the whole thing FIXTURE while doing it. A demo that cannot run offline
+  // is a demo that fails in front of an audience.
+  fetchInvoice: async () => ({
+    requestId: INVOICE.requestId,
+    chainId: 11155111,
+    tokenAddress: "0x370DE27fdb7D1Ff1e1BaA7D11c5820a324Cf623C",
+    payee: INVOICE.payee,
+    payeeOfRecord: INVOICE.payee,
+    invoiceBaseUnits: INVOICE.amountBaseUnits,
+    feeBaseUnits: "0",
+    feeRecipient: `0x${"0".repeat(40)}`,
+    salt: "0123456789abcdef",
+    paymentReference: INVOICE.paymentReference,
+  }),
 };
 
 say(`  MCP tools exposed: ${TOOLS.map((t) => t.name).join(", ")}`);
@@ -108,13 +136,6 @@ for (const guess of ["approve_payment", "record_approval", "sign_plan"]) {
   say(`  agent calls ${guess.padEnd(17)} -> ${r.text}`);
 }
 
-const INVOICE = {
-  requestId: REQUEST_ID || "0120demo",
-  paymentReference: REFERENCE || "0x0102030405060708",
-  payee: PAYEE || "0xc43d766cb7c48b9b198db87441b97c09e81717a1",
-  amountBaseUnits: ONE,
-  maxTotalDebitBaseUnits: "2000000000000000000",
-};
 
 const proposal = JSON.parse((await tool("propose_payment", INVOICE)).text);
 say("");
@@ -124,8 +145,18 @@ say(`  physical sends so far            : ${provider.totalSends()}`);
 say("");
 say("  the sentence a human must read, derived from the same values as the calldata:");
 say("");
-for (const chunk of (proposal.approvalSentence as string).match(/.{1,68}(\s|$)/g) ?? []) {
-  say(`      ${chunk.trim()}`);
+// A refusal has no sentence, and reading `.match` off null threw a raw TypeError at step 1 of 9
+// -- with a stack trace where the demo should be. The demo's whole job is to be watched.
+if (typeof proposal.approvalSentence === "string") {
+  for (const chunk of proposal.approvalSentence.match(/.{1,68}(\s|$)/g) ?? []) {
+    say(`      ${chunk.trim()}`);
+  }
+} else {
+  say(`      (none: the proposal was refused with ${proposal.refusal ?? "no code"})`);
+  say(`      ${String(proposal.detail ?? "").slice(0, 200)}`);
+  say("");
+  say("      This demo is a FIXTURE and should never reach here. Run `npm run mcp:e2e` for the");
+  say("      same journey against the real server binary.");
 }
 
 heading("2", "The agent gets impatient", "FIXTURE");

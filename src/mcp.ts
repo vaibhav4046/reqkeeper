@@ -163,7 +163,7 @@ function refusedBeforeWrite(obligationId: string, refusal: string, detail: strin
   };
 }
 
-const TERMINAL_FOR_AGENTS: Record<string, string> = {
+export const TERMINAL_FOR_AGENTS: Record<string, string> = {
   REFERENCE_MISMATCH:
     "The payment reference does not match the one derived from this invoice. Do not retry: a " +
     "reference you supply is not evidence of a debt. Read the invoice from Request instead.",
@@ -184,6 +184,21 @@ const TERMINAL_FOR_AGENTS: Record<string, string> = {
   OBLIGATION_RESERVED: "Another plan holds this obligation. Do not race it.",
   CACHED_FAILURE: "The provider is replaying a cached failure. Rotating the key would pay twice; do not.",
   EVIDENCE_CONFLICT: "The provider and the chain disagree. A human must look before anything else happens.",
+  SETTLED: "This obligation is paid and closed. Nothing further is owed and nothing will be sent.",
+  FEE_EXCEEDS_CEILING:
+    "The fee is above the ceiling this workspace allows. A retry sends the same fee and is " +
+    "refused the same way: this needs a human to widen the ceiling or the invoice to change.",
+  FEE_RECIPIENT_UNKNOWN:
+    "The fee is routed to an address this workspace does not recognise. Do not retry; report it.",
+  CHAIN_PENDING:
+    "The transaction is on chain and not yet deep enough to settle. Nothing else is owed from " +
+    "you: call resolve_pending, or wait. Calling settle_obligation again cannot make it deeper " +
+    "and may issue a second send.",
+  PAYMENT_PREFLIGHT:
+    "A dry run was issued and its answer never came back, so it is not known whether it moved " +
+    "money. Do NOT call settle_obligation again. Call resolve_pending, which reads the chain; if " +
+    "it still cannot conclude, a human has to release it (docs/RUNBOOK.md).",
+
   RECONCILIATION_PENDING:
     "Paid on chain; this deployment has not matched the log to the obligation yet. Call resolve_pending; never settle_obligation.",
   EXECUTION_OUTCOME_UNKNOWN:
@@ -532,7 +547,14 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
           // satisfy this invoice, and treating it as settlement lets anyone who can read a
           // reference off-chain refuse payment of that invoice permanently. References are
           // public: they derive from data anchored openly on Sepolia.
-          const sighting = await findPayment(facts.paymentReference, { expect: expectation, anchorBlock });
+          // `rpcUrl` was missing here, and only here. Every other chain read on this surface
+          // passes it, so a deployment pointed at its own endpoint had exactly one read that
+          // went somewhere else -- the one that decides whether this invoice was already paid.
+          const sighting = await findPayment(facts.paymentReference, {
+            rpcUrl: ctx.rpcUrl,
+            expect: expectation,
+            anchorBlock,
+          });
           // One shared verdict, not a local recombination of `found` and `truncated`. The
           // hand-rolled version here dropped `conflicts`, and a log paying this invoice's payee
           // and token for a DIFFERENT fee -- a fee the paying client chooses -- came back as
@@ -663,11 +685,19 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
         txHash: outcome.txHash ?? null,
         providerWriteIssued: outcome.providerWriteIssued,
         approvalSentence: outcome.restatement ?? null,
+        // Keyed off the refusal FIRST, then the state -- because the states that carry no refusal
+        // are the ones where something already happened, and the most dangerous of them had no
+        // guidance at all. `RECONCILIATION_PENDING` means the money has moved and the outcome is
+        // not confirmed yet; an agent handed `null` there is an agent with no instruction in the
+        // one state where retrying pays twice. The text existed and was unreachable.
         agentGuidance: outcome.refusal
           ? (TERMINAL_FOR_AGENTS[outcome.refusal] ?? "Report this to a human rather than retrying.")
-          : outcome.state === "AWAITING_APPROVAL"
-            ? TERMINAL_FOR_AGENTS.AWAITING_APPROVAL
-            : null,
+          : (TERMINAL_FOR_AGENTS[outcome.state] ??
+             (outcome.providerWriteIssued
+               ? "This call may have moved money and the outcome is not confirmed. Do NOT call " +
+                 "settle_obligation again. Call resolve_pending, which reads the chain, or hand " +
+                 "this to a human."
+               : null)),
       };
     }
 

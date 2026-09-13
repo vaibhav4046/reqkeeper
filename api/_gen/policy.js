@@ -35,6 +35,20 @@ function refuse(code, detail) {
  * names the root problem rather than a downstream symptom.
  */
 export function checkPolicy(policy, facts) {
+    // First, before the already-paid check and before the mainnet floor.
+    //
+    // An operator who wrote a standing policy this process could not read has not consented to
+    // whatever the invoice happens to say — and the substitution `buildPolicy` makes when no policy
+    // is set (the invoice's OWN payee as the allowlist, the caller's OWN number as the ceiling) is
+    // safe only when the operator really set nothing. An unreadable allowlist used to arrive here
+    // as an empty one, which is indistinguishable. Measured: an attacker payee the correct file
+    // refuses was approved by a file with one hex character missing, by a trailing comma, and by a
+    // ceiling written as a JSON number. `docs/RUNBOOK.md` asks every new operator to hand-edit
+    // exactly that file.
+    if (policy.standingGaps && policy.standingGaps.length > 0) {
+        return refuse("POLICY_UNREADABLE", `the standing policy could not be read in full, so it is not in force: ${policy.standingGaps.join("; ")}. ` +
+            "Nothing settles under a policy nobody could load. Fix it and run this again.");
+    }
     if (facts.hasBeenPaid) {
         return refuse("SOURCE_ALREADY_PAID", "the invoice facts say this obligation is already paid");
     }

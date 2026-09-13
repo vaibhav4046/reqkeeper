@@ -374,7 +374,15 @@ async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Reso
 
     // Sent, but no outcome was ever written: the process died inside the send. The money may
     // have moved. The only honest way to find out is to look for the reference on chain.
-    if (attempt?.firstSendAt && obligation.state === "PAYMENT_EXECUTING") {
+    // `first_send_at` alone. It used to be ANDed with `state === "PAYMENT_EXECUTING"`, and those
+    // two writes are not atomic with each other: `markSent` stamps the claim at settle.ts before
+    // the state row moves, precisely so that "this call may have moved money" is true from the
+    // earliest possible instant. A crash, an OOM or a SQLITE_BUSY in that window leaves the claim
+    // set and the state still PAYMENT_PREFLIGHT -- and the guard then read the authoritative half
+    // through the lagging one, fell through to AWAITING_DISPATCH, and never looked for the money.
+    // Never paid, never refused, nothing observed. The state is not consulted at all now: a row
+    // that claims a send gets looked for, whatever else is written elsewhere.
+    if (attempt?.firstSendAt) {
       if (!deps.findPaidReference || !obligation.paymentReference) {
         move("EXECUTION_OUTCOME_UNKNOWN");
         return { done: false, reason: "CANNOT_OBSERVE", advanced };

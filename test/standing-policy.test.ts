@@ -35,6 +35,7 @@ const operator = {
   maxTotalDebitBaseUnits: "2000000000000000000",
   maxFeeBaseUnits: "0",
   source: "environment" as const,
+  gaps: [],
 };
 
 describe("a standing policy is what makes the gate real", () => {
@@ -78,9 +79,13 @@ describe("a standing policy is what makes the gate real", () => {
     assert.ok(["FEE_RECIPIENT_UNKNOWN", "FEE_EXCEEDS_CEILING"].includes(String(decision.code)));
   });
 
-  test("malformed operator settings are treated as unset, never as zero", () => {
-    // A ceiling that silently became "0" would refuse every payment; an allowlist that
-    // silently became empty would look like a working gate while allowing everything.
+  test("malformed operator settings are UNREADABLE, which is not unset and not zero", () => {
+    // Three states, and this test used to assert there were two. A ceiling that silently became
+    // "0" would refuse every payment; an allowlist that silently became empty looks like a
+    // working gate while allowing everything -- and "empty" is exactly what an unreadable one
+    // produced. `buildPolicy` reads empty as "the operator set none" and substitutes the
+    // INVOICE's own payee, so the gate that would refuse a hostile payee disappeared, quietly,
+    // on a typo. The old assertion below is the bug, written down as correct behaviour.
     const loaded = loadStandingPolicy(
       {
         REQKEEPER_ALLOWED_PAYEES: "not-an-address, 0xzz",
@@ -88,9 +93,62 @@ describe("a standing policy is what makes the gate real", () => {
       },
       "does-not-exist.json",
     );
-    assert.deepEqual(loaded.allowedPayees, []);
+    assert.deepEqual(loaded.allowedPayees, [], "nothing unreadable may be enforced as if it were read");
+    assert.equal(loaded.maxTotalDebitBaseUnits, null, "and a ceiling nobody could parse is never 0");
+    assert.equal(loaded.source, "unreadable");
+    assert.equal(loaded.gaps.length, 2, JSON.stringify(loaded.gaps));
+    assert.match(describeStandingPolicy(loaded), /PARTIALLY UNREADABLE/);
+  });
+
+  test("and a plan built on one refuses, rather than falling back to the invoice's own payee", () => {
+    // The end of the chain, which is the only place that matters. This is the measured attack:
+    // the operator's file allows one payee, one character is missing from it, and the payee the
+    // ATTACKER put in the invoice is approved instead.
+    const loaded = loadStandingPolicy(
+      { REQKEEPER_ALLOWED_PAYEES: HONEST_PAYEE.slice(0, -1) },
+      "does-not-exist.json",
+    );
+    const decision = checkPolicy(buildPolicy(hostile, loaded), buildSourceFacts(hostile));
+    assert.equal(decision.ok, false);
+    assert.equal(decision.ok === false ? decision.code : null, "POLICY_UNREADABLE");
+    assert.match(String(decision.ok === false ? decision.detail : ""), /not in force/);
+  });
+
+  test("a policy file that does not parse refuses too", async () => {
+    const { mkdtemp, writeFile, rm } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = await mkdtemp(join(tmpdir(), "reqkeeper-policy-"));
+    const file = join(dir, "policy.json");
+    try {
+      // One trailing comma. `docs/RUNBOOK.md` asks every operator to hand-edit this file.
+      await writeFile(file, '{"allowedPayees":["0xc43d766cb7c48b9b198db87441b97c09e81717a1",]}');
+      const loaded = loadStandingPolicy({}, file);
+      assert.equal(loaded.source, "unreadable");
+      const decision = checkPolicy(buildPolicy(hostile, loaded), buildSourceFacts(hostile));
+      assert.equal(decision.ok === false ? decision.code : null, "POLICY_UNREADABLE");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a ceiling written as a JSON number is a gap, not a missing key", () => {
+    // JSON numbers cannot carry 18 decimals safely, which is why these are strings. A number
+    // here used to vanish into `null`, and `null` means "the operator set no ceiling".
+    const loaded = loadStandingPolicy({ REQKEEPER_MAX_DEBIT: "5e18" }, "does-not-exist.json");
     assert.equal(loaded.maxTotalDebitBaseUnits, null);
-    assert.equal(loaded.source, "none");
+    assert.equal(loaded.source, "unreadable");
+  });
+
+  test("a policy that reads cleanly carries no gaps and still enforces", () => {
+    // The control. Without it every assertion above passes for a loader that calls everything
+    // unreadable, which would refuse every payment this system could ever make.
+    const loaded = loadStandingPolicy({ REQKEEPER_ALLOWED_PAYEES: HONEST_PAYEE }, "does-not-exist.json");
+    assert.deepEqual(loaded.gaps, []);
+    assert.equal(loaded.source, "environment");
+    const decision = checkPolicy(buildPolicy(hostile, loaded), buildSourceFacts(hostile));
+    assert.equal(decision.ok, false);
+    assert.equal(decision.ok === false ? decision.code : null, "PAYEE_NOT_ALLOWED");
   });
 
   test("addresses are read case-insensitively, because case is a checksum", () => {

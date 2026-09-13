@@ -21,9 +21,40 @@ export interface StandingPolicy {
     /** Ceiling on the TOTAL debit. An agent's own cap is clamped to this, never above it. */
     readonly maxTotalDebitBaseUnits: string | null;
     readonly maxFeeBaseUnits: string | null;
-    /** Which of the above the operator actually set. The UI and the docs must not overstate. */
-    readonly source: "environment" | "file" | "none" | "mixed";
+    /**
+     * Which of the above the operator actually set. The UI and the docs must not overstate.
+     *
+     * `unreadable` is the fourth state and the reason this type changed: an operator wrote a policy
+     * and nothing in it could be loaded. That is not `none`, and treating it as `none` handed the
+     * invoice its own payee as the allowlist.
+     */
+    readonly source: "environment" | "file" | "none" | "mixed" | "unreadable";
+    /** Everything the loader had to drop, so a caller can refuse rather than silently narrow. */
+    readonly gaps: readonly PolicyGap[];
 }
+/**
+ * What the loader could not make sense of.
+ *
+ * Empty means "the operator set none", and empty is what an unreadable file used to produce -- so
+ * a trailing comma, an address one hex character short, or a ceiling written as a JSON number all
+ * became "no standing policy", and `buildPolicy` then substituted the INVOICE's own payee as the
+ * allowlist and the caller's own number as the ceiling. Measured: an attacker payee that the
+ * correct file refuses was approved in all three cases. `docs/RUNBOOK.md` tells every new operator
+ * to hand-edit that file and promises PAYEE_NOT_ALLOWED until they do; one missing character
+ * returns the opposite, and the run looks clean.
+ *
+ * So the third state is named. A policy that failed to load is not a policy that is absent.
+ */
+export type PolicyGap = {
+    readonly field: "file";
+    readonly detail: string;
+} | {
+    readonly field: "allowedPayees" | "allowedFeeRecipients";
+    readonly detail: string;
+} | {
+    readonly field: "maxTotalDebitBaseUnits" | "maxFeeBaseUnits";
+    readonly detail: string;
+};
 export declare const NO_STANDING_POLICY: StandingPolicy;
 /**
  * Read the standing policy.

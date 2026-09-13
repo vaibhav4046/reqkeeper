@@ -118,7 +118,7 @@ dependencies. `typecheck` and `build` call `tsc`, so those two want `npm install
 ```bash
 npm install           # only for typecheck and build; everything above runs without it
 
-npm test              # 566 tests, 113 suites
+npm test              # 575 tests, 114 suites
 npm run typecheck     # tsc --noEmit
 npm run build         # console + api; the tree must stay clean afterwards
 npm run gate-a        # Request <-> KeeperHub <-> Sepolia end to end
@@ -127,7 +127,19 @@ npm run gate-a        # Request <-> KeeperHub <-> Sepolia end to end
 npm run race          # 50 processes, one obligation, one payment (fixture provider, no chain)
 npm run crash         # kill the process at 9 checkpoints; zero duplicates (fixture, no chain)
 npm run probe:mcp     # KeeperHub's own MCP server, read-only by default
+npm run mcp:e2e       # the real server binary over stdin/stdout: propose, approve from a
+                      #   separate process, settle once, then hammer it and pay nothing.
+                      #   17 assertions, no credentials, a few seconds. If you run one
+                      #   command from this list, run this one.
+npm run verify:signatures
+                      # every Request action of all 46 invoices: the ECDSA signer recovered
+                      #   and checked against the parties the invoice names, and every anchor
+                      #   bound to the transaction that stored it. Public gateway, public RPC.
 ```
+
+**When something is stuck, the recovery document is [`docs/RUNBOOK.md`](docs/RUNBOOK.md)** — the
+failure-mode table, the operator escape, and what each state means. It exists because a reviewer
+followed this README verbatim and could not reproduce a settlement.
 
 Nothing named `verify:*` can spend. `probe:mcp` is named for what it does, and its one call that
 reaches the live platform is behind `-- --live-simulate`, because this repository's own hazard

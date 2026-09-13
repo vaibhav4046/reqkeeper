@@ -336,7 +336,7 @@ approved plan.
 | `#1840` | reused key replays a **cached failure**, so retry can never succeed | distinguish "provider cached a failure" from "obligation unpaid"; require a new approved plan, never a key rotation |
 | `#1959` / `#1929` | `?simulate=true` ignored on the transfer route — **did not reproduce 2026-09-09; modelled, not observed** | never trust `simulate` as a safety boundary; assert `wouldRevert`/`status:"simulated"` **and** that no tx hash was returned. If a hash comes back from a simulate call, that is `EVIDENCE_CONFLICT` — treat it as a real send |
 
-That last row is why the bounty PR and the product are the same body of understanding.
+That last row is why the bounty PR and the product are the same body of understanding — the PR that shipped is the `#1840` one.
 
 ### Allowance staging — be honest about it
 
@@ -547,7 +547,7 @@ pivot to Sablier — and say plainly that Request was attempted and why it faile
 | 6 | Refusal harness, all cases, `refusals.json` | 0 gas on every correct refusal |
 | 7 | Landing page: frame pipeline + scroll hero | LCP is the H1, verified |
 | 8 | Demo video (same HyperFrames composition → mp4). README. Limitations. | Docs match the build |
-| 9 | Upstream PR for `#1959`/`#1929`. One refutation pass. | PR opened against `staging` |
+| 9 | ~~Upstream PR for `#1959`/`#1929`.~~ **Retracted 2026-09-09** — the behaviour did not reproduce. The PR that shipped is for `#1840`. | superseded |
 
 **Freeze features after day 7.** Do not spend the last session adding batch payments.
 
@@ -559,8 +559,8 @@ Slippage rule: cut breadth, never cut Gate A, the registry, the refusal harness,
 
 **Superseded — the 156-line landing-page spec that stood here was never built and its palette
 never shipped.** What shipped instead is `web/index.html`: a client-side console over data
-embedded at build time by `npm run build:web`, four views (Overview / Obligations / Settle /
-Surfaces), hash-routed, with a live search filter and a settle-flow replay, and no hardcoded
+embedded at build time by `npm run build:web`, six views (Proof / Overview / Obligations /
+Settle / Surfaces / Verify), hash-routed, with a live search filter and a settle-flow replay, and no hardcoded
 numbers in the markup. Read that file for the actual tokens and motion; do not resurrect the
 spec that was here.
 
@@ -577,8 +577,12 @@ These belong in the README, stated plainly, not folded into a disclaimer nobody 
    unsent actions.
 4. **The audit chain is tamper-evident, not tamper-proof.** The same database administrator can
    rewrite it. It is not blockchain evidence.
-5. **`simulate` is not a safety boundary on KeeperHub today** (`#1959`/`#1929`). ReqKeeper asserts
-   around it; it does not fix the platform. The bounty PR does.
+5. **`simulate` is treated as not being a safety boundary** (`#1959`/`#1929`). **Modelled, not
+   observed:** the behaviour did not reproduce when probed live on 2026-09-09 (see the retraction
+   above), and the issues describe the protocol-action and node routes, not the
+   `/execute/contract-call` route this deployment uses. ReqKeeper asserts around it anyway, because
+   the cost of being wrong is a double payment. **There is no PR for it** — the one that exists is
+   for `#1840`.
 6. **Restored-backup hazard.** A restored older database can forget broadcasts that happened after
    the backup. Restored environments start with writes **disabled** pending reconciliation.
 7. **Sepolia only.** Request supports no other testnet. Untested on mainnet, by design.
@@ -611,7 +615,7 @@ do not finish with a plan for someone else to implement.
 3. Exactly-once behaviour demonstrated across duplicate, crash, and replay-expiry paths.
 4. A complete refusal table with independently verified hashes and zero gas on correct refusals.
 5. One page that another person can operate, in the specified palette.
-6. Reproducible evidence, an honest README, a working demo video, and the upstream fix PR.
+6. Reproducible evidence, an honest README, a working demo video, and the `#1840` upstream fix PR.
 
 **Order of work.** Gate A (§9) first, completely, before any product code. If Gate A fails, stop
 and report the exact failing request with sanitised diagnostics. Do not build around a broken
