@@ -667,7 +667,16 @@ export async function findPaymentByReference(
   // unchanged: 46 of 46 real invoices anchor below the default lookback.
   const claimedAnchor = opts.anchorBlock === undefined ? undefined : Math.max(0, opts.anchorBlock);
   const anchorFloor = claimedAnchor !== undefined && claimedAnchor <= head ? claimedAnchor : undefined;
-  const floor = anchorFloor === undefined ? requested : Math.min(requested, anchorFloor);
+  // A BOUND anchor is the floor, not a hint to scan below.
+  //
+  // `min(requested, anchorFloor)` scanned 450,000 blocks under a floor the anchor had already
+  // proven nothing could exist below -- the anchor is bound to the transaction that stored this
+  // invoice's bytes in Request's storage contract AND to the create's own signed timestamp, so a
+  // payment for this invoice cannot predate it. The extra window bought no safety and cost the
+  // answer: every free Sepolia endpoint rate-limits a 450k-block log scan, so the second opinion
+  // that `verdictFor` requires could not be obtained, and a live invoice was refused as
+  // UNCORROBORATED on a chain where nothing was wrong. Measured on Sepolia, 2026-09-13.
+  const floor = anchorFloor === undefined ? requested : anchorFloor;
 
   /**
    * Genesis is not the bar. Requiring `floor === 0` made every real scan inconclusive, which
@@ -721,6 +730,8 @@ export async function findPaymentByReference(
    * entire reason this loop exists.
    */
   const byTransaction = new Map<string, ConflictingLog>();
+  /** The lowest head any endpoint that answered actually had. See the loop below. */
+  let corroboratedTo = head;
   const conflictText = new Set<string>(first.conflicts ?? []);
   for (const log of first.conflictingLogs ?? []) byTransaction.set(log.txHash ?? `unnamed:${byTransaction.size}`, log);
 
@@ -741,17 +752,26 @@ export async function findPaymentByReference(
       // opened the mirror: a fallback BEHIND the primary was asked past its own tip, geth-family
       // nodes clamp that to their head and answer `[]` without an error, and the empty answer
       // was counted as a corroborating negative over a window it never saw. Ordinary RPC lag,
-      // no attacker. An endpoint that cannot see the whole window has no opinion about it.
-      if (altHead < head) continue;
-      const second = await scanForReference(reference, alt, altHead, floor, opts.expect);
+      // no attacker.
+      //
+      // Skipping a lagging endpoint outright was the mirror of that defect: public endpoints
+      // normally sit a block or two apart, so "behind the primary" is the ordinary case, and
+      // discarding those answers left a real negative with no corroboration at all -- a refusal
+      // to propose, on a live invoice, for a two-block difference. Measured on Sepolia.
+      //
+      // So it answers about the window it can actually see, and the COVERAGE is reported honestly
+      // instead: `scannedTo` is the lowest head any answering endpoint had, so a caller is told
+      // what was really covered rather than what the fastest endpoint claimed.
+      const second = await scanForReference(reference, alt, Math.min(altHead, head), floor, opts.expect);
       if (second.found) {
         // The primary said no and this endpoint says yes. The primary IS the second opinion
         // here — it has already disagreed — so the sighting is reported uncorroborated and the
         // caller decides. It is enough to refuse a payment, not enough to declare one settled.
         return { ...second, corroborated: false };
       }
-      // This endpoint answered, and answered no, over the same window.
+      // This endpoint answered, and answered no, over the window it could see.
       negativeCorroborations++;
+      corroboratedTo = Math.min(corroboratedTo, altHead);
       for (const line of second.conflicts ?? []) conflictText.add(line);
       for (const log of second.conflictingLogs ?? []) {
         byTransaction.set(log.txHash ?? `unnamed:${byTransaction.size}`, log);
@@ -769,6 +789,8 @@ export async function findPaymentByReference(
   return {
     ...first,
     truncated,
+    // What EVERY answering endpoint covered, not what the fastest one did.
+    scannedTo: corroboratedTo,
     scannedFrom: floor,
     negativeCorroborations,
     ...(conflictText.size > 0 ? { conflicts: [...conflictText] } : {}),

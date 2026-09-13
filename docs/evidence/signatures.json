@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-13T16:53:43.968Z",
+  "generatedAt": "2026-09-13T19:03:57.842Z",
   "mode": "LIVE_READ",
   "note": "Every action of every invoice this deployment knows, read from Request's public gateway with no credential, with the ECDSA signer recovered and checked against the payee and payer the create names. The digest is keccak256 over the action's data, keys deep-sorted and the whole JSON lowercased.",
   "gateway": "https://sepolia.gateway.request.network",
@@ -24,10 +24,10 @@
     }
   },
   "totals": {
-    "actions": 46,
-    "recovered": 46,
-    "anchors": 46,
-    "anchorsBound": 46
+    "actions": 47,
+    "recovered": 47,
+    "anchors": 47,
+    "anchorsBound": 47
   },
   "rows": [
     {
@@ -443,6 +443,15 @@
       "signer": "0xc43d766cb7c48b9b198db87441b97c09e81717a1",
       "role": "payee",
       "ok": true
+    },
+    {
+      "requestId": "0178f0a4ba8987e7205015f8523ce063afa1579cbf73d12d40fb867a8f0ac2cb09",
+      "index": 0,
+      "name": "create",
+      "method": "ecdsa-ethereum",
+      "signer": "0xc43d766cb7c48b9b198db87441b97c09e81717a1",
+      "role": "payee",
+      "ok": true
     }
   ],
   "anchors": [
@@ -675,6 +684,11 @@
       "requestId": "013c3ee6c59e76f6c2ca8ce0d523b896d0cc094f0d024357e5754d88ec8a6740ea",
       "bound": true,
       "block": 11691241
+    },
+    {
+      "requestId": "0178f0a4ba8987e7205015f8523ce063afa1579cbf73d12d40fb867a8f0ac2cb09",
+      "bound": true,
+      "block": 11697815
     }
   ]
 }

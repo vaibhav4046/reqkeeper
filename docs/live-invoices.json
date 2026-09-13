@@ -1,5 +1,5 @@
 {
-  "createdAt": "2026-09-12T20:28:42.634Z",
+  "createdAt": "2026-09-13T19:03:00.177Z",
   "payee": "0xc43d766CB7c48B9B198db87441b97c09e81717A1",
   "invoices": [
     {
@@ -553,6 +553,18 @@
       "feeAddress": "0x0000000000000000000000000000000000000000",
       "state": "created",
       "anchorBlock": 11691241
+    },
+    {
+      "index": 46,
+      "requestId": "0178f0a4ba8987e7205015f8523ce063afa1579cbf73d12d40fb867a8f0ac2cb09",
+      "paymentReference": "0xa41ffb50c5214815",
+      "salt": "910b84f99b4c0c5e",
+      "payee": "0xc43d766CB7c48B9B198db87441b97c09e81717A1",
+      "amountBaseUnits": "1000000000000000000",
+      "feeAmount": "0",
+      "feeAddress": "0x0000000000000000000000000000000000000000",
+      "state": "created",
+      "signatureMethod": "ecdsa-ethereum"
     }
   ]
 }
