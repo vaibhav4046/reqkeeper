@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-13T04:07:28.894Z",
+  "generatedAt": "2026-09-13T04:20:02.411Z",
   "chainId": 11155111,
   "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
   "credentialsUsed": "none",
@@ -10,12 +10,6 @@
     "blocked": 0
   },
   "checks": [
-    {
-      "id": "race.totals",
-      "claim": "the artifact's summary matches its own rows",
-      "status": "ok",
-      "detail": "recomputed broadcasts=1, secondWave=0"
-    },
     {
       "id": "race.exactly-once",
       "claim": "50 concurrent workers, one payment",
@@ -39,6 +33,12 @@
       "claim": "every worker reached a designed outcome",
       "status": "ok",
       "detail": "no worker threw or produced no output"
+    },
+    {
+      "id": "artifacts.totals",
+      "claim": "every artifact's summary matches its own rows",
+      "status": "ok",
+      "detail": "15 summary number(s) recomputed from rows and agreeing, over 7 artifact(s) carrying a summary (8 .json scanned under docs/); 27 summary number(s) name no row field and were NOT recomputed: docs/evidence/crash.json:settledAfterRecovery · docs/evidence/crash.json:heldOpenForAHuman · docs/evidence/crash.json:maxBroadcastsForOneObligation · docs/evidence/mcp-settlements.json:settled · +23 more"
     },
     {
       "id": "race.live",

@@ -425,6 +425,11 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
         }
 
         anchorBlock = invoice.anchor?.blockNumber;
+        // Learned now, and kept. An obligation created before the gateway was reachable — or fed
+        // by the watcher from a file that carries no anchors — has no floor, so every scan for it
+        // comes back truncated and it can never be concluded either way. The column takes it
+        // without touching the approved facts, whose hash must not move.
+        if (anchorBlock !== undefined) ctx.store.learnAnchor(oid, anchorBlock);
 
         try {
           assertReferenceMatches(facts.paymentReference, invoice.paymentReference);
@@ -527,7 +532,7 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
 
       // propose_payment deliberately passes no approval, so settleObligation stops at the
       // human-authority check. settle_obligation reads whatever a human actually wrote.
-      let approval: { approver: string; decision: "APPROVED" | "REJECTED" } | undefined;
+      let approval: { approver: string; decision: "APPROVED" | "REJECTED"; decidedAt: number } | undefined;
       if (name === "settle_obligation") {
         // Approvals are keyed by plan hash, and the plan that reserved this obligation is the
         // one propose_payment persisted. A never-proposed obligation has no reservation, so
@@ -535,7 +540,9 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
         const reserved = ctx.store.getObligation(oid)?.reservedByPlan;
         const recorded = reserved ? ctx.store.getApproval(reserved) : undefined;
         if (recorded?.decision === "APPROVED" || recorded?.decision === "REJECTED") {
-          approval = { approver: recorded.approver, decision: recorded.decision };
+          // `decidedAt` travels with it, or replaying the decision would re-date it and a yes
+          // from last week would authorise a payment today.
+          approval = { approver: recorded.approver, decision: recorded.decision, decidedAt: recorded.decidedAt };
         }
       }
 

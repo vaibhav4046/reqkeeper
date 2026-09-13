@@ -21,7 +21,7 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 
 import {
   EVENT_TOPIC,
@@ -61,6 +61,159 @@ const readJson = <T>(path: string): T | null => {
   }
 };
 
+// ---- 0. every artifact under docs/, its summary against its own rows -------
+//
+// The rule at the top of this file was applied artifact by artifact, by hand, and it was only
+// ever written down for the two race artifacts. `docs/refusals.json` stated
+// `refusedBeforeAnyProviderWrite: 18` while nineteen of its rows carry
+// `refused_before_provider_write: true`, and nothing in this file opened that artifact at all —
+// so the property the README sells ("tamper with a summary and leave its rows alone, and this
+// exits 1") held for the artifacts somebody remembered to write a check for, and for no others.
+//
+// It is a property of the artifact FORMAT here, not of a list: every `.json` under `docs/` is
+// scanned, and any file carrying a summary block (`totals` or `summary`) plus a rows array has
+// every summary number it can re-derive re-derived from those rows. A new artifact is covered
+// the day it lands, without anyone remembering.
+//
+// A summary number is matched to a row field BY NAME, never by position:
+//   - the key names a top-level array           -> that array's length
+//   - the key names exactly one row field       -> booleans counted, numbers summed
+//   - the key is a row-count word (rows, cases) -> the number of rows
+// Filler words (`any`, `total`, `number`) are dropped from both sides and a plural key may name
+// a singular field, so `refusedBeforeAnyProviderWrite` finds `refused_before_provider_write`
+// and `duplicates` finds `duplicate`. A key matching two fields is ambiguous, and ambiguous is
+// not derived — a guessed arithmetic that happens to agree is not a check.
+//
+// A key that matches nothing is NOT quietly dropped. It is counted and named in the detail,
+// because a check that stops checking without saying so is the failure this whole file exists
+// to catch.
+
+const FILLER = new Set(["any", "total", "num", "number", "of", "the", "all"]);
+const ROW_COUNT_WORDS = new Set(["rows", "row", "cases", "case", "records", "record", "entries", "entry", "items", "item"]);
+/** Array names that mean "the rows", in preference order, before falling back to the longest. */
+const ROWS_KEYS = ["rows", "cases", "checks", "records", "entries", "items"];
+
+const nameWords = (name: string): string[] =>
+  name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").split(/[^A-Za-z0-9]+/).filter(Boolean).map((w) => w.toLowerCase());
+const canonical = (name: string): string => {
+  const kept = nameWords(name).filter((w) => !FILLER.has(w));
+  return (kept.length > 0 ? kept : nameWords(name)).join("");
+};
+/** `duplicates` may name `duplicate` and `passed` may name `pass`. Nothing else is inferred. */
+const aliases = (name: string): string[] => {
+  const c = canonical(name);
+  const out = [c];
+  if (c.length > 2 && c.endsWith("s") && !c.endsWith("ss")) out.push(c.slice(0, -1));
+  if (c.length > 3 && c.endsWith("ed")) out.push(c.slice(0, -2));
+  return out;
+};
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+
+interface ArtifactAudit {
+  readonly file: string;
+  /** Summary numbers actually re-derived from the rows. */
+  readonly recomputed: number;
+  readonly disagreements: string[];
+  /** Summary numbers that name no row field. Reported, never silently dropped. */
+  readonly underivable: string[];
+}
+
+const jsonFilesUnder = (dir: string): string[] => {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const p = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) out.push(...jsonFilesUnder(p));
+    else if (entry.name.endsWith(".json")) out.push(p);
+  }
+  return out.sort();
+};
+
+/** `null` means "this file claims no totals", which is nothing to check rather than a pass. */
+function auditArtifact(file: string): ArtifactAudit | null {
+  const doc = readJson<unknown>(file);
+  if (!isRecord(doc)) {
+    // The file is there — `jsonFilesUnder` just listed it — so this is a malformed artifact,
+    // not a missing one. An evidence file nobody can parse is an evidence file nobody checked.
+    return { file, recomputed: 0, disagreements: [`${file} does not parse as a JSON object`], underivable: [] };
+  }
+  const summaryKey = ["totals", "summary"].find((k) => isRecord(doc[k]));
+  if (!summaryKey) return null;
+  const summary = doc[summaryKey] as Record<string, unknown>;
+
+  const arrays: Array<[string, unknown[]]> = Object.entries(doc).filter((e): e is [string, unknown[]] => Array.isArray(e[1]));
+  const preferred = arrays
+    .filter(([n]) => ROWS_KEYS.includes(n))
+    .sort((a, b) => ROWS_KEYS.indexOf(a[0]) - ROWS_KEYS.indexOf(b[0]))[0];
+  const longest = arrays.filter(([, v]) => isRecord(v[0])).sort((a, b) => b[1].length - a[1].length)[0];
+  const rowsEntry = preferred ?? longest;
+  if (!rowsEntry) {
+    return {
+      file,
+      recomputed: 0,
+      disagreements: [],
+      // A summary with no rows under it can be recomputed from nothing, so every number in
+      // it is reported as not recomputed rather than passed over.
+      underivable: Object.keys(summary).filter((k) => typeof summary[k] === "number"),
+    };
+  }
+  const rows = rowsEntry[1].filter(isRecord);
+
+  const fieldsByName = new Map<string, string[]>();
+  for (const row of rows) {
+    for (const field of Object.keys(row)) {
+      const c = canonical(field);
+      const seen = fieldsByName.get(c) ?? [];
+      if (!seen.includes(field)) seen.push(field);
+      fieldsByName.set(c, seen);
+    }
+  }
+  const arrayLengths = new Map<string, number>(arrays.map(([n, v]): [string, number] => [canonical(n), v.length]));
+
+  const derive = (key: string): { value: number; how: string } | null => {
+    for (const alias of aliases(key)) {
+      const length = arrayLengths.get(alias);
+      if (length !== undefined) return { value: length, how: `the length of ${alias}` };
+      const named = fieldsByName.get(alias);
+      // Two row fields with the same canonical name is an ambiguity, not a derivation.
+      if (named && named.length === 1) {
+        const field = named[0];
+        const values = rows.map((r) => r[field]).filter((v) => v !== undefined && v !== null);
+        if (values.length > 0 && values.every((v) => typeof v === "boolean")) {
+          return { value: values.filter((v) => v === true).length, how: `rows with ${field} true` };
+        }
+        if (values.length > 0 && values.every((v) => typeof v === "number")) {
+          return { value: (values as number[]).reduce((n, v) => n + v, 0), how: `the sum of ${field}` };
+        }
+        return null;
+      }
+      if (ROW_COUNT_WORDS.has(alias)) return { value: rows.length, how: "the row count" };
+    }
+    return null;
+  };
+
+  const disagreements: string[] = [];
+  const underivable: string[] = [];
+  let recomputed = 0;
+  for (const [key, stated] of Object.entries(summary)) {
+    if (typeof stated !== "number") continue;
+    const got = derive(key);
+    if (!got) {
+      underivable.push(key);
+      continue;
+    }
+    recomputed++;
+    if (got.value !== stated) {
+      disagreements.push(`${file} ${summaryKey}.${key} says ${stated}, its rows give ${got.value} (${got.how})`);
+    }
+  }
+  return { file, recomputed, disagreements, underivable };
+}
+
+const scannedFiles = existsSync("docs") ? jsonFilesUnder("docs") : [];
+const artifactAudits = scannedFiles.map(auditArtifact).filter((a): a is ArtifactAudit => a !== null);
+/** Race artifacts count their broadcasts inside nested waves, so section 1 adds its own. */
+const summaryDisagreements: string[] = artifactAudits.flatMap((a) => a.disagreements);
+
 // ---- 1. the race -----------------------------------------------------------
 
 interface RaceArtifact {
@@ -69,6 +222,8 @@ interface RaceArtifact {
   totals: Record<string, number>;
   waves: Array<{ label: string; workers: Array<{ state: string; refusal: string | null; txHash: string | null; providerWriteIssued: boolean }>; counters: Record<string, number> }>;
 }
+/** Summary numbers section 0 cannot name-match, recomputed by hand below. */
+let nestedRecomputed = 0;
 const race = readJson<RaceArtifact>("docs/evidence/race.json");
 if (!race) {
   record("race", "N processes, one obligation, one payment", "BLOCKED", "docs/evidence/race.json is absent — run `npm run race`");
@@ -81,13 +236,16 @@ if (!race) {
   const hashes = new Set(race.waves.flatMap((w) => w.workers.map((x) => x.txHash).filter(Boolean) as string[]));
   const threw = race.waves.flatMap((w) => w.workers).filter((x) => x.state === "THREW" || x.state === "NO_OUTPUT").length;
 
-  const agrees = broadcasts === race.totals.broadcasts && second === race.totals.secondWaveBroadcasts;
-  record(
-    "race.totals",
-    "the artifact's summary matches its own rows",
-    agrees ? "ok" : "FAIL",
-    agrees ? `recomputed broadcasts=${broadcasts}, secondWave=${second}` : "summary disagrees with the rows it summarises",
-  );
+  // race.json keeps its broadcasts inside nested waves, which the name-matched recompute in
+  // section 0 cannot derive, so this artifact keeps its own hand-written recompute. The verdict
+  // goes into the SAME check as every other artifact rather than into a second one covering only
+  // this file — one check, one claim: every summary under docs/ matches the rows under it.
+  nestedRecomputed += 2;
+  if (broadcasts !== race.totals.broadcasts || second !== race.totals.secondWaveBroadcasts) {
+    summaryDisagreements.push(
+      `docs/evidence/race.json totals.broadcasts/secondWaveBroadcasts say ${race.totals.broadcasts}/${race.totals.secondWaveBroadcasts}, its wave rows give ${broadcasts}/${second}`,
+    );
+  }
   // `hashes.size` was computed and only printed. A review added three forged SETTLED workers
   // carrying transaction hashes to this artifact and the run stayed green at 21 ok, because the
   // status looked at `broadcasts` alone -- while the LIVE race check sixty lines below had already
@@ -127,6 +285,28 @@ if (!race) {
     threw === 0 ? "no worker threw or produced no output" : `${threw} worker(s) threw instead of refusing`,
   );
 }
+
+// ---- 1a. one verdict for every summary under docs/ ------------------------
+//
+// Section 0 scanned the directory; section 1 added the two numbers only race.json's nested
+// waves can produce. Both land here, in a single check, so the claim reads as what it is —
+// a property of every artifact in the repository, not of the ones with bespoke checks.
+
+const recomputedTotals = artifactAudits.reduce((n, a) => n + a.recomputed, 0) + nestedRecomputed;
+const notRecomputed = artifactAudits.flatMap((a) => a.underivable.map((k) => `${a.file}:${k}`));
+/** Capped for the line length, and the cap is stated rather than silently applied. */
+const firstFew = (xs: readonly string[], n: number): string =>
+  xs.slice(0, n).join(" · ") + (xs.length > n ? ` · +${xs.length - n} more` : "");
+record(
+  "artifacts.totals",
+  "every artifact's summary matches its own rows",
+  summaryDisagreements.length === 0 ? "ok" : "FAIL",
+  summaryDisagreements.length > 0
+    ? `${summaryDisagreements.length} summary number(s) disagree with the rows they summarise — ${firstFew(summaryDisagreements, 3)}`
+    : `${recomputedTotals} summary number(s) recomputed from rows and agreeing, over ${artifactAudits.length} artifact(s) ` +
+      `carrying a summary (${scannedFiles.length} .json scanned under docs/); ${notRecomputed.length} summary number(s) name no ` +
+      `row field and were NOT recomputed: ${firstFew(notRecomputed, 4)}`,
+);
 
 // ---- 1b. the live race -----------------------------------------------------
 

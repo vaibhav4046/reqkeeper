@@ -232,6 +232,22 @@ function migrate(db: DatabaseSync): void {
     // which reads as "unknown" and keeps the observer inconclusive -- the fail-safe direction.
     db.exec("ALTER TABLE obligations ADD COLUMN preflight_block INTEGER");
   }
+  if (!columns.some((c) => c.name === "anchor_block")) {
+    // The invoice's storage block, which is the floor that makes a negative conclusive: a payment
+    // cannot predate the invoice it pays, so a scan that reaches the anchor has seen every block
+    // a payment could be in.
+    //
+    // It used to live only inside `source_facts_json`, so it could only ever arrive at import.
+    // An obligation fed by the watcher from `docs/live-invoices.json` — which carries no anchors —
+    // therefore had no floor for ever: every scan came back truncated, the worker correctly
+    // refused to conclude from a truncated scan, and the obligation could never be released.
+    // Permanently wedged, at zero sends. Learning it later could not help, because the facts are
+    // hashed and rewriting them would read as PLAN_CHANGED.
+    //
+    // Its own column, immutable once set, so it can be learned whenever the gateway is next
+    // reachable without touching the approved bytes.
+    db.exec("ALTER TABLE obligations ADD COLUMN anchor_block INTEGER");
+  }
   if (!columns.some((c) => c.name === "preflight_nonce")) {
     // The payer's mined nonce as the dry run was about to be made. The block above bounds how
     // far the chain has moved; this bounds whether the leak can still be mined at all, which is
@@ -585,6 +601,10 @@ export class Store {
           .prepare("UPDATE obligations SET payment_reference = ?, updated_at = ? WHERE obligation_id = ? AND payment_reference IS NULL")
           .run(canonicalReference(o.paymentReference), now, o.obligationId);
       }
+      // The anchor is back-filled on re-import for the same reason the reference is: a row that
+      // was first created without one would otherwise never get a floor, and every scan for it
+      // stays truncated for ever.
+      this.#seedAnchorFromFacts(o.obligationId, o.sourceFactsJson, now);
       return { created: false, state: existing.state };
     }
     this.#db
@@ -606,6 +626,7 @@ export class Store {
         now,
         now,
       );
+    this.#seedAnchorFromFacts(o.obligationId, o.sourceFactsJson, now);
     return { created: true, state: "IMPORTED" };
   }
 
@@ -806,7 +827,8 @@ export class Store {
         `SELECT obligation_id AS obligationId, request_id AS requestId, state,
                 payment_reference AS paymentReference, source_facts_json AS factsJson,
                 preflight_block AS preflightBlock,
-                preflight_nonce AS preflightNonce
+                preflight_nonce AS preflightNonce,
+                anchor_block AS anchorBlockColumn
            FROM obligations WHERE obligation_id = ?`,
       )
       .get(obligationId) as
@@ -818,6 +840,7 @@ export class Store {
           factsJson: string;
           preflightBlock: number | null;
           preflightNonce: number | null;
+          anchorBlockColumn: number | null;
         }
       | undefined;
     if (!row) return undefined;
@@ -835,6 +858,7 @@ export class Store {
       };
       invoiceBaseUnits = parsed.invoiceBaseUnits ?? null;
       anchorBlock = typeof parsed.anchorBlock === "number" ? parsed.anchorBlock : null;
+      // The column wins when it is set: it is the one that can be learned after import.
       // Only when every load-bearing field is present. A partial expectation is worse than
       // none: it reads as a full check while silently skipping the field that was missing.
       if (parsed.invoiceBaseUnits && parsed.payee && parsed.tokenAddress) {
@@ -856,7 +880,9 @@ export class Store {
       paymentReference: row.paymentReference,
       invoiceBaseUnits,
       expectation,
-      anchorBlock,
+      // The column wins when set: it is the one that can be learned after import, and facts
+      // can only ever carry what was known when the obligation was created.
+      anchorBlock: typeof row.anchorBlockColumn === "number" ? row.anchorBlockColumn : anchorBlock,
       preflightBlock: typeof row.preflightBlock === "number" ? row.preflightBlock : null,
       preflightNonce: typeof row.preflightNonce === "number" ? row.preflightNonce : null,
     };
@@ -913,6 +939,41 @@ export class Store {
 
   // ---- plans and approvals ----------------------------------------------
 
+  /**
+   * Record the invoice's anchor block, once.
+   *
+   * First non-null wins. An anchor is a fact about an invoice that was written to a chain, so it
+   * does not change; a later read that disagrees is evidence that this is a different invoice, and
+   * silently overwriting it would move the floor a conclusion was already drawn against. The
+   * disagreement is audited and the stored value kept.
+   */
+  /** Seed the anchor column from the facts an obligation was created with, when they carry one. */
+  #seedAnchorFromFacts(obligationId: string, sourceFactsJson: string, now: number): void {
+    try {
+      const parsed = JSON.parse(sourceFactsJson) as { anchorBlock?: number };
+      if (typeof parsed.anchorBlock === "number") this.learnAnchor(obligationId, parsed.anchorBlock, now);
+    } catch {
+      // Facts that will not parse are somebody else's problem; there is simply no anchor here.
+    }
+  }
+
+  learnAnchor(obligationId: string, anchorBlock: number, now = Date.now()): void {
+    if (!Number.isInteger(anchorBlock) || anchorBlock <= 0) return;
+    const row = this.#db
+      .prepare("SELECT anchor_block AS anchorBlock FROM obligations WHERE obligation_id = ?")
+      .get(obligationId) as { anchorBlock: number | null } | undefined;
+    if (!row) return;
+    if (row.anchorBlock === null) {
+      this.#db
+        .prepare("UPDATE obligations SET anchor_block = ? WHERE obligation_id = ? AND anchor_block IS NULL")
+        .run(anchorBlock, obligationId);
+      return;
+    }
+    if (row.anchorBlock !== anchorBlock) {
+      this.audit(obligationId, "system", "ANCHOR_DISAGREES", { stored: row.anchorBlock, offered: anchorBlock }, now);
+    }
+  }
+
   savePlan(p: {
     planHash: string;
     obligationId: string;
@@ -926,9 +987,20 @@ export class Store {
   }): void {
     this.#db
       .prepare(
-        `INSERT OR IGNORE INTO plans
+        // The plan's BYTES are immutable and keyed by their own hash, so re-proposing an
+        // identical plan must not rewrite them. Its expiry is not part of the bytes: it is how
+        // long *this proposal* stays dispatchable, and `INSERT OR IGNORE` froze it at the first
+        // proposal's value. A plan hash is deterministic, so a debt proposed again after its TTL
+        // got the same row back with the same expired timestamp and refused as PLAN_EXPIRED for
+        // ever — permanently unpayable, with no way out short of changing the invoice.
+        //
+        // Refreshing the window is only safe because the authority to spend does not live here.
+        // It lives on the approval's `decided_at`, which settle checks separately, so a restarted
+        // proposal window cannot resurrect a stale human decision.
+        `INSERT INTO plans
            (plan_hash, obligation_id, version, policy_hash, source_facts_hash, plan_json, total_debit_base, expires_at, created_at)
-         VALUES (?,?,?,?,?,?,?,?,?)`,
+         VALUES (?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(plan_hash) DO UPDATE SET expires_at = excluded.expires_at`,
       )
       .run(
         p.planHash, p.obligationId, p.version, p.policyHash, p.sourceFactsHash,
@@ -952,6 +1024,7 @@ export class Store {
     decision: "APPROVED" | "REJECTED";
     restatement: string;
     reason?: string;
+    /** When the human decided. A replay passes the original, never the current time. */
     now?: number;
   }): void {
     const at = a.now ?? Date.now();
@@ -988,10 +1061,19 @@ export class Store {
     return rows.map((r) => r.approver);
   }
 
-  getApproval(planHash: string): { decision: string; approver: string; restatement: string } | undefined {
+  getApproval(
+    planHash: string,
+  ): { decision: string; approver: string; restatement: string; decidedAt: number } | undefined {
+    // `decidedAt` travels with the decision because the decision is the thing that goes stale.
+    // A human approved these bytes at a moment; how long that authorises a payment is a property
+    // of the decision, not of the bytes, which are the same bytes for ever.
     return this.#db
-      .prepare("SELECT decision, approver, restatement FROM approvals WHERE plan_hash = ? ORDER BY id DESC LIMIT 1")
-      .get(planHash) as { decision: string; approver: string; restatement: string } | undefined;
+      .prepare(
+        "SELECT decision, approver, restatement, decided_at AS decidedAt FROM approvals WHERE plan_hash = ? ORDER BY id DESC LIMIT 1",
+      )
+      .get(planHash) as
+      | { decision: string; approver: string; restatement: string; decidedAt: number }
+      | undefined;
   }
 
   // ---- attempts and the outbox ------------------------------------------
@@ -1116,11 +1198,30 @@ export class Store {
       this.#db
         .prepare("UPDATE attempts SET outcome = ?, execution_id = COALESCE(execution_id, ?), tx_hash = COALESCE(tx_hash, ?) WHERE id = ?")
         .run(o.outcome, o.executionId ?? null, o.txHash ?? null, attemptId);
-      if (o.outcome !== "SENT" && !o.txHash) return;
       const a = this.#db
-        .prepare("SELECT obligation_id AS obligationId, plan_hash AS planHash, step_index AS stepIndex FROM attempts WHERE id = ?")
-        .get(attemptId) as { obligationId: string; planHash: string; stepIndex: number } | undefined;
+        .prepare(
+          "SELECT obligation_id AS obligationId, plan_hash AS planHash, step_index AS stepIndex, first_send_at AS firstSendAt FROM attempts WHERE id = ?",
+        )
+        .get(attemptId) as
+        | { obligationId: string; planHash: string; stepIndex: number; firstSendAt: number | null }
+        | undefined;
       if (!a) return;
+
+      // What decides whether anything has to be observed is whether a WRITE WAS ISSUED, not
+      // whether the provider handed back a hash.
+      //
+      // This read `if (o.outcome !== "SENT" && !o.txHash) return;`, so a `{"success": false}`
+      // reply carrying no hash queued nothing at all — while `markSent` had already stamped
+      // `first_send_at` before the call, because the money may well have moved. The obligation
+      // was left in EXECUTION_OUTCOME_UNKNOWN with an empty outbox: no job, no observation,
+      // nothing that would ever look at the chain. Safe, and never recovered, which is the
+      // liveness half of the same defect the send path keeps producing.
+      //
+      // A provider's "failed" is not evidence either. It is the provider reporting on itself,
+      // and the chain is the only thing that knows. An attempt with no hash is still findable —
+      // the worker looks it up by payment reference, which is exactly the identifier that
+      // survives a lost reply.
+      if (o.outcome !== "SENT" && !o.txHash && a.firstSendAt === null) return;
       this.#db
         .prepare(
           `INSERT OR IGNORE INTO jobs (kind, dedupe_key, obligation_id, attempt_id, due_at, created_at)

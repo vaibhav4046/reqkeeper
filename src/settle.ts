@@ -31,7 +31,22 @@ export interface SettleInput {
   readonly facts: SourceFacts;
   readonly steps: ReadonlyArray<{ kind: string; to: string; data: string; value: string }>;
   /** Human decision, supplied out of band. Absent means nobody has approved yet. */
-  readonly approval?: { approver: string; decision: "APPROVED" | "REJECTED"; reason?: string };
+  /**
+   * `decidedAt` is when the HUMAN decided, and it is set when a caller is replaying a decision it
+   * read from the store rather than carrying a fresh one.
+   *
+   * Without it the age of a decision is laundered: `settle_obligation` reads the recorded
+   * approval, hands it back as an argument, and `recordApproval` stamps the new row with `now` —
+   * so a yes given days ago is indistinguishable from one given this second, on every call, for
+   * ever. The only thing bounding it was the plan row's expiry, which is the wrong clock and is
+   * refreshed by re-proposal.
+   */
+  readonly approval?: {
+    approver: string;
+    decision: "APPROVED" | "REJECTED";
+    reason?: string;
+    decidedAt?: number;
+  };
   readonly now: number;
   /** Facts as they are at dispatch time; a change since planning invalidates the plan. */
   readonly factsAtDispatch?: SourceFacts;
@@ -598,7 +613,8 @@ async function settleOrRefuse(deps: SettleDeps, input: SettleInput): Promise<Set
     decision: input.approval.decision,
     restatement,
     reason: input.approval.reason,
-    now: input.now,
+    // A replayed decision keeps the moment the human made it. See SettleInput.approval.
+    now: input.approval.decidedAt ?? input.now,
   });
   if (input.approval.decision === "REJECTED") {
     store.setState(input.obligationId, "REVIEW_REJECTED", input.now);
@@ -631,6 +647,32 @@ async function settleOrRefuse(deps: SettleDeps, input: SettleInput): Promise<Set
 
   // --- 5. re-check at the dispatch boundary -------------------------------
   const plan = store.getPlan(planHash);
+  // Two clocks, and the one that carries the authority is the approval's.
+  //
+  // The plan's window says how long this proposal stays dispatchable and it restarts when the
+  // plan is proposed again — otherwise a deterministic plan hash makes an expired debt
+  // permanently unpayable. The approval's `decidedAt` says how long a human's decision
+  // authorises a payment, and nothing restarts that but another human. Checking only the first
+  // would let a restarted window spend a decision taken days ago.
+  const authority = store.getApproval(planHash);
+  if (authority && input.now - authority.decidedAt > policy.planTtlSeconds * 1000) {
+    store.setState(input.obligationId, "PLAN_EXPIRED", input.now);
+    store.releaseObligation(input.obligationId, planHash);
+    store.audit(input.obligationId, "system", "REFUSED", {
+      code: "APPROVAL_EXPIRED",
+      planHash,
+      decidedAt: authority.decidedAt,
+    });
+    return out({
+      state: "PLAN_EXPIRED",
+      refusal: "PLAN_EXPIRED",
+      detail:
+        `the approval for this plan was given at ${authority.decidedAt} and is older than the ` +
+        `${policy.planTtlSeconds}s a decision authorises; propose it again and have it approved afresh`,
+      providerWriteIssued: false,
+      planHash,
+    });
+  }
   if (!plan || input.now > plan.expiresAt) {
     store.setState(input.obligationId, "PLAN_EXPIRED", input.now);
     store.releaseObligation(input.obligationId, planHash);

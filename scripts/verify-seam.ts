@@ -4,13 +4,17 @@
  *
  * Three things get checked, in the order that a sceptic would check them:
  *
- *   A  KeeperHub genuinely cannot send finished calldata. Probed, not assumed — every write
- *      route is asked directly and the refusals are printed verbatim.
+ *   A  KeeperHub genuinely cannot send finished calldata. Probed on 2026-09-09 and RECORDED
+ *      here, not re-probed: the probe is four live write routes being handed the finished
+ *      calldata for a real payment, and that is a thing this script must not be able to do.
  *   B  This codebase's ABI codec agrees with KeeperHub's own encoder (ethers 6.17.0)
  *      byte-for-byte, so re-deriving arguments from approved calldata is safe to do.
  *   C  The calldata gate refuses smuggled variants before anything is dispatched.
  *
- * Steps A and C need the KeeperHub key; B needs nothing at all.
+ * None of the three needs a credential and none of them can send. That is the point: README:126
+ * promises that nothing named `verify:*` can spend, and a promise about capability is only true
+ * if the capability is absent — an opt-in flag still leaves it there. There is no `fetch` in this
+ * file, and the one provider it builds is pointed at an unroutable host.
  *
  * Usage: node --experimental-strip-types scripts/verify-seam.ts
  */
@@ -37,7 +41,6 @@ function loadDotEnv(): void {
 }
 loadDotEnv();
 
-const KH_KEY = process.env.KEEPERHUB_API_KEY ?? "";
 const PAYEE = (process.env.PAYEE_ADDRESS ?? "0x0e2bb1c8d52315cad63f341424c5a7dd81a50f53").toLowerCase();
 
 let failures = 0;
@@ -57,36 +60,42 @@ const APPROVED_CALLDATA = encodeCall(PAY_SIG, [
 console.log("\nSeam check — can the approved bytes reach the signer unchanged?\n");
 
 // ---- A. KeeperHub cannot send finished calldata --------------------------
+//
+// RECORDED, not re-probed, and that is a deliberate downgrade.
+//
+// The four bodies below ARE the probe: each hands a live KeeperHub write route the finished
+// calldata for a real FAU payment. Sending them is how the refusal was established on
+// 2026-09-09 — and it is also how this script could spend. `src/provider.ts:12-15` records
+// that `simulate: true` is ignored on the transfer and protocol-action routes (#1959/#1929)
+// and the transaction really executes, so the `simulate: true` in those bodies is decoration
+// and not a boundary. Re-running the probe is a coin flip between "refused, as recorded" and
+// a payment nobody approved, dispatched under a hardcoded body by a command a judge is
+// invited to run.
+//
+// README:126 says nothing named `verify:*` can spend. Section C holds that line by pointing
+// its provider at an unroutable host; this section holds it by not sending at all. What the
+// probe established is recorded, dated and quoted verbatim at src/keeperhub.ts:7 and
+// docs/ARCHITECTURE.md:315 — a recorded finding, never restyled as a live one.
+//
+// To reach the live platform on purpose the command is `npm run probe:mcp -- --live-simulate`:
+// named for what it does, opt-in, and outside the `verify:*` family this claim is about.
 
 console.log("A. does any KeeperHub write route accept finished calldata?");
-if (!KH_KEY) {
-  console.log("  BLOCKED — set KEEPERHUB_API_KEY in .env\n");
-} else {
-  const headers = {
-    authorization: `Bearer ${KH_KEY}`,
-    "content-type": "application/json",
-    accept: "application/json",
-  };
-  const probes: Array<[string, string, unknown]> = [
-    ["contract-call, data", "execute/contract-call", { simulate: true, chainId: SEPOLIA, contractAddress: PROXY, data: APPROVED_CALLDATA }],
-    ["contract-call, callData", "execute/contract-call", { simulate: true, chainId: SEPOLIA, contractAddress: PROXY, callData: APPROVED_CALLDATA }],
-    ["raw route", "execute/raw", { simulate: true, chainId: SEPOLIA, to: PROXY, data: APPROVED_CALLDATA }],
-    ["transaction route", "execute/transaction", { simulate: true, chainId: SEPOLIA, to: PROXY, data: APPROVED_CALLDATA }],
-  ];
-  for (const [label, path, body] of probes) {
-    try {
-      const res = await fetch(`${KEEPERHUB_API}/${path}`, {
-        method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(30_000),
-      });
-      const text = (await res.text()).slice(0, 160);
-      if (res.ok) bad(label, `unexpectedly accepted raw calldata: ${text}`);
-      else ok(`${label} refused`, `HTTP ${res.status} ${text}`);
-    } catch (e) {
-      bad(label, String(e));
-    }
-  }
-  console.log("  => finished calldata cannot be dispatched; arguments must be re-derived.\n");
+const probes: Array<[string, string, unknown]> = [
+  ["contract-call, data", "execute/contract-call", { simulate: true, chainId: SEPOLIA, contractAddress: PROXY, data: APPROVED_CALLDATA }],
+  ["contract-call, callData", "execute/contract-call", { simulate: true, chainId: SEPOLIA, contractAddress: PROXY, callData: APPROVED_CALLDATA }],
+  ["raw route", "execute/raw", { simulate: true, chainId: SEPOLIA, to: PROXY, data: APPROVED_CALLDATA }],
+  ["transaction route", "execute/transaction", { simulate: true, chainId: SEPOLIA, to: PROXY, data: APPROVED_CALLDATA }],
+];
+for (const [label, path, body] of probes) {
+  console.log(`  NOT SENT  ${label} — POST ${KEEPERHUB_API}/${path}`);
+  console.log(`            ${JSON.stringify(body).slice(0, 108)}…`);
 }
+console.log("  RECORDED  probed 2026-09-09: every write route rejected `data`/`callData`, and");
+console.log("            /execute/{raw,transaction,send,write,tx} all answered");
+console.log(`            {"error":"Invalid action type"}. Quoted at src/keeperhub.ts:7.`);
+console.log("  => on that evidence finished calldata cannot be dispatched, so arguments must be");
+console.log("     re-derived — which is what section B and section C are about.\n");
 
 // ---- B. our encoder agrees with theirs -----------------------------------
 
@@ -126,7 +135,7 @@ console.log("C. does the dispatch gate refuse calldata it cannot reproduce?");
  */
 const UNROUTABLE = "http://127.0.0.1:1/api";
 const provider = new KeeperHubProvider({
-  apiKey: KH_KEY || "kh_offline",
+  apiKey: "kh_offline",
   chainId: SEPOLIA,
   rpcUrl: RPC,
   baseUrl: UNROUTABLE,
@@ -153,41 +162,19 @@ for (const [label, data] of tampered) {
   }
 }
 
-// The canonical calldata must survive the gate and reach the chain.
+// The canonical calldata's live dry run does NOT live in this script any more.
 //
-// Opt-in, because this is the one check here that talks to the live platform, and
-// `src/provider.ts:12-15` records that a dry run on that route can be ignored and execute for
-// real (#1959). A command a judge is invited to run must not be able to spend, so this is
-// behind a flag and everything above it is offline.
-const LIVE_SIMULATE = process.argv.includes("--live-simulate");
-if (!LIVE_SIMULATE) {
-  console.log("\n  SKIPPED the live dry run - it calls the platform, and that route is");
-  console.log("          documented as possibly executing for real. Opt in with:");
-  console.log("            npm run verify:seam -- --live-simulate");
-} else if (KH_KEY) {
-  const live = new KeeperHubProvider({ apiKey: KH_KEY, chainId: SEPOLIA, rpcUrl: RPC });
-  try {
-    const sim = await live.simulate({ to: PROXY, data: APPROVED_CALLDATA, value: "0" });
-    if (sim.kind === "EXECUTED") {
-      bad("canonical calldata simulate", `dry run returned a hash: ${sim.transactionHash}`);
-    } else {
-      // WOULD_REVERT flips to WOULD_SUCCEED once the payer holds FAU and has approved the proxy,
-      // so report which outcome came back rather than asserting one — both are legitimate here.
-      // UNKNOWN is reported as itself and never as a revert, which is the distinction four
-      // duplicate-payment findings turned on.
-      ok(
-        "canonical calldata passes the gate and reaches the chain",
-        sim.kind === "WOULD_SUCCEED"
-          ? "WOULD_SUCCEED (payment would go through), no hash returned"
-          : sim.kind === "WOULD_REVERT"
-            ? `WOULD_REVERT (payer lacks balance or allowance), no hash returned`
-            : `UNKNOWN (${sim.code}) — the platform returned no verdict, which is not a revert`,
-      );
-    }
-  } catch (e) {
-    bad("canonical calldata simulate", String(e));
-  }
-}
+// It called `provider.simulate`, which is `POST execute/contract-call` with `simulate: true` —
+// the one route src/provider.ts:12-15 records as ignoring that flag and executing for real
+// (#1959). Behind an opt-in flag or not, that made a `verify:*` script ABLE to spend, and
+// README:126 claims none of them can. Capability is the claim, so the capability is what had
+// to go; the same dry run is still one command away, under the name the README gives it:
+//
+//   npm run probe:mcp -- --live-simulate
+
+console.log("\n  No live dry run here. It is `npm run probe:mcp -- --live-simulate`, because that");
+console.log("  route can execute for real (src/provider.ts:12-15, #1959) and nothing named");
+console.log("  `verify:*` is allowed to be able to spend.");
 
 console.log(failures === 0 ? "\nSeam holds.\n" : `\n${failures} check(s) FAILED.\n`);
 process.exit(failures === 0 ? 0 : 1);
