@@ -32,6 +32,25 @@ const AMOUNT = toBaseUnits("1", 18).toString();
 const ANCHOR_TX = `0x${"ab".repeat(32)}`;
 
 /**
+ * Nothing on chain, said conclusively.
+ *
+ * A negative is only an answer when it states what it covered: the window reached the floor
+ * (`truncated: false`), the scan said which conflicting logs it saw (`conflictKinds`), and
+ * another endpoint answered the same way (`negativeCorroborations`). A fixture that leaves those
+ * out is claiming coverage it never had, and `verdictFor` reads it as UNKNOWN -- the same answer
+ * a production reader that forgets a field gets. These tests are about the anchor, so the
+ * negative here is a real one.
+ */
+const CLEAN_NEGATIVE = {
+  found: false,
+  corroborated: true,
+  scannedBlocks: 1,
+  truncated: false,
+  conflictKinds: [],
+  negativeCorroborations: 2,
+} as const;
+
+/**
  * The anchor's own transaction, mined in the block the anchor claims.
  *
  * The anchor is not believed on the gateway's word any more: it is checked against the receipt
@@ -84,7 +103,7 @@ describe("the invoice anchor is actually stored, not just accepted", () => {
       store,
       provider: new FixtureProvider(),
       // Nothing on chain, so the propose path runs through instead of refusing ALREADY_PAID.
-      findPayment: async () => ({ found: false, corroborated: true, scannedBlocks: 1, truncated: false }),
+      findPayment: async () => ({ ...CLEAN_NEGATIVE }),
       fetchInvoice: async () => invoice,
       readReceipt: receiptIn(ANCHOR_BLOCK),
     } as unknown as McpContext;
@@ -116,7 +135,7 @@ describe("the invoice anchor is actually stored, not just accepted", () => {
     const ctx = {
       store,
       provider: new FixtureProvider(),
-      findPayment: async () => ({ found: false, corroborated: true, scannedBlocks: 1, truncated: false }),
+      findPayment: async () => ({ ...CLEAN_NEGATIVE }),
       fetchInvoice: async () => invoice,
       readReceipt: receiptIn(ANCHOR_BLOCK + 50_000),
     } as unknown as McpContext;
@@ -144,7 +163,7 @@ describe("the invoice anchor is actually stored, not just accepted", () => {
     const ctx = {
       store,
       provider: new FixtureProvider(),
-      findPayment: async () => ({ found: false, corroborated: true, scannedBlocks: 1, truncated: false }),
+      findPayment: async () => ({ ...CLEAN_NEGATIVE }),
       fetchInvoice: async () => invoice,
       readReceipt: async () => { throw new Error("rpc unreachable"); },
     } as unknown as McpContext;
@@ -172,7 +191,7 @@ describe("the invoice anchor is actually stored, not just accepted", () => {
     const ctx = {
       store,
       provider: new FixtureProvider(),
-      findPayment: async () => ({ found: false, corroborated: true, scannedBlocks: 1, truncated: false }),
+      findPayment: async () => ({ ...CLEAN_NEGATIVE }),
       fetchInvoice: async () => unanchored,
     } as unknown as McpContext;
 

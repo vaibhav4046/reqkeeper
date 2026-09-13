@@ -545,7 +545,8 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
       // shared a value with "the chain says this is unpaid". They are different facts, and a
       // default that means "go ahead" is the wrong thing to fall back to in a file whose every
       // other tri-state exists because absence must not read as permission.
-      let paidCheck: "PAID" | "NOT_PAID" | "UNKNOWN" | "NOT_APPLICABLE" = "NOT_APPLICABLE";
+      let paidCheck: "PAID" | "NOT_PAID" | "UNKNOWN" | "CONFLICT" | "NOT_APPLICABLE" = "NOT_APPLICABLE";
+      let conflictDetail = "";
       if (!ctx.store.sentAttemptFor(oid)) {
         try {
           // Every field, not the reference and not the amount alone. Nothing has been
@@ -560,10 +561,41 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
           // and token for a DIFFERENT fee -- a fee the paying client chooses -- came back as
           // "not paid", so an invoice the chain already showed settled was paid again.
           const verdict = verdictFor(sighting, { requireCorroboration: true });
-          paidCheck = verdict.kind === "PAID" ? "PAID" : verdict.kind === "NOT_PAID" ? "NOT_PAID" : "UNKNOWN";
+          switch (verdict.kind) {
+            case "PAID":
+              paidCheck = "PAID";
+              break;
+            case "NOT_PAID":
+              paidCheck = "NOT_PAID";
+              break;
+            case "CONFLICT_OURS":
+              // Not "unknown". A log paid this invoice's payee, in its token, under its
+              // reference, for a different amount or fee. That is our own money already moving
+              // in a plan nobody made, and proposing over the top of it would bury the question.
+              paidCheck = "CONFLICT";
+              conflictDetail = verdict.detail;
+              break;
+            case "UNKNOWN":
+              paidCheck = "UNKNOWN";
+              break;
+            default: {
+              const exhaustive: never = verdict;
+              return exhaustive;
+            }
+          }
         } catch {
           paidCheck = "UNKNOWN";
         }
+      }
+      if (paidCheck === "CONFLICT") {
+        return refusedBeforeWrite(
+          oid,
+          "SOURCE_UNVERIFIABLE",
+          `${conflictDetail} Nobody else has a reason to pay this payee, in this token, under ` +
+            "this reference, so that log is either this invoice being settled outside this system " +
+            "or our own funds moving in a plan nobody made. Either way it is a question for a " +
+            "human, and nothing is proposed until it is answered.",
+        );
       }
       if (paidCheck === "UNKNOWN") {
         return refusedBeforeWrite(
@@ -571,7 +603,8 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
           "SOURCE_UNVERIFIABLE",
           "the chain could not be read far enough to establish whether this invoice has already " +
             "been paid, so nothing is proposed on it. A scan that did not reach the invoice's own " +
-            "anchor block, or that could not run at all, is not evidence that the debt is unpaid. " +
+            "anchor block, that no second endpoint corroborated, that never said what conflicting " +
+            "logs it saw, or that could not run at all, is not evidence that the debt is unpaid. " +
             "Retry when an endpoint answers, or once Request has confirmed the invoice so its " +
             "anchor block bounds the search.",
         );

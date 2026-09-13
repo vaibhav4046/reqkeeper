@@ -193,27 +193,54 @@ export type PaymentVerdict =
     readonly block?: number;
 }
 /**
- * The scan covered the whole window in which a payment could exist and there was none. Only
- * ever returned when the caller supplied the floor that makes coverage provable.
+ * The scan covered the whole window in which a payment could exist, other endpoints agreed it
+ * was empty, and nothing in it could be a payment of this invoice. Only ever returned when the
+ * caller supplied the floor that makes coverage provable.
+ *
+ * Logs that carried the reference and paid somebody ELSE land here, with their descriptions in
+ * `conflicts`. They are junk, and treating them as an answer was a wedge: the reference is
+ * public, so anyone who can read one could emit a log against it and block that invoice for
+ * ever. What a stranger did with our reference is reportable, not decisive.
  */
  | {
     readonly kind: "NOT_PAID";
     readonly scannedFrom?: number;
     readonly scannedTo?: number;
+    readonly conflicts?: readonly string[];
+}
+/**
+ * A log paid OUR payee, in OUR token, under our reference, and disagreed about the amount or
+ * the fee. That is our own money moving in a plan nobody made, and it is neither a settlement
+ * to record nor an absence to release on: it belongs in front of a human.
+ */
+ | {
+    readonly kind: "CONFLICT_OURS";
+    readonly detail: string;
+    readonly conflicts: readonly string[];
+    readonly conflictKinds: readonly ConflictKind[];
+    readonly txHash?: string;
 }
 /**
  * Anything else, and there are more ways to land here than to land anywhere else: a scan that
- * ran out of window, a log that carries the reference but disagrees about the payment, a
- * positive no second endpoint would corroborate, or a read that could not be made at all.
+ * ran out of window, a scan that never said what conflicting logs it saw, a negative no second
+ * endpoint would corroborate, a positive no second endpoint would corroborate, or a read that
+ * could not be made at all.
  *
  * Never a licence to send, and never a licence to release an obligation either.
  */
  | {
     readonly kind: "UNKNOWN";
-    readonly reason: "TRUNCATED" | "CONFLICTS" | "UNCORROBORATED" | "UNREADABLE";
+    readonly reason: "TRUNCATED" | "CONFLICTS_NOT_STATED" | "UNCORROBORATED" | "UNREADABLE";
     readonly detail: string;
-    readonly conflicts?: readonly string[];
-    readonly conflictKinds?: readonly ConflictKind[];
+    /**
+     * The transaction the scan saw, when there was one.
+     *
+     * An uncorroborated POSITIVE is the one UNKNOWN that has something concrete behind it, and
+     * a refusal that will not say which transaction it is looking at sends a human to search
+     * for it by hand. It is carried here, not promoted to PAID, because it is still not
+     * evidence this obligation settled.
+     */
+    readonly txHash?: string;
 };
 /**
  * The single place a sighting becomes a decision.

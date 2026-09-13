@@ -19,7 +19,7 @@ import { isTerminal, type State } from "./machine.ts";
 import type { ExecutionProvider } from "./provider.ts";
 import { belowConfirmationDepth, minConfirmations } from "./provider.ts";
 import { excludeByNonce, payerAddress, payerIsDedicated, type PayerReading } from "./exclusion.ts";
-import { conflictVerdict } from "./chain.ts";
+import { verdictFor } from "./chain.ts";
 import type { PaymentExpectation, PaymentSighting } from "./chain.ts";
 import type { Fence, Job, Store } from "./store.ts";
 
@@ -248,34 +248,66 @@ async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Reso
       obligation.anchorBlock ?? undefined,
     );
 
-    if (sighting.found) {
-      // The dry run executed for real (#1959). Money moved with no attempt row behind it, which
-      // is an integrity incident, not a settlement — a human has to look at it.
-      // No attempt row exists to hang the hash on — nothing ever intended to send — so the
-      // audit trail carries it. EVIDENCE_CONFLICT is an open investigation, not a settlement:
-      // the hash is here for the human who has to reconcile it, and no code path will treat it
-      // as permission to do anything.
-      move("EVIDENCE_CONFLICT");
-      store.audit(job.obligationId, "worker", "SIMULATE_LEAKED_EXECUTION", {
-        txHash: sighting.txHash ?? null,
-        via: "preflight observation",
-      });
-      return { done: true, advanced };
-    }
+    // One verdict, switched exhaustively. Every branch below used to read the sighting's own
+    // fields in its own order, and so did `verdictFor`, and so did `operatorReleaseDecision`:
+    // three readings of one object, and they disagreed about a scan that never stated its
+    // conflicts and about a negative no second endpoint confirmed. The switch is what makes a
+    // fourth answer impossible to ignore -- adding one to the union breaks this file.
+    const verdict = verdictFor(sighting);
+    switch (verdict.kind) {
+      case "PAID": {
+        // The dry run executed for real (#1959). Money moved with no attempt row behind it,
+        // which is an integrity incident, not a settlement -- a human has to look at it. No
+        // attempt row exists to hang the hash on, so the audit trail carries it.
+        // EVIDENCE_CONFLICT is an open investigation, not a settlement: the hash is here for the
+        // human who has to reconcile it, and no code path treats it as permission to do anything.
+        move("EVIDENCE_CONFLICT");
+        store.audit(job.obligationId, "worker", "SIMULATE_LEAKED_EXECUTION", {
+          txHash: verdict.txHash || null,
+          via: "preflight observation",
+        });
+        return { done: true, advanced };
+      }
 
-    // Absence only counts when the read could actually see the whole window in which a payment
-    // for this obligation could be — which is the window down to the invoice's anchor block, not
-    // down to genesis. A scan that stopped short is "I could not tell", and "I could not tell"
-    // must never become "go ahead", so the obligation waits here rather than being released.
-    // Only an EXPLICIT `truncated: false` releases. This read `=== true` and released on
-    // anything else, including a reader that simply did not say -- while the already-paid
-    // gate in src/mcp.ts requires the explicit false. Two sites, two opposite readings of the
-    // same absent flag, and this is the site that releases an obligation. No production
-    // reader can currently omit it (`findPaymentByReference` has one negative exit and always
-    // sets it), so this is hardening rather than a live hole -- but the next implementation
-    // of `sightPayment` should not be able to reintroduce the whole class by forgetting a
-    // field.
-    if (sighting.truncated !== false) return { done: false, reason: "SCAN_TRUNCATED", advanced };
+      case "CONFLICT_OURS": {
+        // A log paid this invoice's token AND payee under its reference and disagreed about the
+        // amount or the fee. Nobody else has a reason to pay our payee, in our token, under our
+        // reference: that shape is our own money moving in a plan we did not make -- the #1959
+        // leak executing with different fields -- and releasing on it is a double spend of our
+        // own funds. A log that pays somebody ELSE is junk and does not land here, because
+        // escalating on those would let anyone who can read a public reference wedge any
+        // invoice for ever with one log.
+        move("EVIDENCE_CONFLICT");
+        store.audit(job.obligationId, "worker", "PAYMENT_FIELDS_DISAGREE", {
+          conflicts: verdict.conflicts,
+          txHash: verdict.txHash ?? null,
+          reason: "a log paying this invoice's token and payee disagreed about amount or fee",
+        });
+        return { done: true, advanced };
+      }
+
+      case "UNKNOWN": {
+        // Absence only counts when the read could actually see the whole window in which a
+        // payment for this obligation could be -- the window down to the invoice's anchor block,
+        // not down to genesis -- when the scan said what conflicting logs it saw, and when some
+        // other endpoint confirmed the same emptiness. Anything short of that is "I could not
+        // tell", and "I could not tell" must never become "go ahead", so the obligation waits
+        // here rather than being released.
+        const reason = verdict.reason === "TRUNCATED" ? "SCAN_TRUNCATED"
+          : verdict.reason === "CONFLICTS_NOT_STATED" ? "CONFLICTS_NOT_STATED"
+          : verdict.reason === "UNCORROBORATED" ? "NEGATIVE_UNCORROBORATED"
+          : "SCAN_UNREADABLE";
+        return { done: false, reason, advanced };
+      }
+
+      case "NOT_PAID":
+        break; // nothing paid this invoice, over a window that was actually covered
+
+      default: {
+        const exhaustive: never = verdict;
+        return exhaustive;
+      }
+    }
 
     // Covered the window is not the same as: the leak can no longer be mined.
     //
@@ -288,12 +320,12 @@ async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Reso
     // low-fee leak is still mineable, and the gate had grown MORE willing to release, not less.
     // Two physical sends on one human approval. test/mempool-residency.test.ts is that repro.
     //
-    // Both were the same defect: a value meaning "I do not know" consumed as "no". Eight
-    // instances now, and what has worked every time is changing the shape of the answer rather
-    // than tightening a threshold. So there is no threshold here. A transaction is bound to a
-    // nonce and a nonce is spent once: when another transaction is mined at the nonce the leak
-    // would have used, the leak is permanently unmineable by every node. That is a fact about
-    // the payment, and unlike a timer it does not decay.
+    // Both were the same defect: a value meaning "I do not know" consumed as "no". What has
+    // worked every time is changing the shape of the answer rather than tightening a threshold.
+    // So there is no threshold here. A transaction is bound to a nonce and a nonce is spent
+    // once: when another transaction is mined at the nonce the leak would have used, the leak is
+    // permanently unmineable by every node. That is a fact about the payment, and unlike a timer
+    // it does not decay.
     //
     // The reading is taken BEFORE the scan, so the scan's ceiling is guaranteed to cover the
     // block the proof is anchored at. Taken afterwards it would prove exclusion over blocks the
@@ -318,37 +350,6 @@ async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Reso
         const exhaustive: never = exclusion;
         return exhaustive;
       }
-    }
-
-    // A conflicting log usually means a stranger paid somebody else under our public reference,
-    // and the invoice is genuinely unpaid: release, and let it be proposed once. Escalating on
-    // every conflict would let one junk log wedge any invoice for ever.
-    //
-    // The exception is a log that matches this invoice's token AND payee but disagrees about the
-    // amount or the fee. Nobody else has a reason to pay our payee, in our token, under our
-    // reference: that shape is our own money moving in a plan we did not make -- the #1959 leak
-    // executing with different fields -- and releasing on it is a double spend of our funds.
-    // Three answers. A reader that never stated what conflicting logs it saw has not concluded,
-    // and "did not conclude" must not take the same branch as "saw none" — which is what a boolean
-    // made it do, and which releases.
-    const conflict = conflictVerdict(sighting);
-    if (conflict === "UNKNOWN") {
-      return { done: false, reason: "CONFLICTS_NOT_STATED", advanced };
-    }
-    // How many OTHER endpoints answered this same negative. A scan that only one endpoint
-    // answered is one endpoint's word, and this module exists because one endpoint's word about
-    // an absent log has been wrong in production.
-    if ((sighting.negativeCorroborations ?? 0) < 1) {
-      return { done: false, reason: "NEGATIVE_UNCORROBORATED", advanced };
-    }
-    if (conflict === "OURS_AND_WRONG") {
-      move("EVIDENCE_CONFLICT");
-      store.audit(job.obligationId, "worker", "PAYMENT_FIELDS_DISAGREE", {
-        conflicts: sighting.conflicts ?? null,
-        txHash: sighting.txHash ?? null,
-        reason: "a log paying this invoice's token and payee disagreed about amount or fee",
-      });
-      return { done: true, advanced };
     }
 
     // Nothing carrying this reference paid this invoice, across the full window. The simulation

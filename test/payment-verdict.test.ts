@@ -23,7 +23,7 @@ import { verdictFor, type PaymentSighting } from "../src/chain.ts";
 
 const TX = `0x${"ab".repeat(32)}`;
 
-describe("verdictFor turns a sighting into one of three answers", () => {
+describe("verdictFor turns a sighting into one of four answers", () => {
   test("a corroborated positive is PAID", () => {
     const v = verdictFor({ found: true, txHash: TX, corroborated: true }, { requireCorroboration: true });
     assert.equal(v.kind, "PAID");
@@ -45,7 +45,7 @@ describe("verdictFor turns a sighting into one of three answers", () => {
     assert.equal(v.kind, "PAID");
   });
 
-  test("a negative carrying conflicts is UNKNOWN, never NOT_PAID", () => {
+  test("a log that paid OUR payee for the wrong fee is CONFLICT_OURS, never NOT_PAID", () => {
     // The one that paid an invoice twice: same payee, same token, same amount, different FEE --
     // and the fee is chosen by the paying client. Dropping `conflicts` made it "no payment".
     const v = verdictFor({
@@ -53,9 +53,47 @@ describe("verdictFor turns a sighting into one of three answers", () => {
       truncated: false,
       conflicts: ["0xdead: pays a fee of 1, the plan fee is 0"],
       conflictKinds: ["fee"],
+      negativeCorroborations: 2,
     } as PaymentSighting);
+    assert.equal(v.kind, "CONFLICT_OURS");
+    assert.deepEqual(v.kind === "CONFLICT_OURS" ? [...v.conflictKinds] : null, ["fee"]);
+  });
+
+  test("a log that paid SOMEBODY ELSE is NOT_PAID, with the log reported alongside", () => {
+    // The mirror, and it costs availability rather than money. Payment references are public --
+    // they derive from data anchored openly -- so anyone who can read one can emit a log against
+    // it. Treating any conflicting log as inconclusive let a stranger wedge an invoice for ever
+    // with one junk transfer, while a log paying somebody else plainly is not payment of this
+    // invoice. It is reported, because it is either an attack or a misconfiguration, and it is
+    // not decisive.
+    const v = verdictFor({
+      found: false,
+      truncated: false,
+      conflicts: ["0xdead: pays 0xdeadbeef, not our payee"],
+      conflictKinds: ["to"],
+      negativeCorroborations: 2,
+    } as PaymentSighting);
+    assert.equal(v.kind, "NOT_PAID");
+    assert.equal(v.kind === "NOT_PAID" ? v.conflicts?.length : null, 1);
+  });
+
+  test("a negative that never said what conflicting logs it saw is UNKNOWN", () => {
+    // Absent is not empty. A reader that never populated `conflictKinds` did not look, and this
+    // exact sighting used to come back NOT_PAID from `verdictFor` while the worker and the
+    // operator release both refused it -- one object, three readings, and the weakest of them
+    // was the one guarding the money.
+    const v = verdictFor({ found: false, truncated: false, negativeCorroborations: 2 });
     assert.equal(v.kind, "UNKNOWN");
-    assert.equal(v.kind === "UNKNOWN" ? v.reason : null, "CONFLICTS");
+    assert.equal(v.kind === "UNKNOWN" ? v.reason : null, "CONFLICTS_NOT_STATED");
+  });
+
+  test("a negative no second endpoint confirmed is UNKNOWN", () => {
+    // publicnode returns an empty `eth_getLogs` for a fee-proxy log this project can point at on
+    // chain, with no error. One endpoint's silence is not absence, and the already-paid gate is
+    // the one place where believing it means paying an invoice a second time.
+    const v = verdictFor({ found: false, truncated: false, conflictKinds: [] });
+    assert.equal(v.kind, "UNKNOWN");
+    assert.equal(v.kind === "UNKNOWN" ? v.reason : null, "UNCORROBORATED");
   });
 
   test("a truncated negative is UNKNOWN", () => {
@@ -95,10 +133,14 @@ describe("verdictFor turns a sighting into one of three answers", () => {
       { found: false, truncated: false,
     conflictKinds: [],
     negativeCorroborations: 2, conflicts: ["x"] } as PaymentSighting,
+      { found: false, truncated: false, conflictKinds: ["amount"], negativeCorroborations: 2 } as PaymentSighting,
+      { found: false, truncated: false, negativeCorroborations: 2 },
       null,
     ];
     for (const c of cases) {
-      assert.ok(["PAID", "NOT_PAID", "UNKNOWN"].includes(verdictFor(c, { requireCorroboration: true }).kind));
+      assert.ok(
+        ["PAID", "NOT_PAID", "CONFLICT_OURS", "UNKNOWN"].includes(verdictFor(c, { requireCorroboration: true }).kind),
+      );
     }
   });
 });

@@ -202,6 +202,7 @@ async function callTool(name, args, deps) {
             const ourTx = OWN_PAYMENTS.get(reference.toLowerCase()) ?? null;
             const sameTx = ourTx !== null && seen.txHash?.toLowerCase() === ourTx;
             const corroboratedBy = seen.found ? (expect ? "expectation" : sameTx ? "project-evidence" : null) : null;
+            const verdict = verdictFor(seen);
             const conflicts = [
                 ...(seen.conflicts ?? []),
                 ...(ourTx !== null && seen.txHash !== undefined && !sameTx
@@ -225,17 +226,12 @@ async function callTool(name, args, deps) {
                 // A miss inside a bounded window is "not seen recently", never "unpaid".
                 // Was `seen.found || seen.truncated !== true`, which called a scan conclusive whenever
                 // the flag was merely absent -- the permissive inverse of the rule the money paths
-                // use. One shared verdict answers it the same way everywhere.
-                conclusive: verdictFor(seen).kind !== "UNKNOWN",
-                caveat: !seen.found
-                    ? seen.truncated
-                        ? "not seen in the scanned window; this is not proof the invoice is unpaid"
-                        : "scanned the whole window; no payment carrying this reference was found"
-                    : corroboratedBy === null
-                        ? "a log carries this reference, but nothing corroborates that it pays this invoice. " +
-                            "Anyone can emit a fee-proxy log with a public reference: pass `expect` (token, to, " +
-                            "amount) to have the payment itself checked."
-                        : null,
+                // use. One shared verdict answers it the same way everywhere, and the caveat is read off
+                // the same verdict rather than off `seen.truncated`: this surface used to print "scanned
+                // the whole window" for a scan that had never said it covered one, over the same absent
+                // flag, to the same agents.
+                conclusive: verdict.kind === "PAID" || verdict.kind === "NOT_PAID",
+                caveat: caveatFor(verdict, corroboratedBy),
                 source: "ERC20FeeProxy event log, read from a public Sepolia RPC with no credential",
             };
         }
@@ -293,5 +289,36 @@ export async function handlePublic(req, deps = {}) {
             return reply({});
         default:
             return fail(-32601, `method not found: ${r.method}`);
+    }
+}
+/**
+ * What an agent has to know about this answer before acting on it.
+ *
+ * Read off the verdict, never off the sighting's own fields. The version that read
+ * `seen.truncated` directly printed "scanned the whole window; no payment carrying this reference
+ * was found" whenever the flag was merely ABSENT -- the same absent-means-no reading that has
+ * been found in this codebase more times than any other defect, here on the surface whose whole
+ * job is to tell a stranger what is true.
+ */
+function caveatFor(verdict, corroboratedBy) {
+    switch (verdict.kind) {
+        case "PAID":
+            return corroboratedBy === null
+                ? "a log carries this reference, but nothing corroborates that it pays this invoice. " +
+                    "Anyone can emit a fee-proxy log with a public reference: pass `expect` (token, to, " +
+                    "amount) to have the payment itself checked."
+                : null;
+        case "NOT_PAID":
+            return "scanned the whole window, and other endpoints agreed it was empty; no payment " +
+                "carrying this reference was found";
+        case "CONFLICT_OURS":
+            return `${verdict.detail}. That is not a payment of this invoice and not an absence either: ` +
+                "it needs a human.";
+        case "UNKNOWN":
+            return `${verdict.detail}; this is not proof the invoice is unpaid`;
+        default: {
+            const exhaustive = verdict;
+            return exhaustive;
+        }
     }
 }

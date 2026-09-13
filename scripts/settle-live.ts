@@ -207,47 +207,73 @@ const oid = obligationId(NS, REQUEST_ID);
 console.log(`obligationId     : ${oid}`);
 
 const before = await scanForThisInvoice();
+// The window is part of the answer, not decoration: without it a reader cannot tell what "no
+// payment seen" would have meant.
 console.log(`\nsearched         : ${searchedDescription}`);
-console.log(
-  `proxy log before : ${
-    before.found
-      ? `ALREADY PAID in ${before.txHash}`
-      : before.conflicts?.length
-        ? `a log carries this reference but does not pay this invoice: ${before.conflicts[0]}`
-        : "no payment seen"
-  }`,
-);
 
-// And then it used to settle anyway. Printing "ALREADY PAID" and proceeding is the duplicate
-// payment this whole project exists to refuse, written into the script that moves real money.
-// A log that carries the reference and pays something else stops the run too: it is not this
-// invoice's settlement, and it is not nothing either -- it is a question for a human, and
-// paying over the top of it would bury the question.
-// An inconclusive scan is not permission either. This is the script that moves real money, and
-// it was the one place still proceeding on a negative the MCP gate would refuse: a window that
-// did not reach the invoice's anchor, or a read no endpoint answered, says nothing about whether
-// the debt is already settled.
+// One verdict, switched exhaustively, in the script that moves real money.
+//
+// This read the sighting's own fields three times over, in three different combinations, and
+// each one had already been wrong somewhere else in the codebase: it printed "ALREADY PAID" and
+// settled anyway, it called a log that pays somebody else an answer, and it read a negative no
+// endpoint corroborated as permission. `verdictFor` is the single reading now, and a fifth
+// answer added to the union would stop this file compiling rather than fall through it.
 const beforeVerdict = verdictFor(before, { requireCorroboration: true });
-if (beforeVerdict.kind === "UNKNOWN" && !before.conflicts?.length) {
-  console.error(
-    `\nREFUSED before any write: searching ${searchedDescription} could not establish whether ` +
-      `${REFERENCE} has already been paid (${beforeVerdict.reason}). A scan that did not cover the ` +
-      `window, or that no endpoint answered, is not evidence the debt is unpaid. Retry when an ` +
-      `endpoint answers, or once Request has confirmed the invoice so its anchor bounds the search.\n`,
-  );
+const refuse = (why: string): never => {
+  console.error(`\nREFUSED before any write: searching ${searchedDescription}, ${why}\n`);
   store.close();
   process.exit(2);
-}
+};
 
-if (before.found || before.conflicts?.length) {
-  console.error(
-    `\nREFUSED before any write: searching ${searchedDescription}, the fee proxy already ` +
-      `carries ${before.found ? `a payment for ${REFERENCE} in ${before.txHash}` : `a log for ${REFERENCE} that pays something else`}.` +
-      `\nIf that payment is this invoice's, the debt is settled and there is nothing to do. ` +
-      `If it is not, reconcile it before paying: npm run resolve\n`,
-  );
-  store.close();
-  process.exit(2);
+switch (beforeVerdict.kind) {
+  case "PAID":
+    console.log(`proxy log before : ALREADY PAID in ${beforeVerdict.txHash}`);
+    refuse(
+      `the fee proxy already carries a payment for ${REFERENCE} in ${beforeVerdict.txHash}. ` +
+        "If that payment is this invoice's, the debt is settled and there is nothing to do. " +
+        "If it is not, reconcile it before paying: npm run resolve",
+    );
+    break;
+
+  case "CONFLICT_OURS":
+    console.log(`proxy log before : ${beforeVerdict.detail}`);
+    refuse(
+      `${beforeVerdict.detail}. Nobody else has a reason to pay this payee, in this token, under ` +
+        "this reference, so that is either this invoice settled outside this system or our own " +
+        "funds moving in a plan nobody made. Paying over the top of it would bury the question: " +
+        "reconcile it first with npm run resolve",
+    );
+    break;
+
+  case "UNKNOWN":
+    console.log(`proxy log before : could not tell — ${beforeVerdict.detail}`);
+    refuse(
+      `${beforeVerdict.txHash ? `a log for ${REFERENCE} was seen in ${beforeVerdict.txHash}, but ` : ""}` +
+        `the scan could not establish whether ${REFERENCE} has already been paid ` +
+        `(${beforeVerdict.reason}). A window that did not reach the invoice's anchor, a scan that ` +
+        "never said what conflicting logs it saw, or a negative no second endpoint confirmed is " +
+        "not evidence the debt is unpaid. Retry when endpoints answer, or once Request has " +
+        "confirmed the invoice so its anchor bounds the search.",
+    );
+    break;
+
+  case "NOT_PAID":
+    // Logs that carried the reference and paid somebody ELSE land here, and they are reported
+    // rather than decisive: the reference is public, so treating any junk log as an answer would
+    // let a stranger wedge this invoice for ever with one transfer.
+    console.log(
+      `proxy log before : no payment seen${
+        beforeVerdict.conflicts?.length
+          ? ` (a log carries this reference but pays something else: ${beforeVerdict.conflicts[0]})`
+          : ""
+      }`,
+    );
+    break;
+
+  default: {
+    const exhaustive: never = beforeVerdict;
+    throw new Error(`unhandled verdict ${JSON.stringify(exhaustive)}`);
+  }
 }
 
 const outcome = await settleObligation(

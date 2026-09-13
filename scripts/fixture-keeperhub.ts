@@ -76,7 +76,9 @@ export class KeeperHubFixture {
   /** Create transactions this chain contains, hash -> block. See `announceAnchor`. */
   #anchors = new Map<string, number>();
   #server: Server | null = null;
+  #alt: Server | null = null;
   #port = 0;
+  #altPort = 0;
   #seq = 0;
   #posts = 0;
   #deduped = 0;
@@ -94,6 +96,22 @@ export class KeeperHubFixture {
   }
   get rpcUrl(): string {
     return `http://127.0.0.1:${this.#port}/rpc`;
+  }
+  /**
+   * The same chain, on a second socket.
+   *
+   * A negative is only an answer once another endpoint has answered it too -- one endpoint's
+   * empty `eth_getLogs` has been wrong in production -- so a harness pinned to a single URL can
+   * never conclude anything, and pinning is exactly what a fixture must do: pointed at the real
+   * public endpoints it would ask them about invoices that really are paid there, and refuse on
+   * the contradiction between two different worlds.
+   *
+   * So this serves the same chain twice. That proves the corroboration path actually runs and
+   * that the caller does not believe one socket; it does NOT prove two operators independently
+   * agree, which is a property of the live run and is claimed nowhere else.
+   */
+  get rpcUrlAlt(): string {
+    return `http://127.0.0.1:${this.#altPort}/rpc`;
   }
   get executions(): readonly Executed[] {
     return this.#executions;
@@ -132,13 +150,25 @@ export class KeeperHubFixture {
         resolve();
       });
     });
+    // The second socket on the same chain. See `rpcUrlAlt`.
+    this.#alt = createServer((req, res) => {
+      void this.#route(req, res);
+    });
+    await new Promise<void>((resolve) => {
+      this.#alt?.listen(0, "127.0.0.1", () => {
+        const addr = this.#alt?.address();
+        this.#altPort = typeof addr === "object" && addr ? addr.port : 0;
+        resolve();
+      });
+    });
   }
 
   async stop(): Promise<void> {
-    const s = this.#server;
-    if (!s) return;
-    await new Promise<void>((resolve) => s.close(() => resolve()));
+    for (const s of [this.#server, this.#alt]) {
+      if (s) await new Promise<void>((resolve) => s.close(() => resolve()));
+    }
     this.#server = null;
+    this.#alt = null;
   }
 
   async #route(req: IncomingMessage, res: ServerResponse): Promise<void> {

@@ -34,16 +34,34 @@ const INVOICE_AS_REQUEST_HOLDS_IT = {
   paymentReference: REFERENCE,
 };
 
+/**
+ * A negative that actually says what it covered.
+ *
+ * `found: false` on its own means "I could not tell", and this project has paid for reading it
+ * as "unpaid" more than once. A conclusive negative states three things: the window reached the
+ * invoice's floor, the scan said which conflicting logs it saw, and at least one other endpoint
+ * answered the same way. `verdictFor` returns NOT_PAID only for a sighting that states all three.
+ */
+const NOTHING_ON_CHAIN = {
+  found: false,
+  truncated: false,
+  conflictKinds: [],
+  negativeCorroborations: 2,
+} as const;
+
 function ctx(over: Partial<McpContext> = {}): McpContext & { provider: FixtureProvider } {
   const provider = new FixtureProvider();
   return {
     store: new Store(),
     provider,
     // No chain in tests. Nothing is paid until the fixture provider says so.
-    // `truncated: false` because that is what a real chain read returns when it covered the
-    // window. A stub that omits it is claiming a conclusion the reader never made, and the
-    // already-paid gate now refuses on exactly that ambiguity.
-    findPayment: async () => ({ found: false, truncated: false }),
+    //
+    // Every field of NOTHING_ON_CHAIN is load-bearing, and each one was added after a stub that
+    // omitted it was read as "unpaid, go ahead": `truncated: false` says the window reached the
+    // floor, `conflictKinds: []` says the scan looked at conflicting logs and found none, and
+    // `negativeCorroborations` says another endpoint answered the same way. A reader that states
+    // none of that has not concluded anything, and the already-paid gate refuses on it.
+    findPayment: async () => ({ ...NOTHING_ON_CHAIN }),
     // No gateway in tests either — but the verification still runs, against this.
     fetchInvoice: async () => INVOICE_AS_REQUEST_HOLDS_IT,
     ...over,
@@ -248,7 +266,7 @@ test("resolve_pending closes out a payment the indexer had not caught up with", 
     findPayment: async () =>
       indexed && c.provider.totalSends() > 0
         ? { found: true, txHash: `0x${"0".repeat(63)}1`, amount: ONE }
-        : { found: false, truncated: false },
+        : { ...NOTHING_ON_CHAIN },
   };
 
   const proposal = await call(lagging, "propose_payment", INVOICE);
@@ -321,7 +339,7 @@ test("a settled obligation is never re-entered, and its state never regresses", 
     findPayment: async () =>
       c.provider.totalSends() > 0
         ? { found: true, txHash: `0x${"0".repeat(63)}1`, amount: ONE }
-        : { found: false, truncated: false },
+        : { ...NOTHING_ON_CHAIN },
   };
   const first = await call(paid, "settle_obligation", INVOICE);
   assert.equal(first.json.state, "SETTLED");

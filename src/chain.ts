@@ -367,23 +367,54 @@ export type PaymentVerdict =
   /** A log corroborated against what this obligation actually owes. Safe to treat as settlement. */
   | { readonly kind: "PAID"; readonly txHash: string; readonly block?: number }
   /**
-   * The scan covered the whole window in which a payment could exist and there was none. Only
-   * ever returned when the caller supplied the floor that makes coverage provable.
+   * The scan covered the whole window in which a payment could exist, other endpoints agreed it
+   * was empty, and nothing in it could be a payment of this invoice. Only ever returned when the
+   * caller supplied the floor that makes coverage provable.
+   *
+   * Logs that carried the reference and paid somebody ELSE land here, with their descriptions in
+   * `conflicts`. They are junk, and treating them as an answer was a wedge: the reference is
+   * public, so anyone who can read one could emit a log against it and block that invoice for
+   * ever. What a stranger did with our reference is reportable, not decisive.
    */
-  | { readonly kind: "NOT_PAID"; readonly scannedFrom?: number; readonly scannedTo?: number }
+  | {
+      readonly kind: "NOT_PAID";
+      readonly scannedFrom?: number;
+      readonly scannedTo?: number;
+      readonly conflicts?: readonly string[];
+    }
+  /**
+   * A log paid OUR payee, in OUR token, under our reference, and disagreed about the amount or
+   * the fee. That is our own money moving in a plan nobody made, and it is neither a settlement
+   * to record nor an absence to release on: it belongs in front of a human.
+   */
+  | {
+      readonly kind: "CONFLICT_OURS";
+      readonly detail: string;
+      readonly conflicts: readonly string[];
+      readonly conflictKinds: readonly ConflictKind[];
+      readonly txHash?: string;
+    }
   /**
    * Anything else, and there are more ways to land here than to land anywhere else: a scan that
-   * ran out of window, a log that carries the reference but disagrees about the payment, a
-   * positive no second endpoint would corroborate, or a read that could not be made at all.
+   * ran out of window, a scan that never said what conflicting logs it saw, a negative no second
+   * endpoint would corroborate, a positive no second endpoint would corroborate, or a read that
+   * could not be made at all.
    *
    * Never a licence to send, and never a licence to release an obligation either.
    */
   | {
       readonly kind: "UNKNOWN";
-      readonly reason: "TRUNCATED" | "CONFLICTS" | "UNCORROBORATED" | "UNREADABLE";
+      readonly reason: "TRUNCATED" | "CONFLICTS_NOT_STATED" | "UNCORROBORATED" | "UNREADABLE";
       readonly detail: string;
-      readonly conflicts?: readonly string[];
-      readonly conflictKinds?: readonly ConflictKind[];
+      /**
+       * The transaction the scan saw, when there was one.
+       *
+       * An uncorroborated POSITIVE is the one UNKNOWN that has something concrete behind it, and
+       * a refusal that will not say which transaction it is looking at sends a human to search
+       * for it by hand. It is carried here, not promoted to PAID, because it is still not
+       * evidence this obligation settled.
+       */
+      readonly txHash?: string;
     };
 
 /**
@@ -407,7 +438,8 @@ export function verdictFor(
       return {
         kind: "UNKNOWN",
         reason: "UNCORROBORATED",
-        detail: "a log was seen but no second endpoint confirmed it",
+        detail: `a log was seen${sighting.txHash ? ` in ${sighting.txHash}` : ""} but no second endpoint confirmed it`,
+        ...(sighting.txHash === undefined ? {} : { txHash: sighting.txHash }),
       };
     }
     return {
@@ -416,19 +448,31 @@ export function verdictFor(
       ...(sighting.block === undefined ? {} : { block: sighting.block }),
     };
   }
-  // A negative that carries conflicts is not a negative. A log DID carry this reference and
-  // disagreed about the payment; discarding that is how an invoice already paid for a different
-  // fee got paid a second time.
-  if (sighting.conflicts && sighting.conflicts.length > 0) {
+  // A negative that carries conflicts is not automatically a negative -- but WHICH conflicts
+  // decides, and only three answers are honest. `conflictVerdict` is the same reading the worker
+  // and the operator release already took, and it lives here now so there is only one of it.
+  // There were three, and the copy in this function was the weakest: it returned NOT_PAID for a
+  // scan that never said what conflicting logs it saw, and NOT_PAID for a negative no second
+  // endpoint would corroborate. Both are "I could not tell" read as "no", in the gate that
+  // decides whether to pay at all -- while the two release paths downstream refused on exactly
+  // those sightings. One sighting, three readings, and the weakest one guarded the money.
+  const conflict = conflictVerdict(sighting);
+  const conflicts = sighting.conflicts ?? [];
+  // Checked before the window, deliberately: a log that paid our payee our token for the wrong
+  // amount was SEEN, and a short window does not unsee it. That one belongs in front of a human
+  // whatever else the scan managed to cover.
+  if (conflict === "OURS_AND_WRONG") {
     return {
-      kind: "UNKNOWN",
-      reason: "CONFLICTS",
-      detail: `a log carries this reference but disagrees: ${sighting.conflicts.join("; ")}`,
-      conflicts: sighting.conflicts,
-      ...(sighting.conflictKinds ? { conflictKinds: sighting.conflictKinds } : {}),
+      kind: "CONFLICT_OURS",
+      detail: `a log pays this invoice's payee and token under its reference but disagrees: ${conflicts.join("; ")}`,
+      conflicts,
+      conflictKinds: sighting.conflictKinds ?? [],
+      ...(sighting.txHash === undefined ? {} : { txHash: sighting.txHash }),
     };
   }
-  // Only an explicit `false` is a covered window. Absent means the reader did not say.
+  // Only an explicit `false` is a covered window. Absent means the reader did not say. Ranked
+  // above the two checks below because it is the one an operator can act on: a window that did
+  // not reach the invoice's anchor explains everything else the scan failed to establish.
   if (sighting.truncated !== false) {
     return {
       kind: "UNKNOWN",
@@ -436,10 +480,30 @@ export function verdictFor(
       detail: "the scan did not cover the window a payment for this obligation could be in",
     };
   }
+  if (conflict === "UNKNOWN") {
+    return {
+      kind: "UNKNOWN",
+      reason: "CONFLICTS_NOT_STATED",
+      detail: "the scan never said what conflicting logs it saw, so it has not concluded",
+    };
+  }
+  // How many OTHER endpoints answered this same negative. Deliberately NOT gated on
+  // `requireCorroboration`: that option is about whether a POSITIVE counts as this obligation's
+  // settlement, and there is no caller for whom one endpoint's silence about an absent log is an
+  // answer. publicnode has been observed returning an empty `eth_getLogs` for a fee-proxy log
+  // that demonstrably exists, with no error, which is the whole reason a negative is re-asked.
+  if ((sighting.negativeCorroborations ?? 0) < 1) {
+    return {
+      kind: "UNKNOWN",
+      reason: "UNCORROBORATED",
+      detail: "no second endpoint confirmed this negative, and one endpoint's silence is not absence",
+    };
+  }
   return {
     kind: "NOT_PAID",
     ...(sighting.scannedFrom === undefined ? {} : { scannedFrom: sighting.scannedFrom }),
     ...(sighting.scannedTo === undefined ? {} : { scannedTo: sighting.scannedTo }),
+    ...(conflicts.length === 0 ? {} : { conflicts }),
   };
 }
 

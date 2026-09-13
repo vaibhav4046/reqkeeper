@@ -151,7 +151,11 @@ const server = new ServerUnderTest({
   // Pinned to the fixture. Without this the negative from the fixture is corroborated
   // against real public endpoints, where these invoices really are paid -- two different
   // worlds, and the run refuses on the contradiction between them.
-  REQKEEPER_RPC_ENDPOINTS: fx.rpcUrl,
+  // Both fixture sockets. A negative has to be put to more than one endpoint before it counts
+  // as an answer, so a run pinned to a single URL can never conclude the invoice is unpaid and
+  // never gets as far as proposing. See `KeeperHubFixture.rpcUrlAlt` for what this does and does
+  // not prove.
+  REQKEEPER_RPC_ENDPOINTS: `${fx.rpcUrl},${fx.rpcUrlAlt}`,
   REQKEEPER_DB: dbPath,
 });
 

@@ -32,7 +32,7 @@
  * option and no timeout: an obligation with an unexcluded leak waits for a human. Refusing to
  * move is a liveness cost measured in one operator action; being wrong here is measured in money.
  */
-import { type ConflictKind } from "./chain.ts";
+import { type PaymentSighting } from "./chain.ts";
 /** Why the exclusion could not be proven. Each one is "I do not know", never "no". */
 export type ExclusionGap = 
 /** No payer account is configured, so there is no nonce to reason about. See `payerAddress`. */
@@ -181,18 +181,17 @@ export declare function operatorReleaseDecision(input: {
     /**
      * The WHOLE sighting, not three fields of it.
      *
-     * This took `{found, truncated, txHash}` — and a sighting the worker escalates to
+     * This took `{found, truncated, txHash}` -- and a sighting the worker escalates to
      * EVIDENCE_CONFLICT carries neither `found` nor `truncated` set against it, so it arrived here
      * as a clean negative and this returned RELEASE. `scripts/resolve.ts` then wrote "no payment for
      * this reference on chain" into the audit trail over a log that was paying this invoice's token
-     * and payee and disagreeing about the amount — which is our own money moving in a plan nobody
+     * and payee and disagreeing about the amount -- which is our own money moving in a plan nobody
      * made. Two exits from PAYMENT_PREFLIGHT reading one sighting two different ways.
+     *
+     * It then took the whole sighting and read it ITSELF, field by field, in its own order. That
+     * was the same bug one layer up: the reading here, the reading in the worker and the reading in
+     * `verdictFor` were three copies that had to be kept in step by hand, and they were not. Now
+     * there is one reading, and this function only decides what a HUMAN may do with each answer.
      */
-    readonly sighting: {
-        readonly found: boolean;
-        readonly truncated?: boolean;
-        readonly txHash?: string;
-        readonly conflictKinds?: readonly ConflictKind[];
-        readonly negativeCorroborations?: number;
-    };
+    readonly sighting: PaymentSighting | null | undefined;
 }): OperatorRelease;

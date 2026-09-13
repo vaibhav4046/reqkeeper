@@ -33,7 +33,7 @@
  * move is a liveness cost measured in one operator action; being wrong here is measured in money.
  */
 
-import { conflictVerdict, type ConflictKind } from "./chain.ts";
+import { verdictFor, type PaymentSighting } from "./chain.ts";
 
 /** Why the exclusion could not be proven. Each one is "I do not know", never "no". */
 export type ExclusionGap =
@@ -247,47 +247,53 @@ export function operatorReleaseDecision(input: {
   /**
    * The WHOLE sighting, not three fields of it.
    *
-   * This took `{found, truncated, txHash}` — and a sighting the worker escalates to
+   * This took `{found, truncated, txHash}` -- and a sighting the worker escalates to
    * EVIDENCE_CONFLICT carries neither `found` nor `truncated` set against it, so it arrived here
    * as a clean negative and this returned RELEASE. `scripts/resolve.ts` then wrote "no payment for
    * this reference on chain" into the audit trail over a log that was paying this invoice's token
-   * and payee and disagreeing about the amount — which is our own money moving in a plan nobody
+   * and payee and disagreeing about the amount -- which is our own money moving in a plan nobody
    * made. Two exits from PAYMENT_PREFLIGHT reading one sighting two different ways.
+   *
+   * It then took the whole sighting and read it ITSELF, field by field, in its own order. That
+   * was the same bug one layer up: the reading here, the reading in the worker and the reading in
+   * `verdictFor` were three copies that had to be kept in step by hand, and they were not. Now
+   * there is one reading, and this function only decides what a HUMAN may do with each answer.
    */
-  readonly sighting: {
-    readonly found: boolean;
-    readonly truncated?: boolean;
-    readonly txHash?: string;
-    readonly conflictKinds?: readonly ConflictKind[];
-    readonly negativeCorroborations?: number;
-  };
+  readonly sighting: PaymentSighting | null | undefined;
 }): OperatorRelease {
   // Only an obligation actually waiting on a dry run can be released this way. Anything else is
   // either already resolved or in a state whose exit is somewhere else entirely.
   if (input.state !== "PAYMENT_PREFLIGHT") return { kind: "REFUSE_STATE", state: input.state };
 
-  // Checked before the scan's completeness, deliberately: a payment that is visibly there is an
-  // answer no matter how little else the scan managed to cover.
-  if (input.sighting.found) return { kind: "REFUSE_PAID", txHash: input.sighting.txHash };
+  const verdict = verdictFor(input.sighting);
+  switch (verdict.kind) {
+    // A payment that is visibly there is an answer no matter how little else the scan covered.
+    case "PAID":
+      return { kind: "REFUSE_PAID", txHash: verdict.txHash || undefined };
 
-  // `truncated` must be an explicit false. Undefined is a reader that did not say, and a reader
-  // that did not say is not a reader that said no.
-  if (input.sighting.truncated !== false) return { kind: "REFUSE_INCONCLUSIVE" };
+    // Our token, our payee, our reference, the wrong amount or fee. A human releasing here would
+    // be signing off "no payment on chain" over our own money moving in a plan nobody made.
+    case "CONFLICT_OURS":
+      return { kind: "REFUSE_CONFLICT" };
 
-  // The same test the worker applies, from the same function, so the two exits cannot disagree —
-  // including the third answer. A sighting that never says what conflicting logs it saw has not
-  // concluded, and a human cannot release on a scan that did not finish deciding.
-  const conflict = conflictVerdict(input.sighting);
-  if (conflict === "OURS_AND_WRONG") return { kind: "REFUSE_CONFLICT" };
-  if (conflict === "UNKNOWN") return { kind: "REFUSE_INCONCLUSIVE" };
+    // Every way of not having concluded: a window that stopped short, a scan that never said
+    // what conflicting logs it saw, and a negative nobody else confirmed. The last one is kept
+    // separate because it reads as a clean negative and is not one: publicnode has returned an
+    // empty `eth_getLogs` for a log that demonstrably exists, and a reviewer showed that "the
+    // primary said no and two fallbacks agreed" and "the primary said no and both fallbacks'
+    // sockets were destroyed" came back byte-identical. Silence authorised a payment.
+    case "UNKNOWN":
+      return verdict.reason === "UNCORROBORATED"
+        ? { kind: "REFUSE_UNCORROBORATED" }
+        : { kind: "REFUSE_INCONCLUSIVE" };
 
-  // One endpoint's "no" is not evidence of absence. publicnode has been observed returning an
-  // empty `eth_getLogs` for a fee-proxy log that demonstrably exists and that other endpoints
-  // return, with no error — which is why a negative is re-asked at all. What was never recorded
-  // is whether anyone ANSWERED: a reviewer showed that "the primary said no and two fallbacks
-  // agreed" and "the primary said no and both fallbacks' sockets were destroyed" came back
-  // byte-identical, so silence authorised a payment.
-  if ((input.sighting.negativeCorroborations ?? 0) < 1) return { kind: "REFUSE_UNCORROBORATED" };
+    // Covered, corroborated, and nothing in the window could be a payment of this invoice.
+    case "NOT_PAID":
+      return { kind: "RELEASE" };
 
-  return { kind: "RELEASE" };
+    default: {
+      const exhaustive: never = verdict;
+      return exhaustive;
+    }
+  }
 }
