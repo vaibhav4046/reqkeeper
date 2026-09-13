@@ -28,7 +28,7 @@ import { obligationId } from "../src/identity.ts";
 import { toBaseUnits } from "../src/money.ts";
 import { NAMESPACE, ERC20_FEE_PROXY, PAY_SIGNATURE, buildSourceFacts } from "../src/plan.ts";
 import { FixtureProvider } from "../src/provider.ts";
-import { settleObligation } from "../src/settle.ts";
+import { restate, settleObligation } from "../src/settle.ts";
 import { Store } from "../src/store.ts";
 import type { Policy } from "../src/policy.ts";
 
@@ -81,6 +81,17 @@ function plan(payee: string, amount: string) {
   ];
   return { facts, steps };
 }
+
+const factsFor = (payee: string, amount: string) => buildSourceFacts({
+  requestId: REQUEST_ID,
+  paymentReference: REFERENCE,
+  payee,
+  amountBaseUnits: amount,
+  maxTotalDebitBaseUnits: amount,
+  feeAmount: "0",
+  feeAddress: FEE_ADDR,
+  tokenAddress: FAU,
+});
 
 const HUMAN = { approver: "human:owner", decision: "APPROVED" as const };
 
@@ -250,5 +261,21 @@ describe("a decision authorises the plan it was given for, and no other", () => 
       "an asserted approval must be distinguishable from one a human recorded",
     );
     store.close();
+  });
+});
+
+describe("the sentence a human approves names an unauthenticated amount change", () => {
+  test("restate warns when the channel moved the amount, and is silent when it did not", () => {
+    const quiet = restate(policy, { ...factsFor(HONEST_PAYEE, ONE) }, ONE);
+    assert.ok(!/NOTE/.test(quiet), "an ordinary invoice gets no warning, or nobody reads them");
+
+    const changed = restate(
+      policy,
+      { ...factsFor(HONEST_PAYEE, FIVE), amountChangedBy: { actions: 2, fromBaseUnits: ONE } },
+      FIVE,
+    );
+    assert.match(changed, /raised at 1 FAU/);
+    assert.match(changed, /2 later action\(s\)/);
+    assert.match(changed, /cannot authenticate/);
   });
 });

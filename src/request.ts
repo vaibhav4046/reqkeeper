@@ -84,6 +84,8 @@ export interface InvoiceFactsFromRequest {
   readonly salt: string;
   /** Derived here from requestId + salt + paymentAddress. Never taken from a caller. */
   readonly paymentReference: string;
+  /** Set when later channel actions changed the amount the create stated. See policy.ts. */
+  readonly amountChangedBy?: { readonly actions: number; readonly fromBaseUnits: string };
   /** Where the create action is anchored on Sepolia. Absent while it is unconfirmed. */
   readonly anchor?: { readonly blockNumber: number; readonly transactionHash: string };
 }
@@ -345,11 +347,15 @@ export async function fetchInvoice(
     );
   }
 
+  const raisedAt = amount;
+  let changingActions = 0;
   for (const a of later) {
     if (a.name === "increaseExpectedAmount") {
       amount += BigInt(assertBaseUnits(`action ${a.index} deltaAmount`, asString(dig(a.parameters, "deltaAmount"))));
+      changingActions++;
     } else if (a.name === "reduceExpectedAmount") {
       amount -= BigInt(assertBaseUnits(`action ${a.index} deltaAmount`, asString(dig(a.parameters, "deltaAmount"))));
+      changingActions++;
     }
   }
   if (amount < 0n) {
@@ -359,6 +365,11 @@ export async function fetchInvoice(
     );
   }
   const invoiceBaseUnits = amount.toString();
+  // Carried so the sentence a human approves can name it. These actions are not authenticated —
+  // nothing here recovers an ECDSA signer — so an amount that moved after the invoice was raised
+  // is the one figure on that screen with nothing behind it but the gateway's word.
+  const amountChangedBy =
+    changingActions > 0 ? { actions: changingActions, fromBaseUnits: raisedAt.toString() } : undefined;
   const feeBaseUnits = assertBaseUnits("feeAmount", asString(dig(ep, "feeAmount")));
 
   return {
@@ -372,6 +383,7 @@ export async function fetchInvoice(
     feeRecipient,
     salt,
     paymentReference: derivePaymentReference(id, salt, payee),
+    ...(amountChangedBy ? { amountChangedBy } : {}),
     ...storageAnchor(body, create.index),
   };
 }

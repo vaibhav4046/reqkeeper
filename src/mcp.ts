@@ -410,6 +410,11 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
       // wedged for ever. Absent while Request has not confirmed the create, and omitted rather
       // than defaulted -- a zero floor would claim a scan to genesis that never happened.
       let anchorBlock: number | undefined;
+      // Hoisted out of the verification block for the same reason the anchor is: it is a fact
+      // about the invoice, not about the checking, and it has to reach the sentence the human
+      // reads. An amount changed by later channel actions is the one figure there that nothing
+      // authenticates.
+      let amountChangedBy: { actions: number; fromBaseUnits: string } | undefined;
       if (ctx.verifyAgainstRequest !== false) {
         const read = ctx.fetchInvoice ?? fetchInvoice;
         let invoice;
@@ -425,6 +430,7 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
         }
 
         anchorBlock = invoice.anchor?.blockNumber;
+        amountChangedBy = invoice.amountChangedBy;
         // Learned now, and kept. An obligation created before the gateway was reachable — or fed
         // by the watcher from a file that carries no anchors — has no floor, so every scan for it
         // comes back truncated and it can never be concluded either way. The column takes it
@@ -528,6 +534,7 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
         ...facts,
         hasBeenPaid: paidCheck === "PAID",
         ...(anchorBlock === undefined ? {} : { anchorBlock }),
+        ...(amountChangedBy === undefined ? {} : { amountChangedBy }),
       });
 
       // propose_payment deliberately passes no approval, so settleObligation stops at the

@@ -81,6 +81,10 @@ export function buildSourceFacts(f) {
         feeBaseUnits: f.feeAmount,
         feeRecipient: f.feeAddress.toLowerCase(),
         hasBeenPaid: f.hasBeenPaid ?? false,
+        // Into the facts, therefore into the facts HASH, therefore into the plan hash: an amount that
+        // was changed after the invoice was raised produces a different plan from one that was not,
+        // so a human's approval of the quiet version cannot authorise the changed one.
+        ...(f.amountChangedBy ? { amountChangedBy: f.amountChangedBy } : {}),
         ...(f.anchorBlock === undefined ? {} : { anchorBlock: f.anchorBlock }),
     };
 }

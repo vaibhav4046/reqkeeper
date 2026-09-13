@@ -206,7 +206,15 @@ export function restate(policy: Policy, facts: SourceFacts, totalDebitBaseUnits:
     `Pay ${toHuman(BigInt(facts.invoiceBaseUnits), d)} ${policy.token.symbol} to ${facts.payee}` +
     ` on chain ${policy.chainId}, plus ${toHuman(BigInt(facts.feeBaseUnits), d)} fee.` +
     ` Total leaving the wallet: ${toHuman(BigInt(totalDebitBaseUnits), d)} ${policy.token.symbol}` +
-    ` (${totalDebitBaseUnits} base units).`
+    ` (${totalDebitBaseUnits} base units).` +
+    // An amount the creditor changed after raising the invoice is the one figure here a human
+    // cannot check against anything they were shown earlier, and this reader cannot authenticate
+    // the actions that changed it. So it is named rather than folded into the number.
+    (facts.amountChangedBy
+      ? ` NOTE: this invoice was raised at ${toHuman(BigInt(facts.amountChangedBy.fromBaseUnits), d)}` +
+        ` ${policy.token.symbol} and changed by ${facts.amountChangedBy.actions} later action(s) on its` +
+        " Request channel, which this system cannot authenticate. Confirm the figure with the creditor."
+      : "")
   );
 }
 

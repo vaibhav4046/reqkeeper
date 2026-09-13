@@ -43,6 +43,8 @@ export interface InvoiceFacts {
    * answer; callers that cannot must say so by omitting it, and get the safe default.
    */
   readonly hasBeenPaid?: boolean;
+  /** Set when later Request channel actions changed the amount. See policy.ts. */
+  readonly amountChangedBy?: { readonly actions: number; readonly fromBaseUnits: string };
 }
 
 /**
@@ -118,6 +120,10 @@ export function buildSourceFacts(f: InvoiceFacts): SourceFacts {
     feeBaseUnits: f.feeAmount,
     feeRecipient: f.feeAddress.toLowerCase(),
     hasBeenPaid: f.hasBeenPaid ?? false,
+    // Into the facts, therefore into the facts HASH, therefore into the plan hash: an amount that
+    // was changed after the invoice was raised produces a different plan from one that was not,
+    // so a human's approval of the quiet version cannot authorise the changed one.
+    ...(f.amountChangedBy ? { amountChangedBy: f.amountChangedBy } : {}),
     ...(f.anchorBlock === undefined ? {} : { anchorBlock: f.anchorBlock }),
   };
 }

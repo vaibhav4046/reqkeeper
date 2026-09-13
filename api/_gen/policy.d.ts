@@ -38,6 +38,23 @@ export interface SourceFacts {
     readonly feeRecipient: string;
     readonly hasBeenPaid: boolean;
     /**
+     * How many later channel actions changed the amount the create stated, and by how much.
+     *
+     * Request channels are append-only and a creditor can increase or reduce the expected amount
+     * after raising the invoice. This reader applies those deltas — and cannot authenticate them:
+     * every action carries an ECDSA signature and nothing here recovers a signer, so the bytes the
+     * gateway serves are taken at their word. A reviewer raised an amount with a signature of
+     * sixty-five 0xab bytes and watched it apply.
+     *
+     * What bounds it is the human and the ceiling, so this is carried into the sentence the human
+     * reads: an amount that was changed after the invoice was raised says so, rather than arriving
+     * as a plain figure indistinguishable from the one the creditor first asked for.
+     */
+    readonly amountChangedBy?: {
+        readonly actions: number;
+        readonly fromBaseUnits: string;
+    };
+    /**
      * The Sepolia block the invoice's create action is anchored at, when Request has confirmed it.
      *
      * Not a policy input -- nothing here decides anything from it. It is carried so the RECOVERY

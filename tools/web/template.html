@@ -30,6 +30,14 @@
        --dim (5.49 on panel-2), so the hierarchy still reads. Raised here, not at the call
        sites: there are 20 of them. */
     --faint: #6D8787;
+    /* The chart's "zero sends" series, key and bar alike. --line-2 was doing this job at
+       1.58:1 on --panel, which fails WCAG 1.4.11's 3:1 for a graphical object you have to
+       see to read the chart. Raising --line-2 itself would have moved every panel border,
+       chip outline and scrollbar thumb with it, so the chart got its own step instead:
+       #476C74 keeps the --line-2 hue, clears 3:1 on all three surfaces (bg 3.51, panel
+       3.34, panel-2 3.19), and stays far below --signal (12.87) so one send still reads as
+       the loud series. One token for both the bar and its key, so the two cannot drift. */
+    --chart-zero: #476C74;
     --signal: #35F0A0;
     --amber: #F5C451;
     --alarm: #FF6B6B;
@@ -164,11 +172,11 @@
      a bar that cannot shrink overflows the panel instead of filling it. */
   .bars { display: flex; align-items: flex-end; gap: 1px; height: 84px; overflow: hidden; }
   .bars i { flex: 1 1 0; min-width: 0; background: var(--signal); animation: grow .4s steps(5,end) both; transform-origin: bottom; }
-  .bars i.zero { background: var(--line-2); }
+  .bars i.zero { background: var(--chart-zero); }
   @keyframes grow { from { transform: scaleY(0) } to { transform: scaleY(1) } }
   .legend { display: flex; gap: 16px; margin-top: 10px; color: var(--faint); font-size: 10px; }
   .legend b { color: var(--signal); font-weight: 400; }
-  .legend em { color: var(--line-2); font-style: normal; }
+  .legend em { color: var(--chart-zero); font-style: normal; }
 
   /* --- table ------------------------------------------------------------- */
   .toolbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
@@ -192,6 +200,11 @@
     font-size: 9px; letter-spacing: .1em; text-transform: uppercase; font-weight: 400; z-index: 1;
   }
   tbody tr { cursor: pointer; }
+  /* Row-level roving tabindex, so the focused row is the grid's single tab stop and the ring
+     has to sit inside the row box: a positive offset is clipped by .tw's overflow on the
+     first and last row. scroll-margin clears the sticky header when focus scrolls a row in. */
+  [role="grid"] tbody tr:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
+  [role="grid"] tbody tr { scroll-margin: 34px 0 4px; }
   /* The MCP settlement rows are read-only evidence, not a selectable list. */
   #mcpset tbody tr { cursor: default; }
   #mcpset tbody tr:hover td { background: none; }
@@ -394,8 +407,8 @@
       </div>
       <div class="grid g3" style="margin-top:12px">
         <div class="card" style="grid-column:1/-1">
-          <header>Latest settlements<span class="mut">click a row to inspect</span></header>
-          <div class="tw" style="max-height:34vh"><table id="recent"><thead><tr>
+          <header>Latest settlements<span class="mut">select a row to inspect</span></header>
+          <div class="tw" style="max-height:34vh"><table id="recent" role="grid" aria-label="Latest settlements; move with the arrow keys, press Enter or Space to inspect a row"><thead><tr>
             <th>Row</th><th>Obligation</th><th>Result</th><th class="n">Sends</th><th>Transaction</th><th>Provenance</th>
           </tr></thead><tbody></tbody></table></div>
         </div>
@@ -409,7 +422,7 @@
         <div>
           <div class="toolbar" id="chips"></div>
           <input type="search" id="q" placeholder="filter by code, scenario, hash…" aria-label="Filter rows">
-          <div class="tw" style="margin-top:10px"><table id="rows"><thead><tr>
+          <div class="tw" style="margin-top:10px"><table id="rows" role="grid" aria-label="Obligations; move with the arrow keys, press Enter or Space to select a row"><thead><tr>
             <th>Row</th><th>Scenario</th><th>Result</th><th class="n">Sends</th><th>Pre-write</th><th>Provenance</th>
           </tr></thead><tbody></tbody></table></div>
         </div>
@@ -676,14 +689,14 @@
     return `<a href="https://sepolia.etherscan.io/tx/${r.tx_hash}" target="_blank" rel="noopener">${short(r.tx_hash, 14)}</a>`;
   };
 
-  const rowHtml = (r, sel) => `<tr data-id="${r.case_id}" aria-selected="${sel ? "true" : "false"}">
+  const rowHtml = (r) => `<tr data-id="${r.case_id}">
       <td class="mut">${r.case_id}</td>
       <td>${short(r.request_id || "", 16)}</td>
       <td><span class="tag ${r.actual === "SETTLED" ? "one" : "ok"}">${r.actual}</span></td>
       <td class="n ${r.physical_sends ? "one" : "zero"}">${r.physical_sends}</td>
       <td>${txCell(r)}</td>
       <td>${modeTag(r)}</td></tr>`;
-  el("recent").tBodies[0].innerHTML = liveRows.slice(0, 12).map((r) => rowHtml(r, false)).join("");
+  el("recent").tBodies[0].innerHTML = liveRows.slice(0, 12).map(rowHtml).join("");
 
   // --- obligations table --------------------------------------------------
   const FILTERS = [
@@ -701,6 +714,7 @@
   ).join("");
 
   function draw() {
+    const held = el("rows").contains(document.activeElement);
     const q = el("q").value.trim().toLowerCase();
     const [, pred] = FILTERS[fi];
     const shown = ALL.filter(pred).filter((r) =>
@@ -721,6 +735,44 @@
           )
           .join("")
       : '<tr><td colspan="6" class="empty">No rows match.</td></tr>';
+    rove(el("rows"), null, held);
+  }
+
+  /* --- keyboard -----------------------------------------------------------
+   *
+   * The rows carried a delegated click handler and nothing else, so selecting an obligation
+   * was a mouse-only behaviour — WCAG 2.1.1, Level A. A grid, not 95 buttons: tabindex="0" on
+   * every row would make a keyboard user press Tab 95 times to get past the table, which
+   * trades one barrier for another. So the tables are single-select grids with a roving
+   * tabindex — Tab enters one of them once, at the active row, arrows move within it, Home
+   * and End jump, and Enter or Space does exactly what a click does. Selection is announced
+   * through aria-selected on the row, not through the green tint alone.
+   *
+   * Focus deliberately does not select. Arrowing down a 250-row grid would otherwise rewrite
+   * the inspector on every keystroke and a screen reader would read each one out. */
+  const gridRows = (t) => [...t.tBodies[0].rows].filter((r) => r.dataset.id);
+
+  /** Make exactly one row the grid's tab stop; `id` moves it, `focus` follows it. */
+  function rove(t, id, focus) {
+    const rows = gridRows(t);
+    if (!rows.length) return;
+    if (id != null) t.dataset.active = id;
+    // The active row can vanish under a filter or a search, so the first row is the fallback:
+    // a grid with no tab stop is unreachable again.
+    const cur = rows.find((r) => r.dataset.id === t.dataset.active) ?? rows[0];
+    t.dataset.active = cur.dataset.id;
+    for (const r of rows) r.tabIndex = r === cur ? 0 : -1;
+    if (focus) cur.focus();
+  }
+
+  /** One activation path for pointer and keyboard, so the two cannot drift apart. */
+  function activate(table, id, byKey) {
+    inspect(id);
+    if (table !== "recent") return;
+    show("obl");
+    // Activating an overview row hides the section that row lives in, which would drop focus
+    // to the body. Hand it to the obligation the user just asked to see.
+    if (byKey) rove(el("rows"), id, true);
   }
 
   function inspect(id) {
@@ -760,13 +812,36 @@
   });
   el("q").addEventListener("input", draw);
   for (const t of ["rows", "recent"]) {
-    el(t).addEventListener("click", (e) => {
+    const table = el(t);
+    table.addEventListener("click", (e) => {
       const tr = e.target.closest("tr");
       if (!tr?.dataset.id || e.target.closest("a")) return;
-      inspect(tr.dataset.id);
-      if (t === "recent") show("obl");
+      rove(table, tr.dataset.id);
+      activate(t, tr.dataset.id, false);
+    });
+    table.addEventListener("keydown", (e) => {
+      const tr = e.target.closest?.("tr");
+      if (!tr?.dataset.id || e.altKey || e.ctrlKey || e.metaKey) return;
+      // Enter and Space both activate, because a row here behaves like a button.
+      if (e.key === "Enter" || e.key === " " || e.key === "Spacebar") {
+        e.preventDefault();
+        activate(t, tr.dataset.id, true);
+        return;
+      }
+      const rows = gridRows(table);
+      const i = rows.indexOf(tr);
+      const to =
+        e.key === "ArrowDown" ? rows[Math.min(i + 1, rows.length - 1)]
+        : e.key === "ArrowUp" ? rows[Math.max(i - 1, 0)]
+        : e.key === "Home" ? rows[0]
+        : e.key === "End" ? rows[rows.length - 1]
+        : null;
+      if (!to) return;
+      e.preventDefault();
+      rove(table, to.dataset.id, true);
     });
   }
+  rove(el("recent"));
   draw();
 
   // --- settle flow --------------------------------------------------------

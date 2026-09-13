@@ -133,6 +133,22 @@ describe("the whole channel decides what is owed", () => {
     assert.equal((await read()).invoiceBaseUnits, "1500000000000000000");
   });
 
+  test("a changed amount is reported, so the sentence a human approves can name it", async () => {
+    // Nothing here authenticates a channel action. Every one carries an ECDSA signature and this
+    // reader recovers no signer, so a reviewer raised an amount with sixty-five bytes of 0xab and
+    // watched it apply. The human and the policy ceiling are what bound it — so the human is told,
+    // rather than shown a figure indistinguishable from the one the creditor first asked for.
+    serve([CREATE, { name: "increaseExpectedAmount", parameters: { deltaAmount: ONE } }]);
+    const invoice = await read();
+    assert.deepEqual(invoice.amountChangedBy, { actions: 1, fromBaseUnits: ONE });
+  });
+
+  test("an unchanged invoice says nothing about changes", async () => {
+    // The control: a note on every invoice is a note nobody reads.
+    serve([CREATE]);
+    assert.equal((await read()).amountChangedBy, undefined);
+  });
+
   test("a reduction below zero refuses rather than guessing", async () => {
     serve([CREATE, { name: "reduceExpectedAmount", parameters: { deltaAmount: "9000000000000000000" } }]);
     assert.equal(await refusalCode(read), "MALFORMED_TRANSACTION");

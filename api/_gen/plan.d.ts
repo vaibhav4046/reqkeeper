@@ -37,6 +37,11 @@ export interface InvoiceFacts {
      * answer; callers that cannot must say so by omitting it, and get the safe default.
      */
     readonly hasBeenPaid?: boolean;
+    /** Set when later Request channel actions changed the amount. See policy.ts. */
+    readonly amountChangedBy?: {
+        readonly actions: number;
+        readonly fromBaseUnits: string;
+    };
 }
 /** What the operator holds true about a token, independent of what an invoice claims. */
 export declare function knownTokenDecimals(tokenAddress: string): number | undefined;
