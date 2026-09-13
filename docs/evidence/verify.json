@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-09-13T04:25:11.647Z",
+  "generatedAt": "2026-09-13T04:31:07.865Z",
   "chainId": 11155111,
   "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
   "credentialsUsed": "none",
   "totals": {
-    "checks": 21,
-    "ok": 21,
+    "checks": 22,
+    "ok": 22,
     "failed": 0,
     "blocked": 0
   },
@@ -45,6 +45,12 @@
       "claim": "3 concurrent workers against real KeeperHub and real Sepolia",
       "status": "ok",
       "detail": "1 payment(s) carrying 0xd9e6ee9360a89ed9, 0 duplicate(s), 1 distinct transaction(s), 0 in the second wave — recomputed from the worker rows"
+    },
+    {
+      "id": "race.live.block",
+      "claim": "the block README cites for the live race",
+      "status": "ok",
+      "detail": "block 11691069 for 0x41b01a14cb…, read from the chain"
     },
     {
       "id": "keeperhub.mcp",

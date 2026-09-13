@@ -58,7 +58,7 @@ read back from the file that reports them. Artifact:
 [`docs/evidence/mcp-settlements.json`](docs/evidence/mcp-settlements.json).
 
 - **Console:** <https://reqkeeper.vercel.app> · **Agent surface:** <https://reqkeeper.vercel.app/api/mcp>
-- **Demo video:** 95 seconds, no narration, every figure in it read from `docs/evidence/` at render time — [v1.0.0 release asset](https://github.com/vaibhav4046/reqkeeper/releases/tag/v1.0.0) (not committed; six cuts of it were 72 MB of this repository)
+- **Demo video:** no narration, every figure in it read from `docs/evidence/` at render time — [v1.0.0 release asset](https://github.com/vaibhav4046/reqkeeper/releases/tag/v1.0.0) (not committed; six cuts of it were 72 MB of this repository)
 - **Every claim, with its evidence:** [`docs/TRUTH.md`](docs/TRUTH.md) (generated, never typed)
 - **Every open finding:** [`hackathon/audit/STATUS.md`](hackathon/audit/STATUS.md)
 
@@ -98,7 +98,7 @@ Totals are **recomputed from rows**, never read from a summary field: an artifac
 `duplicates: 0` in its own header proves nothing, because that is the number a bug gets wrong.
 Tamper with a summary and leave its rows alone, and this exits 1.
 
-Last run: **21 ok · 0 failed · 0 blocked**, including — checked against the chain with no credentials — a
+Last run: **22 ok · 0 failed · 0 blocked**, including — checked against the chain with no credentials — a
 successful receipt for `0xb90a0771…` at block 11,665,983, the ERC20FeeProxy event inside that
 receipt's own logs, that same payment found again by its reference through the event query
 Request's own detection uses, and **46 of 46** recorded payment references re-deriving from
@@ -119,7 +119,7 @@ npm run gate-a        # Request <-> KeeperHub <-> Sepolia end to end
                       #   9 ok, 0 failed, 3 blocked with no credential; 10/0/2 with a
                       #   KEEPERHUB_API_KEY in .env. Blocked is never counted as a pass.
 npm run race          # 50 processes, one obligation, one payment
-npm run crash         # kill the process at nine checkpoints; zero duplicates at every one
+npm run crash         # kill the process at 9 checkpoints; zero duplicates at every one
 npm run probe:mcp     # KeeperHub's own MCP server, read-only by default
 ```
 
@@ -192,7 +192,7 @@ Full matrix in [`docs/refusals.json`](docs/refusals.json) and
 [`docs/refusals-live.json`](docs/refusals-live.json).
 
 The invariant, stated plainly: **the system may be temporarily uncertain; it never resolves
-uncertainty by paying again.** Crash it at any of nine checkpoints and it converges or stays
+uncertainty by paying again.** Crash it at any of 9 checkpoints and it converges or stays
 honestly open — never duplicates. `npm run crash`.
 
 ## Settle a real invoice

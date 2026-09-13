@@ -361,6 +361,26 @@ if (!liveRace) {
       `, ${hashes.size} distinct transaction(s), ${secondWave} in the second wave` +
       (summaryAgrees ? " — recomputed from the worker rows" : " — and the summary block disagrees with the rows it summarises"),
   );
+
+  // The block README cites for that transaction, read from the chain rather than typed.
+  //
+  // "block 11,691,069" appeared in the README and in no evidence file anywhere — true on chain,
+  // and unchecked by anything, which is the shape every wrong number in this repository has had
+  // before it was caught. A number nobody can re-derive is a claim, not a fact.
+  const winner = [...hashes][0];
+  if (!winner) {
+    record("race.live.block", "the block README cites for the live race", "BLOCKED", "no transaction hash in the artifact");
+  } else {
+    const receipt = await readReceipt(RPC, winner);
+    record(
+      "race.live.block",
+      "the block README cites for the live race",
+      receipt.blockNumber === undefined ? "BLOCKED" : "ok",
+      receipt.blockNumber === undefined
+        ? `the endpoint would not return a receipt for ${winner.slice(0, 12)}… — unread, not absent`
+        : `block ${receipt.blockNumber} for ${winner.slice(0, 12)}…, read from the chain`,
+    );
+  }
 }
 
 // ---- 1c. the second KeeperHub surface --------------------------------------

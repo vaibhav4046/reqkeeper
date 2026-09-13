@@ -97,6 +97,8 @@ const facts = {
   livePayments: fromCheck("race.live", /^(\d+) payment/),
   liveDuplicates: fromCheck("race.live", /(\d+) duplicate/),
   crashCheckpoints: fromCheck("crash.no-duplicates", /^(\d+) checkpoint/),
+  liveRaceBlock: fromCheck("race.live.block", /block (\d+)/),
+  receiptBlock: fromCheck("chain.receipt", /block (\d+)/),
   mcpSettlements: fromCheck("keeperhub.mcp", /^(\d+) settlement/),
   verifyOk: verify.totals.ok,
   verifyFailed: verify.totals.failed,
@@ -113,6 +115,10 @@ const claims: Array<{ file: string; what: string; re: RegExp; expected: number }
   { file: "README.md", what: "unit tests", re: /(\d+) tests\b/, expected: facts.tests },
   { file: "README.md", what: "test suites", re: /(\d+) suites/, expected: facts.suites },
   { file: "README.md", what: "verify:all ok", re: /\*\*(\d+) ok · \d+ failed · \d+ blocked/, expected: facts.verifyOk },
+  // Anchored to their own sentences: two different blocks are cited on this page, and a loose
+  // /block (\d+)/ matched both and compared each against the other.
+  { file: "README.md", what: "the live race block", re: /block ([\d,]+)\. Exactly one/, expected: facts.liveRaceBlock },
+  { file: "README.md", what: "the sampled receipt block", re: /at block ([\d,]+)/, expected: facts.receiptBlock },
   { file: "README.md", what: "verify:all failed", re: /\*\*\d+ ok · (\d+) failed · \d+ blocked/, expected: facts.verifyFailed },
   { file: "README.md", what: "verify:all blocked", re: /\*\*\d+ ok · \d+ failed · (\d+) blocked/, expected: facts.verifyBlocked },
   { file: "README.md", what: "refusals (prose)", re: /(\d+) recorded refusals happened before/, expected: facts.refusals },
@@ -133,6 +139,7 @@ const claims: Array<{ file: string; what: string; re: RegExp; expected: number }
   { file: "docs/SUBMISSION.md", what: "race workers", re: /(\d+) concurrent worker processes/, expected: facts.raceWorkers },
   { file: "docs/SUBMISSION.md", what: "live race workers", re: /(\d+) workers against real KeeperHub/, expected: facts.liveWorkers },
   { file: "docs/SUBMISSION.md", what: "crash checkpoints", re: /(\d+) crash checkpoints/, expected: facts.crashCheckpoints },
+  { file: "README.md", what: "crash checkpoints", re: /(\d+) checkpoints/, expected: facts.crashCheckpoints },
   { file: "docs/SUBMISSION.md", what: "references re-derived", re: /(\d+) of \d+ payment references/, expected: facts.derivations },
 ];
 
@@ -158,7 +165,9 @@ for (const claim of claims) {
     continue;
   }
   for (const hit of hits) {
-    const found = Number(hit.m![1]);
+    // Thousands separators are a presentation choice, not a different number. Without this a
+    // README that writes `11,691,069` produces NaN and every comparison against it passes.
+    const found = Number(hit.m![1].replace(/,/g, ""));
     if (found !== claim.expected) {
       failures.push(`${claim.file}:${hit.lineNo}: ${claim.what} says ${found}, the evidence says ${claim.expected}\n          ${hit.line.trim()}`);
     }

@@ -5,7 +5,7 @@ A map into `src/`, aimed at the two files that are too long to read cold: `src/s
 shaped that way. It does not repeat the code, which carries its own reasoning in comments that
 are usually more specific than anything here.
 
-Line numbers are against commit `883d782` plus the working tree. `src/settle.ts` is easiest to
+Line numbers are against the commit this file was last regenerated at; run `git log -1 --format=%h -- docs/ARCHITECTURE.md` for it, and treat any citation that does not land on the named symbol as stale rather than as the code having moved. `src/settle.ts` is easiest to
 navigate by its numbered protocol sections (`// --- 0.` through `// --- 10.`), which are stable
 even when line numbers move.
 
