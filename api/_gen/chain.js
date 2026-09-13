@@ -212,7 +212,13 @@ export function verdictFor(sighting, opts = {}) {
     if (sighting.found === true) {
         // A positive only one endpoint can see is not a positive. `corroborated: null` means no
         // second endpoint answered at all, which is different from one disagreeing.
-        if (opts.requireCorroboration && sighting.corroborated === false) {
+        // `!== true`, not `=== false`. The comment above states the rule -- absent means no second
+        // endpoint ANSWERED, which is not the same as one disagreeing -- and the predicate used to
+        // exempt exactly that third state, so an injected sighting with no `corroborated` field read
+        // as PAID. Every documented seam (`WatchDeps.findPayment`, `WorkerDeps.sightPayment`,
+        // `McpContext.findPayment`) returns a raw sighting, and on the watch path a false PAID
+        // suppresses a real debt for ever.
+        if (opts.requireCorroboration && sighting.corroborated !== true) {
             return {
                 kind: "UNKNOWN",
                 reason: "UNCORROBORATED",
@@ -330,8 +336,25 @@ export async function findPaymentByReference(reference, opts = {}) {
     const requested = opts.fromBlock !== undefined
         ? Math.max(0, opts.fromBlock)
         : Math.max(0, head - (opts.lookbackBlocks ?? DEFAULT_LOOKBACK));
-    // An anchor above the head is not an anchor. It cannot be a real create block, and honouring
-    // it would let a wrong number assert coverage of a window that does not exist yet.
+    // An anchor may only ever make this scan DEEPER. Never shallower, and never more confident.
+    //
+    // This is the whole defence, and it was not here. An anchor says "the invoice did not exist
+    // before block N", so a scan that reached N has covered everywhere a payment could be. But the
+    // anchor arrives from the gateway, in `meta`, which the channel id does not hash -- and a
+    // reviewer demonstrated the consequence end to end: move the anchor forward past a payment that
+    // really happened, and `truncated` goes false over a window the scan never reached, so a settled
+    // invoice reads NOT_PAID and is paid a second time. Binding the anchor to the transaction that
+    // stored the invoice raises the cost of that forgery; it does not remove it, because the same
+    // `meta` supplies both halves of the binding.
+    //
+    // So the anchor's power is cut to the direction that cannot hurt. An anchor BELOW the requested
+    // window extends the scan down to it and makes the answer conclusive -- that is the honest case,
+    // and it is every real invoice this deployment has. An anchor ABOVE the requested window is
+    // claiming the scan needed to cover less than it already did, and that claim is exactly the
+    // attack: it is dropped, the scan keeps its own floor, and the answer stays inconclusive.
+    //
+    // The forged-anchor path now ends in "I could not tell", which refuses. The honest path is
+    // unchanged: 46 of 46 real invoices anchor below the default lookback.
     const claimedAnchor = opts.anchorBlock === undefined ? undefined : Math.max(0, opts.anchorBlock);
     const anchorFloor = claimedAnchor !== undefined && claimedAnchor <= head ? claimedAnchor : undefined;
     const floor = anchorFloor === undefined ? requested : Math.min(requested, anchorFloor);
@@ -355,6 +378,9 @@ export async function findPaymentByReference(reference, opts = {}) {
     // The question is only ever: did the scan reach the floor below which no payment for this
     // obligation can exist? With an anchor that floor is the anchor. Without one there is no such
     // floor short of genesis, and the answer stays inconclusive.
+    // With an honoured anchor the scan ran from it, so coverage is proven by construction and the
+    // comparison below is trivially false -- deliberately, and now truthfully, because an anchor is
+    // only honoured when it deepens the scan. Without one there is no floor short of genesis.
     const truncated = anchorFloor === undefined ? floor > 0 : floor > anchorFloor;
     const first = await scanForReference(reference, rpcUrl, head, floor, opts.expect);
     if (first.found) {

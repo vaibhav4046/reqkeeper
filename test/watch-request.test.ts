@@ -32,7 +32,24 @@ const INVOICE: WatchInvoice = {
   feeAddress: `0x${"0".repeat(40)}`,
 };
 
-const UNPAID: PaymentSighting = { found: false, scannedBlocks: 450_000, truncated: true };
+/**
+ * Nothing on chain, said conclusively.
+ *
+ * This used to be `truncated: true` -- "I could not see the whole window" -- and the watcher
+ * proposed on it anyway, printing a human an approve command for a debt it had not established
+ * was owed. It states what it covered now: the window reached the floor, the scan said which
+ * conflicting logs it saw, and another endpoint answered the same way.
+ */
+const UNPAID: PaymentSighting = {
+  found: false,
+  scannedBlocks: 450_000,
+  truncated: false,
+  conflictingLogs: [],
+  negativeCorroborations: 2,
+};
+
+/** The same scan, unable to reach the invoice's floor. An answer about nothing. */
+const INCONCLUSIVE: PaymentSighting = { found: false, scannedBlocks: 450_000, truncated: true };
 
 /**
  * A log that actually pays this invoice: the right token to the right payee for the right
@@ -47,6 +64,10 @@ const PAID: PaymentSighting = {
   feeAmount: "0",
   feeAddress: `0x${"0".repeat(40)}`,
   scannedBlocks: 45_000,
+  // Stated, because a positive only one endpoint can see is not a positive -- and on THIS path a
+  // false PAID suppresses a real debt for ever, which is the mirror of paying it twice. A fixture
+  // that leaves the field out is claiming a corroboration nobody performed.
+  corroborated: true,
 };
 
 /**
@@ -213,7 +234,7 @@ describe("an unpaid Request invoice proposes, and only proposes", () => {
   test("a sighting with no payment fields is not evidence of payment", async () => {
     // What a reader that only matched the reference returns. It corroborates nothing, so it
     // cannot be the reason an invoice is skipped.
-    const { store, provider, deps } = bench({ found: true, txHash: `0x${"ab".repeat(32)}` });
+    const { store, provider, deps } = bench({ found: true, corroborated: true, txHash: `0x${"ab".repeat(32)}` });
 
     const [row] = await watchPass(deps, [INVOICE], 1_000_000);
 
@@ -257,6 +278,55 @@ describe("an unpaid Request invoice proposes, and only proposes", () => {
     assert.equal(row.approvalCommand, null);
     assert.equal(row.providerWriteIssued, false);
     assert.equal(provider.totalSends(), 0);
+    store.close();
+  });
+});
+
+describe("a scan that did not conclude is never offered to a human as an approval", () => {
+  /**
+   * The dangerous half of this surface is not the proposal: it is the command printed beside it.
+   *
+   * `watchPass` collapsed every verdict but PAID into one row that says `chainSaysPaid: false` --
+   * printed to an operator as the word "unpaid" -- and attached a ready-to-paste approve command.
+   * So a scan that could not reach the invoice's anchor, a positive no second endpoint would
+   * confirm, and a log paying OUR payee in OUR token for the wrong amount all reached a person as
+   * "this debt is unpaid, here is how to approve it". The MCP surface refuses exactly those
+   * sightings and the live settle script exits 2 on them.
+   */
+  test("an inconclusive scan proposes nothing and offers no command", async () => {
+    const { store, provider, deps } = bench(INCONCLUSIVE);
+    const [row] = await watchPass(deps, [INVOICE], 1_000_000);
+    assert.equal(row.refusal, "SOURCE_UNVERIFIABLE", JSON.stringify(row));
+    assert.equal(row.approvalCommand, null, "a question nobody answered must not arrive as a decision to make");
+    assert.equal(row.chainSaysPaid, false);
+    assert.match(String(row.detail), /did not conclude|could not say/i);
+    assert.equal(provider.totalSends(), 0);
+    store.close();
+  });
+
+  test("a log paying OUR payee for the wrong amount is not 'unpaid' either", async () => {
+    // Our own money moving in a plan nobody made looks exactly like an unpaid invoice from here,
+    // and used to be reported as one.
+    const { store, provider, deps } = bench({
+      found: false,
+      truncated: false,
+      negativeCorroborations: 2,
+      conflicts: [`0x${"9c".repeat(32)}: pays 1, the invoice is ${INVOICE.amountBaseUnits}`],
+      conflictingLogs: [{ txHash: `0x${"9c".repeat(32)}`, kinds: ["amount"] }],
+    });
+    const [row] = await watchPass(deps, [INVOICE], 1_000_000);
+    assert.equal(row.refusal, "SOURCE_UNVERIFIABLE", JSON.stringify(row));
+    assert.equal(row.approvalCommand, null);
+    assert.equal(provider.totalSends(), 0);
+    store.close();
+  });
+
+  test("and a conclusive negative still proposes, with its command", async () => {
+    // The control. A watcher that refuses everything is a watcher that does nothing.
+    const { store, deps } = bench(UNPAID);
+    const [row] = await watchPass(deps, [INVOICE], 1_000_000);
+    assert.equal(row.state, "AWAITING_APPROVAL", JSON.stringify(row));
+    assert.ok(row.approvalCommand, "a debt the chain says is unpaid is exactly what this exists to surface");
     store.close();
   });
 });

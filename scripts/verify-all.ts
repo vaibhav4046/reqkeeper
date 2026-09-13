@@ -359,9 +359,42 @@ record(
   summaryDisagreements.length > 0
     ? `${summaryDisagreements.length} summary number(s) disagree with the rows they summarise — ${firstFew(summaryDisagreements, 3)}`
     : `${recomputedTotals} summary number(s) recomputed from rows and agreeing, over ${artifactAudits.length} artifact(s) ` +
-      `carrying a summary (${scannedFiles.length} .json scanned under docs/); ${notRecomputed.length} summary number(s) name no ` +
-      `row field and were NOT recomputed: ${firstFew(notRecomputed, 4)}`,
+      `carrying a summary (${scannedFiles.length} .json scanned under docs/)`,
 );
+
+// ---- 1a. and every number it could NOT recompute has to say why -----------------------------
+//
+// The line above used to end with "…and 12 were NOT recomputed: a · b · c · +8 more", inside a
+// check reporting `ok`. A number nobody can re-derive, listed in a passing check, is a number
+// that stops being looked at -- and the README claimed it "names every one it could not", which
+// was four of twelve.
+//
+// So an artifact must DECLARE why. `underivableTotals` maps the key to the reason, and a number
+// that is neither derivable nor declared fails the run. Twelve are declared today, all in the
+// three artifacts only a credentialed live run can regenerate; a thirteenth appearing without a
+// reason is a build break rather than a footnote.
+{
+  const undeclared: string[] = [];
+  const declared: string[] = [];
+  for (const audit of artifactAudits) {
+    if (audit.underivable.length === 0) continue;
+    const reasons = (readJson<{ underivableTotals?: Record<string, string> }>(audit.file) ?? {}).underivableTotals ?? {};
+    for (const key of audit.underivable) {
+      (typeof reasons[key] === "string" && reasons[key].length > 0 ? declared : undeclared).push(`${audit.file}:${key}`);
+    }
+  }
+  record(
+    "artifacts.coverage",
+    "every summary number is either recomputed or says why it cannot be",
+    undeclared.length === 0 ? "ok" : "FAIL",
+    undeclared.length > 0
+      ? `${undeclared.length} summary number(s) can be neither recomputed from rows nor explained by their own ` +
+        `artifact: ${firstFew(undeclared, 6)}. Add a \`underivableTotals\` entry saying why, or a \`totalsFrom\` ` +
+        "spec that derives it."
+      : `${declared.length} summary number(s) cannot be derived from rows and each states why in its own ` +
+        `artifact's \`underivableTotals\`${declared.length > 0 ? `: ${firstFew(declared, 12)}` : ""}`,
+  );
+}
 
 // ---- 1b. the live race -----------------------------------------------------
 
@@ -1112,7 +1145,19 @@ if (payeeSet.size === 0) {
       if (entry.isFile() && entry.name.endsWith(".md")) docFiles.push(`${dir}/${entry.name}`);
     }
   }
-  const pattern = /`((?:src|scripts|tools|api)\/[A-Za-z0-9_./-]+\.(?:ts|mjs|html))(?::(\d+)(?:-(\d+))?|#([A-Za-z_$][\w$]*))`/g;
+  // EVERY citation, not only the backticked and prefixed ones.
+  //
+  // This matched `` `src/x.ts:12` `` alone, and the documentation carried 169 more in forms it
+  // could not see -- bare `settle.ts:724` inside prose, unbackticked paths in tables. A reviewer
+  // spot-checked five of the invisible ones and all five landed on unrelated code, while
+  // docs/TRUTH.md printed PROVEN over a row whose own text says the line form "was converted
+  // after a reviewer found three citations pointing at unrelated code". The conversion had
+  // covered the form the checker could see. That is the ledger laundering a false claim, which is
+  // worse than the drift itself.
+  //
+  // So: backticks optional, prefix optional (a bare filename is resolved against the four source
+  // directories), and a citation that names neither an existing file nor a declared symbol fails.
+  const pattern = /`?((?:src|scripts|tools|api)\/)?([A-Za-z0-9_./-]+\.(?:ts|mjs|html))(?::(\d+)(?:-(\d+))?|#([A-Za-z_$][\w$]*))`?/g;
   const broken: string[] = [];
   let counted = 0;
   let named = 0;
@@ -1134,9 +1179,17 @@ if (payeeSet.size === 0) {
     if (!existsSync(doc)) continue;
     for (const m of readFileSync(doc, "utf8").matchAll(pattern)) {
       counted++;
-      const [, path, from, to, symbol] = m;
-      if (!existsSync(path)) {
-        broken.push(`${doc} cites ${path}, which does not exist`);
+      const [, prefix, rest, from, to, symbol] = m;
+      const cited = `${prefix ?? ""}${rest}`;
+      // A bare `settle.ts` names src/settle.ts. Resolved rather than skipped, because skipping is
+      // what made these invisible.
+      const path = existsSync(cited)
+        ? cited
+        : ["src/", "scripts/", "tools/", "tools/web/", "tools/invoice/", "api/"]
+            .map((d) => `${d}${rest}`)
+            .find((candidate) => existsSync(candidate));
+      if (path === undefined) {
+        broken.push(`${doc} cites ${cited}, which does not exist`);
         continue;
       }
       const source = readFileSync(path, "utf8");

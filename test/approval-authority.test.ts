@@ -197,10 +197,20 @@ describe("a decision authorises the plan it was given for, and no other", () => 
       now: 1_000,
     });
 
-    // The caller asserts a yes over the human's recorded no.
-    const outcome = await settle(store, provider, honest, { approval: HUMAN });
+    // The caller asserts a yes over the human's recorded no -- and it has to ASSERT it, which is
+    // what this test forgot to do. Without `asCaller` the authority defaults to the store and
+    // `input.approval` is structurally never read, so the caller never spoke: the test proved
+    // that a recorded rejection is honoured on the path where nothing contests it. A mutation
+    // sweep deleted the prior-rejection gate and all 604 tests stayed green, then showed a
+    // payment leaving on a plan a human had refused.
+    const quiet = await settle(store, provider, honest, { approval: HUMAN });
     assert.equal(provider.totalSends(), 0);
-    assert.equal(outcome.state, "REVIEW_REJECTED");
+    assert.equal(quiet.state, "REVIEW_REJECTED");
+
+    const asserted = await settle(store, provider, honest, { approval: HUMAN, asCaller: true });
+    assert.equal(provider.totalSends(), 0, "a caller-asserted yes must not outrank a human's recorded no");
+    assert.equal(asserted.state, "REVIEW_REJECTED");
+    assert.equal(asserted.refusal, "REVIEW_REJECTED");
     store.close();
   });
 

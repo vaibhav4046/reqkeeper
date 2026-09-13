@@ -97,14 +97,15 @@ reason — never silently skipped, never counted as a pass.
 Totals are **recomputed from rows**, never read from a summary field: an artifact claiming
 `duplicates: 0` in its own header proves nothing, because that is the number a bug gets wrong.
 Tamper with a summary and leave its rows alone, and this exits 1 — for every number an artifact
-either names after a row field or explains in its own `totalsFrom` block. The check prints how
-many it recomputed and **names the first four it could not**, then how many more there are, so the
-coverage is on the page rather than in this sentence. Twelve are currently uncovered, all in the
-three artifacts that only a credentialed live run can regenerate. Seven of the twelve would be
-declared by the next such run; the other five are counters that do not exist in live mode, where
-no call reaches the fixture that counts them.
+either names after a row field or explains in its own `totalsFrom` block. A second check
+then **fails the run** on any summary number that can be neither recomputed from rows nor explained
+by its own artifact — a number nobody can re-derive, listed inside a passing check, is a number
+that stops being looked at. Forty-three are recomputed. Five remain, all in the live race, and each
+states in the artifact why it cannot come from the rows: two are the `-1` sentinel for counters
+that do not exist when no fixture ran, and three are recounted from the chain rather than from
+what a worker reported. Delete one of those reasons and `verify:all` exits 1.
 
-Last run: **24 ok · 0 failed · 0 blocked**, including — checked against the chain with no credentials — a
+Last run: **25 ok · 0 failed · 0 blocked**, including — checked against the chain with no credentials — a
 successful receipt for `0xb90a0771…` at block 11,665,983, the ERC20FeeProxy event inside that
 receipt's own logs, that same payment found again by its reference through the event query
 Request's own detection uses, and **46 of 46** recorded payment references re-deriving from
@@ -118,7 +119,7 @@ dependencies. `typecheck` and `build` call `tsc`, so those two want `npm install
 ```bash
 npm install           # only for typecheck and build; everything above runs without it
 
-npm test              # 609 tests, 118 suites
+npm test              # 628 tests, 120 suites
 npm run typecheck     # tsc --noEmit
 npm run build         # console + api; the tree must stay clean afterwards
 npm run gate-a        # Request <-> KeeperHub <-> Sepolia end to end

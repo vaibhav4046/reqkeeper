@@ -38,7 +38,7 @@ launder an assumption into a fact by restating it.
 | Default spend caps apply even to unconfigured orgs: 0.02 ETH/day EVM, $100/tx stablecoin | `docs/api/direct-execution` |
 | `simulate: true` is EVM-only; Solana returns `simulation_unsupported_chain` | same |
 | Request Network is **Sepolia-only** for testnets | `packages/currency/src/erc20/chains/sepolia.ts` |
-| Sepolia `ERC20FeeProxy` = `0x399F5EE127ce7432E4921a61b8CF52b0af52cbfE` | `smart-contracts/src/lib/artifacts/ERC20FeeProxy/index.ts:150` |
+| Sepolia `ERC20FeeProxy` = `0x399F5EE127ce7432E4921a61b8CF52b0af52cbfE` | Request's own published artifact, RequestNetwork/requestNetwork → packages/smart-contracts/src/lib/artifacts/ERC20FeeProxy (not a file in this repository) |
 | FAU token (18dp) = `0x370DE27fdb7D1Ff1e1BaA7D11c5820a324Cf623C` | `currency/src/erc20/chains/sepolia.ts` |
 | FAU `mint(address,uint256)` is effectively public | 26 of last 50 txs to the contract are `mint`, from 7+ distinct senders |
 | Repo requires an `accepted`-labelled issue **before** the PR; CI check `check-issue-link` enforces it | `ISSUES.md`, `CONTRIBUTING.md` |

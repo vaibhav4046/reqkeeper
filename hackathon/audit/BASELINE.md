@@ -84,7 +84,7 @@ quality and tests, Scope and completeness.
 | Staleness | `src/store.ts` | `lease_expires_at` + `fencing_generation` |
 | Delivery | `src/store.ts` | transactional outbox; `src/worker.ts` read-only drainer |
 | States | `src/machine.ts` | 24 states, explicit transition table, `TERMINAL` / `REPLANNABLE` / `PRE_DISPATCH_REFUSALS` |
-| Ordering | `src/settle.ts:193+` | ordered gate enforcement |
+| Ordering | `src/settle.ts#calldataDisagreesWithFacts`+` | ordered gate enforcement |
 
 Not a process mutex. Adversarial verification of these claims is delegated and lands in
 `REDTEAM.md` — until then they are **structurally present, independently unproven**.

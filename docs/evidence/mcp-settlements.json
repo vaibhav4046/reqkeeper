@@ -3,7 +3,23 @@
   "mode": "LIVE",
   "chainId": 11155111,
   "transport": "mcp",
-  "note": "Settled through KeeperHub's MCP server (src/keeperhub-mcp.ts) rather than its REST API, by running scripts/settle-live.ts with KEEPERHUB_TRANSPORT=mcp. settle(), the policy and the calldata gate are the same modules the REST rows used; only the transport differs. Each row's payment reference is derived from the invoice Request itself serves, and each was confirmed by counting ERC20FeeProxy events for that reference from the invoice's own anchor block — one event, one send, one transaction.",
+  "note": "Settled through KeeperHub's MCP server (src/keeperhub-mcp.ts) rather than its REST API, by running scripts/settle-live.ts with KEEPERHUB_TRANSPORT=mcp. settle(), the policy and the calldata gate are the same modules the REST rows used; only the transport differs. Each row's payment reference is derived from the invoice Request itself serves, and each was confirmed by counting ERC20FeeProxy events for that reference from the invoice's own anchor block \u2014 one event, one send, one transaction.",
+  "totalsFrom": {
+    "settled": {
+      "count": true,
+      "where": {
+        "field": "finalState",
+        "equals": "SETTLED"
+      }
+    },
+    "withExecutionId": {
+      "count": true,
+      "where": {
+        "field": "keeperhubExecutionId",
+        "present": true
+      }
+    }
+  },
   "totals": {
     "rows": 3,
     "settled": 3,

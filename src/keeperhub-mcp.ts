@@ -27,7 +27,7 @@
 
 import { readReceipt } from "./chain.ts";
 import { decodeAllowedCall, type CallStep } from "./calldata-gate.ts";
-import { idempotencyVerdict } from "./keeperhub.ts";
+import { idempotencyVerdict, priorExecutionFrom, rateLimitVerdict } from "./keeperhub.ts";
 import type {
   ExecuteResult,
   ExecutionProvider,
@@ -181,16 +181,33 @@ export class KeeperHubMcpProvider implements ExecutionProvider {
       params: { name, arguments: args },
     });
 
-    if (res.status === 429) throw new ProviderError("rate_limited", "429 from KeeperHub MCP", true);
+    // The same verdict the REST transport throws, from the same function, so the platform's own
+    // backoff cannot be honoured on one surface and guessed at on the other.
+    if (res.status === 429) throw rateLimitVerdict(res.headers);
     // The REST route has discriminated 409s since the day one of them was mistaken for the
     // other; this transport had no 409 branch at all, so an idempotency answer fell through to
     // the JSON-RPC parse below and surfaced as `bad_response`. settle() keys the integrity
     // branch on the literal code `idempotency_conflict`, so on this surface "the platform holds
     // a different body for this key" was being recorded as an ordinary unknown outcome instead
     // of the incident it is.
-    if (res.status === 409) throw idempotencyVerdict(labelFrom(text));
+    if (res.status === 409) {
+      const verdict = idempotencyVerdict(labelFrom(text));
+      // And the execution the platform says this key already started. Read on REST and dropped
+      // here, so `PROVIDER_NAMED_PRIOR_EXECUTION` could never fire on the transport that carries
+      // this deployment's MCP settlements.
+      const named = priorExecutionFrom(text);
+      if (named) verdict.executionId = named;
+      throw verdict;
+    }
     if (res.status >= 500) {
       throw new ProviderError("provider_error", `HTTP ${res.status}: ${text.slice(0, 200)}`, true);
+    }
+    // Every other non-2xx, with its status. REST has had this since a 401 resolved as "pending"
+    // and every in-flight obligation became a manual investigation the moment a key was revoked.
+    // Here a 400 or a 401 fell through to the JSON-RPC parse and surfaced as
+    // `mcp_error: "undefined: undefined"` -- which fails closed, and tells an operator nothing.
+    if (!res.ok) {
+      throw new ProviderError("bad_response", `HTTP ${res.status}: ${text.slice(0, 200)}`, false);
     }
 
     let reply: JsonRpcReply;
@@ -228,7 +245,12 @@ export class KeeperHubMcpProvider implements ExecutionProvider {
     // arrive as text rather than as an HTTP status. Routed through the same verdict as the REST
     // path: without this, `idempotency_in_progress` — an ordinary wait — was thrown
     // non-retryable, which is exactly the collapse the REST transport was fixed for.
-    if (reply.result?.isError && /idempotenc/i.test(body)) throw idempotencyVerdict(body.slice(0, 300));
+    if (reply.result?.isError && /idempotenc/i.test(body)) {
+      const verdict = idempotencyVerdict(labelFrom(body));
+      const named = priorExecutionFrom(body);
+      if (named) verdict.executionId = named;
+      throw verdict;
+    }
 
     let parsed: ExecutePayload;
     try {

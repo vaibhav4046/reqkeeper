@@ -1,7 +1,7 @@
 # Architecture
 
 A map into `src/`, aimed at the two files that are too long to read cold: `src/store.ts`
-(1,123 lines) and `src/settle.ts` (885 lines). It says where things are and why they are
+(1453 lines) and `src/settle.ts` (1159 lines). It says where things are and why they are
 shaped that way. It does not repeat the code, which carries its own reasoning in comments that
 are usually more specific than anything here.
 
@@ -50,22 +50,22 @@ calldata with no nonce. And it cannot live on KeeperHub's side, because their ca
 does not know about invoices. It has to live on the payer's execution side, keyed on the
 invoice. `README.md` has the long version of this argument.
 
-## Identity: `src/identity.ts` (166 lines)
+## Identity: `src/identity.ts` (167 lines)
 
 Four hashes, all SHA-256 over a domain-separated preimage, all derived from persisted state.
 
 | | Derivation | Line |
 |---|---|---|
-| `obligationId` | `sha256("reqkeeper.obligation.v1:" + len(ns) + ns + len(id) + id)` | `identity.ts:86` |
-| `planHash` | `sha256("reqkeeper.plan.v1:" + canonicalJson(planBody))` | `identity.ts:99` |
-| `policyHash` | `sha256("reqkeeper.policy.v1:" + canonicalJson(policy))` | `identity.ts:104` |
-| `idempotencyKey` | `sha256("reqkeeper.step.v1:" + obligationId + planHash + stepIndex)` | `identity.ts:120` |
+| `obligationId` | `sha256("reqkeeper.obligation.v1:" + len(ns) + ns + len(id) + id)` | `src/identity.ts#obligationId` |
+| `planHash` | `sha256("reqkeeper.plan.v1:" + canonicalJson(planBody))` | `src/identity.ts#planHash` |
+| `policyHash` | `sha256("reqkeeper.policy.v1:" + canonicalJson(policy))` | `src/identity.ts#policyHash` |
+| `idempotencyKey` | `sha256("reqkeeper.step.v1:" + obligationId + planHash + stepIndex)` | `src/identity.ts#idempotencyKey` |
 
 **No session, no clock, no randomness enters any of them.** This is not stylistic. A retry has
 to reproduce the identical key byte for byte, or the provider treats it as a new payment and
 pays again. So a timestamp, a request id from the transport, a UUID, or any model-generated
 text in a key would be a duplicate-payment bug with a delay fuse. `canonicalJson`
-(`identity.ts:39`) enforces the discipline mechanically: it sorts object keys, refuses
+(`src/identity.ts#canonicalJson`) enforces the discipline mechanically: it sorts object keys, refuses
 non-finite and fractional numbers, and refuses `bigint` outright, because money crosses as a
 decimal string and a bigint here would mean someone forgot to convert and the hash was
 unstable.
@@ -75,23 +75,23 @@ Two details that look like fussiness and are not:
 - **Length-prefixed framing** in `obligationId`. A plain `ns:id` preimage lets `("a", "b:c")`
   and `("a:b", "c")` collide, and the real namespace is `request-network:sepolia`, so banning
   the delimiter was not available.
-- **`canonicalReference`** (`identity.ts:156`) folds a reference to one spelling before it is
+- **`canonicalReference`** (`src/identity.ts#canonicalReference`) folds a reference to one spelling before it is
   ever stored or looked up. SQLite compares TEXT byte by byte, so `0xAA` and `0xaa` would be
   two rows under a UNIQUE index, and two rows is two payments. It accepts Request's bare
   16-character spelling and normalises *into* the prefixed form, because both spellings must
   land on one stored string.
 
-`derivePlan` (`settle.ts:170`) lowercases `steps[].to` and `steps[].data` before hashing, so
+`derivePlan` (`src/settle.ts#derivePlan`) lowercases `steps[].to` and `steps[].data` before hashing, so
 the plan hash addresses the effect rather than one spelling of it. The calldata gate is
 unaffected: it still runs byte identity against `p.steps` exactly as given.
 
-## The state machine: `src/machine.ts` (252 lines)
+## The state machine: `src/machine.ts` (263 lines)
 
-25 states in one table (`machine.ts:12-39`), 11 on the happy path and 14 refusals and faults.
+25 states in one table (`src/machine.ts#State`), 11 on the happy path and 14 refusals and faults.
 One module owns every legal transition, so an impossible move is a `TransitionError` and an
 audit row rather than a silently corrupted row.
 
-**Terminal (12)** (`machine.ts:61`): `SETTLED`, `POLICY_DENIED`, `SOURCE_ALREADY_PAID`,
+**Terminal (12)** (`src/machine.ts#TERMINAL`): `SETTLED`, `POLICY_DENIED`, `SOURCE_ALREADY_PAID`,
 `OBLIGATION_RESERVED`, `REVIEW_REJECTED`, `PLAN_EXPIRED`, `PLAN_CHANGED`, `CALLDATA_MISMATCH`,
 `SIMULATION_BLOCKED`, `PREFLIGHT_UNAVAILABLE`, `EXECUTION_REVERTED`,
 `CANCELLED_BEFORE_PAYMENT`.
@@ -101,10 +101,10 @@ audit row rather than a silently corrupted row.
 An unknown outcome never decays into failure; it resolves only by observing the work already
 dispatched.
 
-**Replannable (13)** (`machine.ts:176`) is the set a *fresh plan* may be proposed from.
+**Replannable (13)** (`src/machine.ts#REPLANNABLE`) is the set a *fresh plan* may be proposed from.
 Replanning is not a transition: a refusal is closed forever, and proposing again starts a new
 settlement over the same debt, which is why it is a separate audited operation
-(`store.replan`, `store.ts:627`) rather than an edge in the table. The set is exactly "no money
+(`store.replan`, `src/store.ts#importObligation`) rather than an edge in the table. The set is exactly "no money
 moved and the debt still stands". `SOURCE_ALREADY_PAID` is excluded because there is nothing
 left to pay; everything from `PAYMENT_EXECUTING` onward is excluded because a second plan over
 a live payment is the thing this project exists to refuse.
@@ -120,28 +120,28 @@ returning a transaction hash). The provider's own `retryable` flag cannot separa
 "executed and lost the reply" (`rate_limited` and `timeout` are both retryable), so it is not
 the discriminator.
 
-**The settle path no longer enters this state at all.** `settle.ts:603-680` has exactly one
+**The settle path no longer enters this state at all.** `src/settle.ts#settleOrRefuse` has exactly one
 branch for a preflight that throws: hold the reservation, leave the already-committed
 `OBSERVE_PREFLIGHT` job queued, and return `EXECUTION_OUTCOME_UNKNOWN` telling the caller to
 run the resolver. An earlier version kept a second branch that released the reservation on a
 non-retryable error, and a red-team pass walked through it to a second physical send; the
-comment at `settle.ts:685` explains why there is deliberately no second branch now.
+comment at `src/settle.ts#settleOrRefuse` explains why there is deliberately no second branch now.
 
-The only writer of `PREFLIGHT_UNAVAILABLE` in `src/` is `worker.ts:224`, and it is reached only
-after `sightPayment` (`worker.ts:200`) has scanned the full window, found nothing carrying this
+The only writer of `PREFLIGHT_UNAVAILABLE` in `src/` is `src/worker.ts#resolveJob`, and it is reached only
+after `sightPayment` (`src/worker.ts#resolveJob`) has scanned the full window, found nothing carrying this
 reference, and reported the scan as not truncated. Absence only counts when the read
 could see the whole window; a truncated scan defers with `SCAN_TRUNCATED`, because "I could not
 tell" must never become "go ahead".
 
-> Note for a reader following the comments: `machine.ts:166-174` still says `settleObligation`
+> Note for a reader following the comments: `src/machine.ts#REPLANNABLE` still says `settleObligation`
 > enforces the precondition with `store.sentAttemptFor`. It does not, and cannot: `openAttempt`
 > does not run until after `simulate` returns, so on a first proposal there is no attempt row
 > to inspect. The guarantee is real but it is enforced by the worker's chain read, not by that
-> check. The test it names (`test/preflight-unavailable.test.ts:280`) still passes.
+> check. The test it names (`test/preflight-unavailable.test.ts#test`) still passes.
 
 ## The dispatch protocol: `src/settle.ts`
 
-`settleObligation` (`settle.ts:360`) is a thin wrapper; `settleOrRefuse` (`settle.ts:370`) is
+`settleObligation` (`src/settle.ts#settleObligation`) is a thin wrapper; `settleOrRefuse` (`src/settle.ts#settleOrRefuse`) is
 the protocol. **The order of its numbered sections is itself the safety property.** Two rules
 produce that order:
 
@@ -173,25 +173,25 @@ payment that never happened.
 
 Three refusals that read as implementation detail and are not:
 
-- `calldataDisagreesWithFacts` (`settle.ts:80`) refuses a plan whose **last** step is not the
-  payment (`settle.ts:131-134`), because section 6 dispatches `steps[steps.length - 1]`
-  (`settle.ts:604`) and nothing else. A plan ending in an allowance would report a settled
+- `calldataDisagreesWithFacts` (`src/settle.ts#calldataDisagreesWithFacts`) refuses a plan whose **last** step is not the
+  payment (`src/settle.ts#calldataDisagreesWithFacts`), because section 6 dispatches `steps[steps.length - 1]`
+  (`src/settle.ts#settleOrRefuse`) and nothing else. A plan ending in an allowance would report a settled
   invoice while the payment was never sent. It also refuses an empty plan, which would reserve
   the obligation forever having authorised nothing.
-- `receiptDisagreesWithPayment` (`settle.ts:318`) requires the receipt's own logs to contain a
+- `receiptDisagreesWithPayment` (`src/settle.ts#receiptDisagreesWithPayment`) requires the receipt's own logs to contain a
   fee-proxy event that matches. Bound pre-dispatch is not the same as observed post-dispatch,
   and a forwarder that does not bubble an inner revert returns success regardless.
-- `refusalForLostRace` (`settle.ts:252`) recognises a lost race by its *signature* rather than
+- `refusalForLostRace` (`src/settle.ts#refusalForLostRace`) recognises a lost race by its *signature* rather than
   by where it happened, so one wrapper covers all five read-then-act sites including ones not
   written yet. Anything unrecognised is rethrown, so a real bug still surfaces as a real bug.
 
 ## The store: `src/store.ts`
 
-Six tables in one SQLite file, `node:sqlite`, no dependencies. Schema at `store.ts:86-172`.
+Six tables in one SQLite file, `node:sqlite`, no dependencies. Schema at `src/store.ts#SCHEMA`.
 
 ### The invariants
 
-**`markSent` is a compare-and-set** (`store.ts:924`):
+**`markSent` is a compare-and-set** (`src/store.ts#markSent`):
 
 ```sql
 UPDATE attempts SET first_send_at = ? WHERE id = ? AND first_send_at IS NULL
@@ -205,22 +205,22 @@ that Node runs the read and the write with no `await` between them while SQLite 
 writers. An accident of the runtime, not a property of the schema. A red-team probe
 (`hackathon/audit/probes/p1-race.ts`) drove both callers past it. Putting the condition in the
 `WHERE` clause means losing the race is writing nothing and being told so
-(`settle.ts:724`).
+(`src/settle.ts#settleOrRefuse`).
 
-**Transactional outbox.** `openAttempt` (`store.ts:853`) writes the attempt row and its
+**Transactional outbox.** `openAttempt` (`src/store.ts#openAttempt`) writes the attempt row and its
 `DISPATCH_STEP` job in one transaction, and marks the superseded `OBSERVE_PREFLIGHT` job done
 in the same one, so the hand-off cannot be interrupted. Returning from it means the intent to
-send is durable. `beginPreflight` (`store.ts:595`) applies the same discipline one step
+send is durable. `beginPreflight` (`src/store.ts#beginPreflight`) applies the same discipline one step
 earlier: it enters `PAYMENT_PREFLIGHT` and commits the `OBSERVE_PREFLIGHT` job together, which
 is what closed the window where a crash inside `simulate` left an obligation in a
 non-replannable state with no attempt, no job, and no way forward. `recordOutcome`
-(`store.ts:955`) enqueues `OBSERVE_EXECUTION` beside the write that records the send, rather
+(`src/store.ts#releaseObligation`) enqueues `OBSERVE_EXECUTION` beside the write that records the send, rather
 than leaving it to call sites: leaving it to callers is what stranded real payments at
 `CHAIN_PENDING` with an empty outbox in two of the crash checkpoints.
 
-**Fencing generations.** `claimJobs` (`store.ts:1010`) bumps `fencing_generation` when it
+**Fencing generations.** `claimJobs` (`src/store.ts#claimJobs`) bumps `fencing_generation` when it
 leases a job. A worker that loses its lease holds a stale generation, and
-`#assertFencingInTx` (`store.ts:1054`) rejects its writes *inside the same
+`#assertFencingInTx` (`src/store.ts#recordApproval`) rejects its writes *inside the same
 `BEGIN IMMEDIATE`* as the write itself, because `assertFencing` followed by a write is two
 statements and therefore a race. This was not always true of the domain writes: `setState`,
 `enqueue` and `recordOutcome` originally carried no generation at all, so an expired worker
@@ -230,7 +230,7 @@ that takes it, because the settle path holds no job lease and is correct without
 protects local state; it cannot cancel an HTTP request already in flight. That is what the
 immutable attempt row and the provider idempotency key are for.
 
-**The partial UNIQUE index on `payment_reference`** (`store.ts:217`):
+**The partial UNIQUE index on `payment_reference`** (`src/store.ts#migrate`):
 
 ```sql
 CREATE UNIQUE INDEX obligations_reference ON obligations (payment_reference)
@@ -246,14 +246,14 @@ cannot be built because rows already violate it, the error raised names the dupl
 references, because that condition is the exact thing this project exists to prevent and it
 should not surface as a SQL error.
 
-Alongside it: `obligations_identity` on `(namespace, request_id)` (`store.ts:103`), stated
+Alongside it: `obligations_identity` on `(namespace, request_id)` (`src/store.ts#SCHEMA`), stated
 twice on purpose (the PRIMARY KEY already enforces it), and `attempts_step` on
-`(plan_hash, step_index)` (`store.ts:143`), which is what makes a retry reuse the row and
+`(plan_hash, step_index)` (`src/store.ts#SCHEMA`), which is what makes a retry reuse the row and
 therefore the same idempotency key.
 
-**Hash-chained audit.** Every row commits to the one before it (`store.ts:372`):
+**Hash-chained audit.** Every row commits to the one before it (`src/store.ts#OPEN_BACKOFF_MS`):
 `row_hash = auditHash(prev_hash, obligationId, actor, action, detailJson, at)`.
-`verifyAuditChain` (`store.ts:431`) walks it and reports the first row whose hash does not
+`verifyAuditChain` (`src/store.ts#verifyAuditChain`) walks it and reports the first row whose hash does not
 follow, distinguishing "a row is missing or was reordered" from "a row's contents were edited".
 The comment in the schema is careful about what this buys: it is not tamper-*proof*, since the
 same administrator can recompute the whole chain. It turns silent edits into loud ones, which
@@ -261,12 +261,12 @@ is the difference between "trust me" and "check it".
 
 ## Execution: one interface, two transports
 
-`ExecutionProvider` (`src/provider.ts#classifySimulateReply`) is four methods: `simulate`, `execute`, `observe`,
+`ExecutionProvider` (`src/provider.ts#ExecutionProvider`) is four methods: `simulate`, `execute`, `observe`,
 `receipt`. `settle.ts` knows nothing else about how a payment is sent.
 
 | | REST | MCP |
 |---|---|---|
-| File | `src/keeperhub.ts` (257 lines) | `src/keeperhub-mcp.ts` (331 lines) |
+| File | `src/keeperhub.ts` (324 lines) | `src/keeperhub-mcp.ts` (372 lines) |
 | Surface | `POST /api/execute/contract-call` | `execute_contract_call` / `get_direct_execution_status` at `app.keeperhub.com/mcp` |
 | Selected by | default | `KEEPERHUB_TRANSPORT=mcp` |
 
@@ -278,14 +278,14 @@ gate is the demonstration of that.
 What both transports share, and must:
 
 - **`src/calldata-gate.ts`, literally the same module.** `decodeAllowedCall`
-  (`calldata-gate.ts:76`) binds three things, not two: the selector, the decoded arguments, and
+  (`src/calldata-gate.ts#decodeAllowedCall`) binds three things, not two: the selector, the decoded arguments, and
   the **target**. An earlier version checked only the calldata, which left byte-perfect
   allowlisted payment calldata pointed at an attacker's contract passing cleanly, since both
   providers forwarded `step.to` straight through. Callers are handed back the target this
-  module approved. The allowlist (`calldata-gate.ts:31-41`) is two entries:
+  module approved. The allowlist (`src/calldata-gate.ts#ALLOWED`) is two entries:
   `transferFromWithReferenceAndFee` bound to the ERC20FeeProxy, and `approve` bound to the FAU
   token. `mint` is deliberately absent.
-- **`idempotencyVerdict`** (`keeperhub.ts:73`), exported specifically so the MCP transport
+- **`idempotencyVerdict`** (`src/keeperhub.ts#idempotencyVerdict`), exported specifically so the MCP transport
   reaches the same verdict from a differently-shaped reply. Two things arrive as HTTP 409 and
   they mean opposite things: `idempotency_in_progress` is retryable (the platform is still
   working on *this* key, and asking again is asking about the same request), while
@@ -304,8 +304,8 @@ What both transports share, and must:
   (`wouldRevert = ... || ... || ...`) that no longer exists anywhere: the union replaced it after
   four duplicate-payment findings whose common shape was a caller reading a flag that could mean
   "I do not know" as though it meant "no".
-- **Unrecognised statuses map to `pending`, never `completed`** (`keeperhub.ts:236`,
-  `keeperhub-mcp.ts:315`), so a response shape this code has not seen cannot be mistaken for a
+- **Unrecognised statuses map to `pending`, never `completed`** (`src/keeperhub.ts#KeeperHubProvider`,
+  `src/keeperhub-mcp.ts#execute`), so a response shape this code has not seen cannot be mistaken for a
   finished payment.
 
 Where they genuinely differ is the transport's own hazards, all documented in
@@ -326,33 +326,33 @@ they cannot verify is KeeperHub's own re-encoding, because the request that woul
 the one that spends the money. That is exactly why `receipt()` reads the chain.
 `npm run verify:seam` is the standalone proof of the same claim.
 
-## Reconciliation: `src/chain.ts` (480 lines) and `src/worker.ts` (389 lines)
+## Reconciliation: `src/chain.ts` (930 lines) and `src/worker.ts` (535 lines)
 
 Settlement is decided by two independent chain reads that must agree, plus a depth gate.
 
-**The receipt.** `readReceipt` (`chain.ts:429`) reads more than `{status, gasUsed}`: the
+**The receipt.** `readReceipt` (`src/chain.ts#readReceipt`) reads more than `{status, gasUsed}`: the
 transaction's own target, its own logs, and how far behind head its block is. Three outcomes,
 not two: only `0x0` means the chain said no, and a missing or malformed status means this read
 did not answer, because `EXECUTION_REVERTED` is terminal and a transport hiccup must not reach
 it. Depth unknown is left `undefined` rather than treated as zero, so a caller can tell the
-difference. And there is RPC fallback (`chain.ts:21-30`), because publicnode answers
+difference. And there is RPC fallback (`src/chain.ts#RPC_FALLBACKS`), because publicnode answers
 `eth_getTransactionReceipt` with `result: null` for transactions it still returns in full from
 `eth_getTransactionByHash`, which reads downstream exactly like "this payment never landed".
 
-**The fee-proxy event.** `findPaymentByReference` (`chain.ts:257`) runs the same
+**The fee-proxy event.** `findPaymentByReference` (`src/chain.ts#findPaymentByReference`) runs the same
 `eth_getLogs` query Request's own detection uses. Two traps: `paymentReference` is an *indexed*
 bytes parameter, so the topic is the keccak hash of the reference bytes rather than the bytes
-themselves (`chain.ts:38`, `referenceTopic` at `chain.ts:87`), and getting it wrong returns
+themselves (`src/chain.ts#DEFAULT_RPC_FALLBACKS`, `referenceTopic` at `src/chain.ts#chainChecks`), and getting it wrong returns
 zero logs and looks exactly like "not paid yet"; and public endpoints cap ranges, so
-`MAX_RANGE` is 45,000 blocks (`chain.ts:245`) and a scan that runs out reports `truncated`
+`MAX_RANGE` is 45,000 blocks (`src/chain.ts#MAX_RANGE`) and a scan that runs out reports `truncated`
 rather than "not found".
 
-**`matchPaymentLog` (`chain.ts:192`) is the invariant.** A log counts as paying *this*
+**`matchPaymentLog` (`src/chain.ts#matchPaymentLog`) is the invariant.** A log counts as paying *this*
 obligation only when the **emitter** is the ERC20FeeProxy, and the **token**, **`to`**,
 **amount**, **fee amount** and **fee address** all agree. The reference alone is not enough and
 never was: the reference is derived from data anchored openly on Sepolia, so anyone can read
 one and emit a fee-proxy event carrying it. Reconciling on the reference means accepting that
-event as proof. `decodePaymentLogFields` (`chain.ts:226`) reads the five non-indexed words, and
+event as proof. `decodePaymentLogFields` (`src/chain.ts#decodePaymentLogFields`) reads the five non-indexed words, and
 the comment there earns its place: an indexed dynamic parameter is *removed* from `data` rather
 than replaced by an offset placeholder, so `amount` is word 2, not word 3.
 
@@ -384,7 +384,7 @@ cannot conclude defers with a *reason* (`SCAN_TRUNCATED`, `RECEIPT_NOT_FINAL`,
 completes its job rather than deferring forever.
 
 The operator entry point is `scripts/resolve.ts` (`npm run resolve`), which wires
-`drainUntilQuiet` (`worker.ts:375`) to a public RPC and a store path. It passes
+`drainUntilQuiet` (`src/worker.ts#drainUntilQuiet`) to a public RPC and a store path. It passes
 `lookaheadMs: 60_000` deliberately: run by hand, this is an operator asking, not a timer
 polling, so it looks past the retry backoff rather than reporting "nothing moved" for work
 scheduled a moment out.
@@ -399,9 +399,9 @@ Two things are easy to get wrong here and were:
 
 - **A policy's decimals must not come from the same place as the facts' decimals**, or
   `TOKEN_DECIMALS_MISMATCH` compares a value to itself. Policy decimals come from the
-  operator's table (`plan.ts:77`), facts from the invoice. An unknown token gets 0, which no
+  operator's table (`src/plan.ts#TOKEN_DECIMALS`), facts from the invoice. An unknown token gets 0, which no
   real token has, so it cannot quietly inherit 18 and settle at the wrong scale.
-- **A ceiling is always the lower of the standing value and the caller's** (`plan.ts:87`). An
+- **A ceiling is always the lower of the standing value and the caller's** (`src/plan.ts#knownTokenDecimals`). An
   agent may tighten its own limit and never raise it. Where no standing policy is set, the
   invoice's own value is used and `policySource` says so, so a bare clone still runs and nobody
   is told they are protected when they are not.
@@ -431,7 +431,7 @@ flow, and that check is the reason the tool takes the invoice as arguments rathe
 ## Where to start reading
 
 - Settling one obligation end to end: `src/settle.ts`, sections 0 through 10, in order.
-- Why a second run refuses: `settle.ts:413` (re-entry), then `store.ts:924` (`markSent`).
-- What "settled" means: `settle.ts:809-885`, then `chain.ts:192` (`matchPaymentLog`).
-- Why an uncertain outcome never retries: `settle.ts:603-680`, then `worker.ts:191-233`.
+- Why a second run refuses: `src/settle.ts#receiptDisagreesWithPayment` (re-entry), then `src/store.ts#reserveObligation` (`markSent`).
+- What "settled" means: `src/settle.ts#settleOrRefuse`, then `src/chain.ts#PaymentSighting` (`matchPaymentLog`).
+- Why an uncertain outcome never retries: `src/settle.ts#settleOrRefuse`, then `src/worker.ts#resolveJob`.
 - What can never be dispatched: `src/calldata-gate.ts`, 126 lines, worth reading whole.

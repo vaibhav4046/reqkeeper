@@ -50,7 +50,7 @@ meet "dispatches nothing", so it was skipped rather than run.
 
 ## 1. The two providers
 
-Identical `ExecutionProvider` contract (`src/provider.ts#SimulateOutcome`), identical calldata gate
+Identical `ExecutionProvider` contract (`src/provider.ts#ExecutionProvider`), identical calldata gate
 (`decodeAllowedCall`, imported by both), different transport.
 
 **REST — `src/keeperhub.ts`**
@@ -80,40 +80,40 @@ Identical `ExecutionProvider` contract (`src/provider.ts#SimulateOutcome`), iden
 ## 2. Idempotency contract
 
 ```
-idempotencyKey = sha256("reqkeeper.step.v1:" + obligationId + ":" + planHash + ":" + stepIndex)      identity.ts:134
-obligationId   = sha256("reqkeeper.obligation.v1:" + len(ns) + ":" + ns + ":" + len(id) + ":" + id)  identity.ts:95
+idempotencyKey = sha256("reqkeeper.step.v1:" + obligationId + ":" + planHash + ":" + stepIndex)      `src/identity.ts#idempotencyKey`
+obligationId   = sha256("reqkeeper.obligation.v1:" + len(ns) + ":" + ns + ":" + len(id) + ":" + id)  `src/identity.ts#obligationId`
 ```
 
 `planHash` content-addresses `{obligationId, chainId, token, decimals, payee,
 invoiceBaseUnits, feeBaseUnits, totalDebitBaseUnits, steps, sourceFactsHash, policyHash}`
-(`settle.ts:305-320`). Inputs are validated as 64-hex and `stepIndex` in `0..255`
-(`identity.ts:125-133`). No clock, no randomness, no model text.
+(`src/settle.ts#referenceAlreadyClaimed`). Inputs are validated as 64-hex and `stepIndex` in `0..255`
+(`src/identity.ts#idempotencyKey`). No clock, no randomness, no model text.
 
 **Scoping, precisely:** by obligation (namespace + requestId), by approved plan content,
 and by step index. **Not** by organization/account and **not** by route or protocol — the
 same key value is sent as the `Idempotency-Key` HTTP header on REST and as the
 `idempotency_key` tool argument on MCP. That is not ambiguous locally, because what
 actually prevents a second dispatch is the durable attempt row, `CREATE UNIQUE INDEX
-attempts_step ON attempts (plan_hash, step_index)` (`store.ts:108`) plus the
-`firstSendAt !== null` guard (`settle.ts:481-503`), and both are transport-agnostic.
+attempts_step ON attempts (plan_hash, step_index)` (`src/store.ts#SCHEMA`) plus the
+`firstSendAt !== null` guard (`src/settle.ts#settleObligation`), and both are transport-agnostic.
 Whether KeeperHub scopes its own replay cache per-account or per-route is **UNPROVEN** —
 proving it requires a write.
 
 Second identity layer: `payment_reference` carries a partial UNIQUE index
-(`store.ts:182`), lower-cased at the boundary (`identity.ts:147-153`), and step 0 of
-settle refuses a second obligation over a claimed reference (`settle.ts:181-201`).
+(`src/store.ts#addColumnIfMissing`), lower-cased at the boundary (`src/identity.ts#canonicalReference`), and step 0 of
+settle refuses a second obligation over a claimed reference (`src/settle.ts#calldataDisagreesWithFacts`).
 
 **Ambiguous resource id (PARTIAL).** Both mappers fall back to the literal string
 `"unknown"` when the provider returns no id and no hash:
 
 ```
-keeperhub.ts:213      const id = res.executionId ?? res.id ?? hash ?? "unknown";
-keeperhub-mcp.ts:295  const id = payload.executionId ?? payload.execution_id ?? hash ?? "unknown";
+`src/keeperhub.ts#KeeperHubProvider`      const id = res.executionId ?? res.id ?? hash ?? "unknown";
+`src/keeperhub-mcp.ts#simulate`  const id = payload.executionId ?? payload.execution_id ?? hash ?? "unknown";
 ```
 
-That value is persisted into `attempts.execution_id` (`settle.ts:546`) and would be sent
-as a path segment by `observe()` (`keeperhub.ts:157`). Not currently exploitable —
-`worker.ts:163-183` resolves outcomes from the chain and never calls `observe()` — but it
+That value is persisted into `attempts.execution_id` (`src/settle.ts#settleOrRefuse`) and would be sent
+as a path segment by `observe()` (`src/keeperhub.ts#toArgs`). Not currently exploitable —
+`src/worker.ts#Resolution` resolves outcomes from the chain and never calls `observe()` — but it
 is a placeholder standing where a resource identifier belongs, and two different stranded
 attempts record the same one.
 
@@ -148,27 +148,27 @@ dispatch may follow":
 
 | Case | Provider result | settle.ts | State | Key |
 |---|---|---|---|---|
-| (a) 409 on execute | `idempotency_conflict`, non-retryable (`keeperhub.ts:119-121`) | `:513-518` | `EVIDENCE_CONFLICT`, attempt `INTEGRITY_CONFLICT` | **HOLD** |
+| (a) 409 on execute | `idempotency_conflict`, non-retryable (`src/keeperhub.ts#idempotencyVerdict`) | `:513-518` | `EVIDENCE_CONFLICT`, attempt `INTEGRITY_CONFLICT` | **HOLD** |
 | (b) 429 on execute | `rate_limited`, retryable (`:122-124`) | `:519-529` | `EXECUTION_OUTCOME_UNKNOWN` + `OBSERVE_EXECUTION` job | **HOLD** |
 | (c) timeout on execute | `timeout`, retryable (`:105-109`) | `:519-529` | `EXECUTION_OUTCOME_UNKNOWN` + job | **HOLD** |
 | (d) 200 + error body | resolves `status:"pending"` | `:546-552` | recorded `SENT`, then `NO_HASH` then `EXECUTION_OUTCOME_UNKNOWN` | **HOLD** |
 | (e) success, no hash | resolves `completed`, no hash | `:550-552` | `EXECUTION_OUTCOME_UNKNOWN` | **HOLD** |
 
-All five hold. `markSent` is stamped **before** `execute()` (`settle.ts:507`,
-`store.ts:708-712`, `COALESCE` so it is never overwritten), and `releaseObligation`
+All five hold. `markSent` is stamped **before** `execute()` (`src/settle.ts#settleOrRefuse`,
+`src/store.ts#setStateInTx`, `COALESCE` so it is never overwritten), and `releaseObligation`
 independently refuses once any attempt on the plan has `first_send_at` set
-(`store.ts:553-556`). `EXECUTION_OUTCOME_UNKNOWN` and `EVIDENCE_CONFLICT` are excluded from
-`REPLANNABLE` (`machine.ts:157-170`), so step 0b (`settle.ts:212-226`) refuses re-entry.
+(`src/store.ts#Store`). `EXECUTION_OUTCOME_UNKNOWN` and `EVIDENCE_CONFLICT` are excluded from
+`REPLANNABLE` (`src/machine.ts#REPLANNABLE`), so step 0b (`src/settle.ts#restate`) refuses re-entry.
 **No violation of the safe rule on the execute path.**
 
 ### F-1 (HIGH) — a retryable failure at *preflight* strands the obligation forever
 
-`settle.ts:438` calls `releaseObligation` from inside the catch **before** any state
+`src/settle.ts#receiptDisagreesWithPayment` calls `releaseObligation` from inside the catch **before** any state
 change, i.e. while the obligation is still `PAYMENT_PREFLIGHT` (set at `:414`).
-`PAYMENT_PREFLIGHT` is not in `REPLANNABLE` (`machine.ts:157-170`), so
+`PAYMENT_PREFLIGHT` is not in `REPLANNABLE` (`src/machine.ts#REPLANNABLE`), so
 `store.releaseObligation` returns `{released:false, reason:"already dispatched
-(PAYMENT_PREFLIGHT)"}` (`store.ts:550`) and the return value is discarded. The comment at
-`settle.ts:443-445` — "leaves the obligation in PAYMENT_PREFLIGHT, which is replannable" —
+(PAYMENT_PREFLIGHT)"}` (`src/store.ts#Store`) and the return value is discarded. The comment at
+`src/settle.ts#receiptDisagreesWithPayment` — "leaves the obligation in PAYMENT_PREFLIGHT, which is replannable" —
 is factually wrong.
 
 Probe 3, `FixtureProvider("RATE_LIMITED")`, real `Store`, real `settleObligation`:
@@ -189,16 +189,16 @@ final state: PAYMENT_PREFLIGHT   physical sends: 0
 
 The invoice can never be paid again by this system. No attempt row and no job were created
 (the attempt is opened at `:463`, after simulate), so `resolve_pending` and the worker have
-nothing to drain (`worker.ts:126-157` requires a job and an attempt); the only exits from
-`PAYMENT_PREFLIGHT` in the transition table (`machine.ts:102-108`) are reachable only from
+nothing to drain (`src/worker.ts#drainOnce` requires a job and an attempt); the only exits from
+`PAYMENT_PREFLIGHT` in the transition table (`src/machine.ts#PAYMENT_PREFLIGHT`) are reachable only from
 inside `settleObligation`, which refuses to re-enter; and a re-import under a new request id
-is refused by `REFERENCE_ALREADY_CLAIMED` (`settle.ts:181-201`).
+is refused by `REFERENCE_ALREADY_CLAIMED` (`src/settle.ts#calldataDisagreesWithFacts`).
 
 Money-safe (0 sends) but a liveness failure, and the agent guidance at `:451` states two
 things that are not true: "propose again later" is guaranteed to return
 `ALREADY_DISPATCHED`, and "Nothing was sent" is asserted on a `timeout`, which is by
 definition an unknown outcome on a route this repo models as possibly-executing
-(`provider.ts:12-15`). Probe 2 modelled exactly that (#1959 leak plus a lost reply) and
+(`src/provider.ts#Fault`). Probe 2 modelled exactly that (#1959 leak plus a lost reply) and
 produced the same stranded `PAYMENT_PREFLIGHT`; the hold is accidental — it comes from the
 release silently failing, not from a deliberate refusal to release on an unknown outcome.
 
@@ -208,12 +208,12 @@ and check `releaseObligation`'s return value instead of discarding it.
 ### F-2 (MEDIUM to HIGH) — an error body reads as a clean simulation
 
 `wouldRevert: res.wouldRevert === true || res.success === false`
-(`keeperhub.ts:138`; `keeperhub-mcp.ts:230`). A body carrying neither field — `{"error":
+(`src/keeperhub.ts#idempotencyVerdict`; `src/keeperhub-mcp.ts#KeeperHubMcpProvider`). A body carrying neither field — `{"error":
 "insufficient funds for gas"}` — yields `wouldRevert: false`, probe cases (h) and (i)
-above. `keeperhub.ts:111-128` also returns a parseable non-2xx body without throwing for
+above. `src/keeperhub.ts#priorExecutionFrom` also returns a parseable non-2xx body without throwing for
 any status other than 409/429/5xx, so an HTTP **401** reads as a clean dry run too. Control
-then falls through `settle.ts:430` to `:462` and dispatches a real payment. `parsed.error`
-is declared (`keeperhub.ts:43`) and consulted only in the 409 and 5xx branches (`:120`,
+then falls through `src/settle.ts#receiptDisagreesWithPayment` to `:462` and dispatches a real payment. `parsed.error`
+is declared (`src/keeperhub.ts#KeeperHubResponse`) and consulted only in the 409 and 5xx branches (`:120`,
 `:126`).
 
 This is the direct answer to "is an HTTP 200 with an error body ever treated as success":
@@ -222,18 +222,18 @@ independently read receipt and Request reconciliation — but the gate whose job
 "this would revert" answers "looks fine" to an error.
 
 The MCP transport is partly covered here: `reply.result.isError` is checked
-(`keeperhub-mcp.ts:186-196`). The REST route has no equivalent.
+(`src/keeperhub-mcp.ts#KeeperHubMcpProvider`). The REST route has no equivalent.
 
 ### F-3 (MEDIUM) — a 4xx that definitively did not execute is recorded as a send
 
 Probe cases (f) and (g): HTTP 401/400 with a JSON body resolve as `status:"pending"`, so
-`settle.ts:546` writes `outcome: SENT` and the obligation lands in
+`src/settle.ts#settleOrRefuse` writes `outcome: SENT` and the obligation lands in
 `EXECUTION_OUTCOME_UNKNOWN` via `NO_HASH`. A revoked API key therefore converts every
 in-flight obligation into a manual investigation. Safe direction, wrong disposition.
 
 ### F-6 (MEDIUM) — a stuck reservation blocks a *corrected* plan
 
-Same root cause as F-1: `settle.ts:438` fires before `:457` sets `SIMULATION_BLOCKED`, so
+Same root cause as F-1: `src/settle.ts#receiptDisagreesWithPayment` fires before `:457` sets `SIMULATION_BLOCKED`, so
 the release fails and the reservation stays with the refused plan. Probe 4, non-retryable
 preflight error:
 
@@ -246,7 +246,7 @@ pass 3 (the identical plan again): state=SETTLED refusal=undefined sends=1
 ```
 
 Re-proposing the identical plan recovers; changing the plan is refused permanently. That is
-precisely the failure `releaseObligation`'s docstring (`store.ts:537-541`) says it exists to
+precisely the failure `releaseObligation`'s docstring (`src/store.ts#releaseObligation`) says it exists to
 prevent. The `wouldRevert` path at `:430-433` sets state first and releases correctly — only
 the catch path is wrong.
 
@@ -254,7 +254,7 @@ the catch path is wrong.
 
 Covered above. Execute path: never success (VERIFIED). Preflight path: treated as a clean
 simulation (**BROKEN**, F-2). Neither mapper ever consults the `error` field when deciding
-status — `keeperhub.ts:211-227` and `keeperhub-mcp.ts:293-313` branch only on `success`,
+status — `src/keeperhub.ts#KeeperHubProvider` and `src/keeperhub-mcp.ts#args` branch only on `success`,
 `status` and the presence of a hash, and default to `"pending"`, never `"completed"`.
 
 ## 5. MCP specifics
@@ -327,15 +327,15 @@ quoted in section 5.
 
 ## 7. Is KeeperHub's own state ever taken as proof of settlement?
 
-**No.** `SETTLED` requires, in order: a transaction hash (`settle.ts:550`), a receipt read
-from `cfg.rpcUrl` with `status === "0x1"` (`keeperhub.ts:175-196`,
-`keeperhub-mcp.ts:265-290` — both post `eth_getTransactionReceipt` to the RPC, never to
+**No.** `SETTLED` requires, in order: a transaction hash (`src/settle.ts#settleOrRefuse`), a receipt read
+from `cfg.rpcUrl` with `status === "0x1"` (`src/keeperhub.ts#body`,
+`src/keeperhub-mcp.ts#KeeperHubMcpProvider` — both post `eth_getTransactionReceipt` to the RPC, never to
 KeeperHub), and `sourceSaysPaid` matching **this** transaction hash and **this** amount
-against the ERC20FeeProxy event log (`src/mcp.ts` settle handler; `chain.ts:117+`).
+against the ERC20FeeProxy event log (`src/mcp.ts` settle handler; `src/chain.ts#referenceTopic`+`).
 `CHAIN_CONFIRMED` cannot jump to `SETTLED` — `RECONCILING` is a mandatory stop
-(`machine.ts:116`). The worker re-reads the receipt in `RECONCILE_SOURCE` rather than
-trusting the earlier pass (`worker.ts:186-210`). Unrecognised provider statuses map to
-`"pending"`, never `"completed"` (`keeperhub.ts:216-219`, `keeperhub-mcp.ts:298-305`).
+(`src/machine.ts#TRANSITIONS`). The worker re-reads the receipt in `RECONCILE_SOURCE` rather than
+trusting the earlier pass (`src/worker.ts#findByReference`). Unrecognised provider statuses map to
+`"pending"`, never `"completed"` (`src/keeperhub.ts#KeeperHubProvider`, `src/keeperhub-mcp.ts#simulate`).
 
 **F-5 (MEDIUM) — the settlement receipt read does not use the RPC fallback.** Both
 providers do a bare single-endpoint `fetch` to `cfg.rpcUrl`. `src/chain.ts#RPC_FALLBACKS`
@@ -344,21 +344,21 @@ providers do a bare single-endpoint `fetch` to `cfg.rpcUrl`. `src/chain.ts#RPC_F
 `RPC_FALLBACKS` plus `NULLABLE_IS_UNKNOWN` so a null is treated as "this endpoint does not
 know". `keeperhub.ts` and `keeperhub-mcp.ts` import nothing from `chain.ts`, so the
 settlement path — the one place the distinction decides money — still reads a pruned null
-as `not_found`, which `settle.ts:559-563` turns into `EVIDENCE_CONFLICT`. Fails safe, but
+as `not_found`, which `src/settle.ts#settleOrRefuse` turns into `EVIDENCE_CONFLICT`. Fails safe, but
 for the wrong reason, and the fix already exists two modules away.
 
 ## Findings, by severity
 
 | ID | Severity | Summary | Where |
 |---|---|---|---|
-| F-1 | HIGH | 429/timeout at preflight strands the obligation in `PAYMENT_PREFLIGHT` with no recovery path; agent guidance is wrong on both counts | `settle.ts:438,443-454`; `machine.ts:157-170`; `store.ts:544-562` |
-| F-2 | MEDIUM to HIGH | An error body (200 or 401) reads as `wouldRevert: false` and the payment dispatches | `keeperhub.ts:111-128,138`; `keeperhub-mcp.ts:230` |
-| F-3 | MEDIUM | 4xx with a JSON body is recorded as a send (`outcome: SENT`) and drives `EXECUTION_OUTCOME_UNKNOWN` | `keeperhub.ts:111-128`; `settle.ts:546-552` |
-| F-4 | MEDIUM | Expired MCP session can never re-handshake though `-32003` is flagged retryable | `keeperhub-mcp.ts:122,176` |
-| F-5 | MEDIUM | Settlement receipt read bypasses `chain.ts`'s RPC fallback; a pruned null becomes `EVIDENCE_CONFLICT` | `keeperhub.ts:175-196`; `keeperhub-mcp.ts:265-290`; `chain.ts:11-89` |
-| F-6 | MEDIUM | Non-retryable preflight error leaves the reservation stuck; a corrected plan is refused `OBLIGATION_RESERVED` forever | `settle.ts:438,457` |
-| F-7 | LOW | `"unknown"` placeholder used as an execution id and persisted | `keeperhub.ts:213`; `keeperhub-mcp.ts:295` |
-| F-8 | LOW | REST 409 does not distinguish "in progress" from "same key, different body"; both become `EVIDENCE_CONFLICT` | `keeperhub.ts:119-121`; cf. `provider.ts:21-22` |
+| F-1 | HIGH | 429/timeout at preflight strands the obligation in `PAYMENT_PREFLIGHT` with no recovery path; agent guidance is wrong on both counts | `src/settle.ts#receiptDisagreesWithPayment`,443-454`; `src/machine.ts#TRANSITIONS`; `src/store.ts#verifyAuditChain` |
+| F-2 | MEDIUM to HIGH | An error body (200 or 401) reads as `wouldRevert: false` and the payment dispatches | `src/keeperhub.ts#priorExecutionFrom`,138`; `src/keeperhub-mcp.ts#KeeperHubMcpProvider` |
+| F-3 | MEDIUM | 4xx with a JSON body is recorded as a send (`outcome: SENT`) and drives `EXECUTION_OUTCOME_UNKNOWN` | `src/keeperhub.ts#priorExecutionFrom`; `src/settle.ts#settleOrRefuse` |
+| F-4 | MEDIUM | Expired MCP session can never re-handshake though `-32003` is flagged retryable | `src/keeperhub-mcp.ts#constructor`,176` |
+| F-5 | MEDIUM | Settlement receipt read bypasses `chain.ts`'s RPC fallback; a pruned null becomes `EVIDENCE_CONFLICT` | `src/keeperhub.ts#body`; `src/keeperhub-mcp.ts#KeeperHubMcpProvider`; `src/chain.ts#RPC_FALLBACKS` |
+| F-6 | MEDIUM | Non-retryable preflight error leaves the reservation stuck; a corrected plan is refused `OBLIGATION_RESERVED` forever | `src/settle.ts#receiptDisagreesWithPayment`,457` |
+| F-7 | LOW | `"unknown"` placeholder used as an execution id and persisted | `src/keeperhub.ts#KeeperHubProvider`; `src/keeperhub-mcp.ts#simulate` |
+| F-8 | LOW | REST 409 does not distinguish "in progress" from "same key, different body"; both become `EVIDENCE_CONFLICT` | `src/keeperhub.ts#idempotencyVerdict`; cf. `src/provider.ts#Fault` |
 | F-9 | LOW | No test covers provider HTTP-status disposition; `test/keeperhub*.test.ts` cover the calldata gate and receipt reads only | `test/keeperhub.test.ts`, `test/keeperhub-mcp.test.ts` |
 
 What held under adversarial probing: the execute-path disposition table (all five cases

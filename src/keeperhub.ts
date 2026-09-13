@@ -73,6 +73,47 @@ interface KeeperHubResponse {
  * exists on one transport and not the other is not a guard, it is a coin flip over which
  * surface the settlement happened to use.
  */
+/**
+ * A 429, with the platform's own backoff attached when it sent one.
+ *
+ * Shared, because it was not. `Retry-After` was read on REST and dropped on MCP, so the worker
+ * always fell back to a local constant on one of the two surfaces -- "how a rate limit becomes a
+ * rate limit that lasts longer than it had to", in the words of the comment that consumes it. The
+ * fix is not to add the same four lines to the second transport: it is to make a third transport
+ * unable to forget them.
+ *
+ * `headers` is anything with a `get`, so a transport that has no headers at all passes nothing and
+ * loses only the hint.
+ */
+export function rateLimitVerdict(headers?: { get(name: string): string | null }): ProviderError {
+  const raw = Number(headers?.get?.("retry-after") ?? "");
+  const wait = Number.isFinite(raw) && raw > 0 ? Math.min(raw, 300) : undefined;
+  const err = new ProviderError(
+    "rate_limited",
+    wait === undefined ? "429 from KeeperHub" : `429 from KeeperHub; it asked for ${wait}s`,
+    true,
+  );
+  if (wait !== undefined) err.retryAfterSeconds = wait;
+  return err;
+}
+
+/**
+ * The execution KeeperHub says this key already started, from any shape of 409 body.
+ *
+ * Read on REST and dropped on MCP, which meant the audit event that records it could never fire
+ * on the transport carrying the live MCP settlements. Same repair as above: one reader.
+ */
+export function priorExecutionFrom(body: string): string | undefined {
+  try {
+    const parsed = JSON.parse(body) as { originalExecutionId?: unknown };
+    const id = parsed.originalExecutionId;
+    return typeof id === "string" && id.length > 0 ? id : undefined;
+  } catch {
+    // Not JSON. A 409 whose body is prose names nothing, which is not an error.
+    return undefined;
+  }
+}
+
 export function idempotencyVerdict(said: string): ProviderError {
   const text = said.trim();
   if (/in[_\s-]?progress/i.test(text)) {
@@ -175,6 +216,7 @@ export class KeeperHubProvider implements ExecutionProvider {
 
     if (res.status === 409) {
       const verdict = idempotencyVerdict(`${parsed.code ?? ""} ${parsed.error ?? ""}`);
+      const named = priorExecutionFrom(text);
       // The platform's own pointer to the execution this key already started.
       //
       // KeeperHub documents it: on a 409 with a non-null `originalExecutionId`, poll
@@ -182,27 +224,10 @@ export class KeeperHubProvider implements ExecutionProvider {
       // read nowhere, so an idempotency conflict -- the one case where KeeperHub hands you the id
       // of the execution that may already have moved the money -- was resolved the slow way, by
       // scanning the chain, or not at all.
-      const original = parsed.originalExecutionId;
-      if (typeof original === "string" && original.length > 0) {
-        verdict.executionId = original;
-      }
+      if (named) verdict.executionId = named;
       throw verdict;
     }
-    if (res.status === 429) {
-      // Read the platform's instruction rather than guessing. `Retry-After` is documented as
-      // sent only on 429; the caller backs off on a fixed constant without it.
-      // Defensively: `headers` is external input like everything else on this boundary, and a
-      // transport that omits it must cost a backoff hint, never the refusal itself.
-      const after = Number(res.headers?.get?.("retry-after") ?? "");
-      const wait = Number.isFinite(after) && after > 0 ? Math.min(after, 300) : undefined;
-      const err = new ProviderError(
-        "rate_limited",
-        wait === undefined ? "429 from KeeperHub" : `429 from KeeperHub; it asked for ${wait}s`,
-        true,
-      );
-      if (wait !== undefined) err.retryAfterSeconds = wait;
-      throw err;
-    }
+    if (res.status === 429) throw rateLimitVerdict(res.headers);
     if (res.status >= 500) {
       throw new ProviderError("provider_error", `HTTP ${res.status}: ${parsed.error ?? text.slice(0, 200)}`, true);
     }

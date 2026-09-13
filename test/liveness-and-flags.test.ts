@@ -83,9 +83,32 @@ describe("no state is a dead end", () => {
     // above — the check would still pass, over a smaller world. So the enumeration is pinned
     // against the source rather than trusted.
     const source = readFileSync("src/machine.ts", "utf8");
-    const declared = [...source.matchAll(/^\s{2}\| "([A-Z_]+)"$|^\s{2}"([A-Z_]+)"$/gm)]
+    const declared = [...source.matchAll(/^\s{2}\| "([A-Z_]+)";?$|^\s{2}"([A-Z_]+)",?$/gm)]
       .map((m) => m[1] ?? m[2])
       .filter(Boolean);
+    // The pattern has to have SEEN the whole list. Without this, a state declared in a spelling
+    // the regex misses leaves `declared` short and every assertion below passes over a smaller
+    // world. A mutation sweep added exactly such a state and watched this test stay green while
+    // the machine knew one it did not -- the drift this test's own comment says it prevents.
+    // The union the type declares and the table the machine consults must be the same set.
+    //
+    // Three versions of this guard, because the first two checked the wrong thing. A count
+    // matches by coincidence. `ALL_STATES ⊆ declared` misses a state the regex cannot see,
+    // because `ALL_STATES` is `Object.keys(TRANSITIONS)` and would not list it either.
+    //
+    // Set equality between the two IS the property, and it is worth stating why a state the
+    // regex cannot see is nonetheless harmless: `assertTransition` is the only way state changes,
+    // it consults `TRANSITIONS`, and `canTransition` reads `TRANSITIONS[from] ?? []`. A state
+    // absent from that table cannot be entered and permits nothing from itself. What this catches
+    // is the reachable case -- a state added to the union and left out of the table, which is a
+    // dead end by construction, and a state in the table the reachability check below does not
+    // know about.
+    const seen = new Set(declared);
+    assert.deepEqual(
+      { inTypeNotInTable: [...seen].filter((x) => !ALL_STATES.includes(x as State)), inTableNotInType: ALL_STATES.filter((x) => !seen.has(x)) },
+      { inTypeNotInTable: [], inTableNotInType: [] },
+      "src/machine.ts's State union and its TRANSITIONS table disagree about which states exist",
+    );
     for (const state of new Set(declared)) {
       assert.ok(
         ALL_STATES.includes(state as State),

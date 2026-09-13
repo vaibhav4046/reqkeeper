@@ -91,13 +91,13 @@ Three things about this that will bite you:
 - **ethers is pinned to 5.7.2** (`tools/invoice/package.json`). The Request packages call
   `ethers.utils.getAddress`, which is v5 API. Installing v6 alongside them fails at
   construction with `Cannot read properties of undefined (reading 'getAddress')`.
-- **The signing key is a burner generated here and now.** `create-invoice.mjs:29-33` writes 32
+- **The signing key is a burner generated here and now.** `tools/invoice/create-invoice.mjs#pk` writes 32
   random bytes to `INVOICE_SIGNER_KEY` in `.env` if one is not already there. It is the payee,
   so no existing wallet's private key is ever required. `.env` is gitignored; treat it as a
   secret anyway.
 
 `pnpm create` appends `REQUEST_ID`, `PAYMENT_REFERENCE`, `PAYMENT_SALT`, `PAYEE_BURNER`,
-`FEE_ADDRESS` and `FEE_AMOUNT` to `.env` (`create-invoice.mjs:98-101`). The invoice is 1 FAU,
+`FEE_ADDRESS` and `FEE_AMOUNT` to `.env` (`tools/invoice/create-invoice.mjs#mine`). The invoice is 1 FAU,
 zero fee, ERC20FeeProxy payment network, on Sepolia.
 
 `pnpm check` (`check-paid.mjs`) asks Request's own SDK whether it considers the invoice paid.
@@ -112,7 +112,7 @@ the remaining invoices and not the ones already created.
 
 ### What the invoice says about the payer, and why it does not matter
 
-`create-invoice.mjs:25` and `create-batch.mjs:30` hardcode
+`tools/invoice/create-invoice.mjs#KEEPERHUB_PAYER` and `tools/invoice/create-batch.mjs#KEEPERHUB_PAYER` hardcode
 `KEEPERHUB_PAYER = 0x027D54A692e0e80173141777BdB847c1726FA1F3` as the invoice's `payer`
 identity. That is *this* project's KeeperHub wallet, not yours. Nothing in `src/` reads the
 invoice's payer field: `ERC20FeeProxy.transferFromWithReferenceAndFee` pulls from `msg.sender`,
@@ -262,7 +262,7 @@ balance    54000000000000000000 base units (54.0000 FAU)
 `npm run verify:onchain` computes `allowance` among others and asserts the presence of
 `approve` and `mint` in the deployed bytecode; it does not assert these two, and this line used
 to say it did.) Note that
-`create-batch.mjs:42` still says "the payer holds 98 FAU" in its argument-range message. That
+`tools/invoice/create-batch.mjs#target` still says "the payer holds 98 FAU" in its argument-range message. That
 was true when it was written; the chain says 54 today. The message caps the batch at 90
 invoices on the strength of a number that is now stale.
 
@@ -277,7 +277,7 @@ invoices on the strength of a number that is now stale.
 which is the burner that received the 38 recorded settlements. Your `pnpm create` generated a
 *different* burner. Every path that builds its policy through `buildPolicy`
 (`src/plan.ts#knownTokenDecimals`) therefore refuses your invoice with `PAYEE_NOT_ALLOWED`: the MCP
-`settle_obligation` tool (`src/mcp.ts#callTool`), `npm run approve` (`scripts/approve.ts#policy`),
+`settle_obligation` tool (`src/mcp.ts#settle_obligation`), `npm run approve` (`scripts/approve.ts#policy`),
 `npm run watch` (`src/watch.ts#watchPass`), the race and crash harnesses. Its own `_comment` says so:
 "Change it before settling anything of your own: an allowlist naming somebody else's address is
 worse than none, because it reads as a control."
@@ -497,7 +497,7 @@ commands below take had no documented source. `--status` is that source.
 | `eth_getLogs: Rate limit exceeded` from a public endpoint | The free tier of `ethereum-sepolia-rpc.publicnode.com`, hit on the first `npm run watch` of a fresh clone. Set `SEPOLIA_RPC` to an endpoint you control, and `REQKEEPER_RPC_ENDPOINTS` to a comma-separated list that a negative is corroborated against. One of the three built-in fallbacks, `sepolia.drpc.org`, refuses free-tier traffic outright, so the quorum is two endpoints unless you set your own. |
 | `missing KEEPERHUB_API_KEY in .env — get one from KeeperHub and put it in .env.` | The message names the wrong step. It is `need()` in `scripts/settle-live.ts` reporting whichever variable is absent, and the key is checked first. Set the key. |
 | `missing REQUEST_ID in .env — run the invoice creation step first.` | This one is accurate. Do step 2. |
-| `REFUSED before any write (BAD_IDENTIFIER)` | `REQUEST_ID` is `0x`-prefixed. Request channel ids are bare hex starting `01…`, and the payment reference is derived from that recorded spelling, so a `0x` prefix hashes to a different reference. `assertBareHex` (`src/request.ts#fetchInvoice`) refuses it rather than quietly stripping it, and the error says "drop the 0x: it is part of the preimage". |
+| `REFUSED before any write (BAD_IDENTIFIER)` | `REQUEST_ID` is `0x`-prefixed. Request channel ids are bare hex starting `01…`, and the payment reference is derived from that recorded spelling, so a `0x` prefix hashes to a different reference. `assertBareHex` (`src/request.ts#assertBareHex`) refuses it rather than quietly stripping it, and the error says "drop the 0x: it is part of the preimage". |
 | `REFUSED before any write (REFERENCE_MISMATCH)` | The `PAYMENT_REFERENCE` in `.env` is not the one this invoice derives. They are different debts. Nothing downstream re-derives the reference, so this is refused rather than preferred either way. |
 | `REFUSED before any write (FACT_MISMATCH)` | A payee, fee, fee recipient or amount in `.env` disagrees with what Request states. Amounts compare as exact strings on purpose: `1000000000000000000` and `01000000000000000000` differ because one of them was typed by something other than Request. |
 | `REFUSED before any write (GATEWAY_UNAVAILABLE)` | Request's gateway did not answer. An unreadable gateway is not permission to proceed on the caller's word, so this fails closed. |

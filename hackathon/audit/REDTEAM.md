@@ -123,11 +123,11 @@ first_send_at IS NULL` and send only if `changes === 1`.
 15 of 80 racing children in the run above produced no JSON at all. Raw output:
 
 ```
-A: file:///D:/project/reqkeeper/src/store.ts:227
+A: file:///D:`/project/reqkeeper/src/store.ts#migrate`
        this.#db.exec(SCHEMA);
               ^
    Error: database is locked
-       at new Store (file:///D:/project/reqkeeper/src/store.ts:227:14)
+       at new Store (file:///D:`/project/reqkeeper/src/store.ts#migrate`:14)
 B: {"state":"SETTLED","refusal":null,"executeCalls":1,"providerWriteIssued":true}
 ```
 
@@ -205,7 +205,7 @@ the one the design is proudest of: `AFTER_SEND` (money moved, response lost) rec
 Convergence is a different story:
 
 * **`SIMULATE`** — crash after `setState(PAYMENT_PREFLIGHT)` and before the attempt row exists.
-  Nothing was sent. But `PAYMENT_PREFLIGHT` is not in `REPLANNABLE` (`src/machine.ts#TRANSITIONS`), so
+  Nothing was sent. But `PAYMENT_PREFLIGHT` is not in `REPLANNABLE` (`src/machine.ts#REPLANNABLE`), so
   step 0b refuses re-entry with `ALREADY_DISPATCHED`, and there is no job. Zero sends, zero jobs, zero
   ways forward: the invoice is permanently unpayable by this system.
 * **`BEFORE_SEND`** — attempt committed and `first_send_at` stamped, nothing sent. The worker does the
@@ -214,7 +214,7 @@ Convergence is a different story:
 * **`RECEIPT` and `RECONCILE`** — the bad ones. Money moved. The `DISPATCH_STEP` job completes the
   moment `attempt.outcome` is non-null (`src/worker.ts#drainOnce`), and **the settle success path never
   enqueues `OBSERVE_EXECUTION`** — the only `enqueue` calls on that path are in the
-  `ALREADY_DISPATCHED` branch (`settle.ts:481`), the `execute` catch (`:521`) and
+  `ALREADY_DISPATCHED` branch (`src/settle.ts#settleObligation`), the `execute` catch (`:521`) and
   `RECONCILIATION_PENDING` (`:571`). So after the crash the outbox is **empty** while the obligation
   sits at `CHAIN_PENDING` / `RECONCILING`, and `scripts/resolve.ts` only drains existing jobs — it
   never enqueues a recovery job. This is precisely the failure `src/worker.ts`'s own header says it
@@ -242,12 +242,12 @@ the failure branches. One `enqueue` call closes all four wedges that involve a r
 ```
 
 `releaseObligation` refuses on two independent grounds — `!canReplan(state)` and "this plan has a
-dispatched attempt" (`store.ts:552-556`) — and step 0b refuses re-entry before any send logic is
+dispatched attempt" (`src/store.ts#Store`) — and step 0b refuses re-entry before any send logic is
 reached. I could not find a path where a missing hash after a possible send reopens the door. **HOLDS.**
 
 **4b. But `releaseObligation`'s return value is discarded at three call sites, and at all three the
 call is made while the state is `PAYMENT_PREFLIGHT` — so the release silently fails.**
-`settle.ts:434` (`wouldRevert`), `:441` (retryable preflight error) and `:456` (non-retryable) all call
+`src/settle.ts#receiptDisagreesWithPayment` (`wouldRevert`), `:441` (retryable preflight error) and `:456` (non-retryable) all call
 `store.releaseObligation(...)` *before* the `setState` that would make the state replannable. A single
 429 from the platform therefore does this:
 
@@ -276,15 +276,15 @@ Fix: move the `releaseObligation` calls after the `setState`, and stop discardin
 ```
 
 `obligations_reference` is `UNIQUE (payment_reference) WHERE payment_reference IS NOT NULL` with no
-namespace predicate, and `obligationForReference` (`store.ts:419-425`) has no namespace filter either.
+namespace predicate, and `obligationForReference` (`src/store.ts#obligationForReference`) has no namespace filter either.
 Case folding works (`0xDEADBEEF` and `0xdeadbeef` are one debt) — that defence holds.
 
 For a single-operator deployment global is the **right** choice: one Request payment reference is one
 debt regardless of how it was imported, and narrowing the index to `(namespace, payment_reference)`
 would re-open the double-pay door the index was added to shut. For a multi-tenant deployment it is
 wrong in two ways: the first tenant to import a reference denies it to every other tenant forever, and
-`settle.ts:196-215` returns the other tenant's obligation id prefix and state in the refusal — the
-comment at `store.ts:518-519` says "never another workspace's invoice data", which is true of the
+`src/settle.ts#out` returns the other tenant's obligation id prefix and state in the refusal — the
+comment at `src/store.ts#verifyAuditChain` says "never another workspace's invoice data", which is true of the
 invoice but not of the identifier and state.
 
 Not exploitable in this checkout: `namespace` is the module constant `NAMESPACE` at every entry point
@@ -311,7 +311,7 @@ fencing generation and no `WHERE tx_hash IS NULL`:
 Reachable by the zombie worker of attack 2 without any privileged access.
 
 **6b. `scripts/settle-live.ts` reconciled on the wrong question. FIXED MID-AUDIT.** `SettleDeps.sourceSaysPaid` is
-documented at `settle.ts:53-58`: "Must confirm THIS transaction paid THIS amount: a boolean over the
+documented at `src/settle.ts#SettleInput`: "Must confirm THIS transaction paid THIS amount: a boolean over the
 payment reference alone accepts a different transaction's evidence." The live script passes
 `sourceSaysPaid: async () => (await proxySawPayment(startBlock)).found` (`scripts/settle-live.ts#policy`)
 — both parameters dropped. `proxySawPayment` computes `txHash` and `amount` on the lines immediately
@@ -320,7 +320,7 @@ above and the closure throws them away.
 Driving the **real worker** with a foreign hash in the attempt row and each reconciler shape in turn:
 
 ```
-== (b1) a reconciler that ignores its arguments (settle-live.ts:147 before the mid-audit fix) ==
+== (b1) a reconciler that ignores its arguments (`scripts/settle-live.ts#policy` before the mid-audit fix) ==
   final state: SETTLED  evidence hash: 0xffff...ffff
   SETTLED on a transaction nobody checked belonged to this invoice: true
 
@@ -362,14 +362,14 @@ three points below:
   `verify-live.ts` and `verify-onchain.ts`, which the settle path never calls.
 * The receipt is still parsed as `{ status?, gasUsed? }`. `to` and `logs` are never read, so nothing
   post-dispatch checks that the transaction hit the fee proxy, paid the right payee, or moved the right
-  amount. Those are bound pre-dispatch only (`settle.ts:104-115`).
+  amount. Those are bound pre-dispatch only (`src/settle.ts#SettleDeps`).
 * `r.status === "0x1" ? success : reverted` — strict, no truthiness bug, but a receipt with a missing
   or malformed status is reported as `verified: true, "reverted"`, which is terminal. A real payment
   can be permanently labelled reverted by a malformed RPC response. `scripts/resolve.ts#args` does
   the correct three-way split; the production provider still does not
   (`r.status === "0x1" ? success : reverted`, verified as of the current working tree).
 * The uncommitted `src/chain.ts` fallback is first-wins, not agreement: `if (second !== null && second
-  !== undefined) return second;` (`chain.ts:83`) and `if (second.found) return second;` (`:145`). A
+  !== undefined) return second;` (`src/chain.ts#chainChecks`) and `if (second.found) return second;` (`:145`). A
   negative from the primary can become a positive from the fallback, there is no chain-id cross-check
   on `RPC_FALLBACKS`, and the `catch {}` at `:147` makes "the fallback errored" indistinguishable from
   "the fallback agreed". Both consumers that refuse-to-pay are safe with this; `sourceSaysPaid` is the
@@ -390,8 +390,8 @@ are durable but the read-then-write pair is not one transaction.
 ## 8. Prompt injection / malicious invoice fields — HOLDS
 
 * **SQL:** every statement is a bound `prepare(...).run(...)`. The only interpolation is
-  `store.ts:161`, a loop over the two hardcoded literals `prev_hash` and `row_hash`. `rawExecForTests`
-  (`store.ts:247`) has zero callers outside `test/`.
+  `src/store.ts#SCHEMA`, a loop over the two hardcoded literals `prev_hash` and `row_hash`. `rawExecForTests`
+  (`src/store.ts#migrate`) has zero callers outside `test/`.
 * **Shell:** one `execFileSync` in `scripts/demo.ts#TEST_COUNT` with a fixed argv. No `exec`, no `spawn` with
   a shell, no caller-controlled path.
 * **Decisions:** there is no `memo`, `contentData`, `description` or free-text note anywhere in

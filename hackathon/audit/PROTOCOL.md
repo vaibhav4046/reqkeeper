@@ -13,7 +13,7 @@ could not be reproduced from this session it is marked UNPROVEN rather than assu
 | # | Item | Verdict | Proof |
 |---|------|---------|-------|
 | 1 | Obligation identity | **PARTIAL** | `src/identity.ts#obligationId`, `src/settle.ts#calldataDisagreesWithFacts` |
-| 1a | — domain separation | **VERIFIED** | `src/identity.ts:95,100,105,110,134` |
+| 1a | — domain separation | **VERIFIED** | `src/identity.ts#obligationId`,100,105,110,134` |
 | 1b | — canonical serialization | **PARTIAL** | `src/identity.ts#canonicalJson`; `steps[].data` not case-folded |
 | 1c | — mismatches rejected before broadcast | **VERIFIED** | `src/settle.ts#restate` vs send at `:505`; 45/83 live rows |
 | 2 | Payment reference scheme | **VERIFIED** | reproduced off-chain and matched against a real log |
@@ -21,9 +21,9 @@ could not be reproduced from this session it is marked UNPROVEN rather than assu
 | 2b | — amount word offset | **VERIFIED** | `src/chain.ts#PaymentLogFields` (comment at `:174` is wrong) |
 | 2c | — reference-only "already paid" precheck | **PARTIAL** | `src/mcp.ts#verify_payment` |
 | 3 | Calldata decode/re-encode | **VERIFIED** | `src/abi.ts#decodeAndVerify`, `src/calldata-gate.ts#decodeAllowedCall` |
-| 3a | — semantic bind to invoice facts | **VERIFIED** | `src/settle.ts:106-116, 272-288` |
+| 3a | — semantic bind to invoice facts | **VERIFIED** | `src/settle.ts#SettleDeps`, 272-288` |
 | 3b | — bind to what the executor really runs | **PARTIAL** | `src/abi.ts:5-13`; seam is a separate script |
-| 4 | Amount and decimals | **PARTIAL** | `src/plan.ts:67,84` — `?? 18`, not a token read |
+| 4 | Amount and decimals | **PARTIAL** | `src/plan.ts#TOKEN_DECIMALS`,84` — `?? 18`, not a token read |
 | 4a | — `TOKEN_DECIMALS_MISMATCH` reachable in production | **BROKEN** | `src/plan.ts#TOKEN_DECIMALS` and `:84` derive from the same `f` |
 | 5 | Receipt / finality | **PARTIAL** | two-signal settlement, but zero confirmation depth |
 | 6 | Invoice is real Request protocol data | **VERIFIED** | `tools/invoice/create-batch.mjs#appendFileSync`, `scripts/gate-a.ts#liveRowsForGateway` |
@@ -76,7 +76,7 @@ hash is the content address of the approved bytes. Both are correct for their jo
 
 **Domain separation: VERIFIED.** Five distinct prefixes, one per hash family —
 `reqkeeper.obligation.v1`, `.plan.v1`, `.policy.v1`, `.source.v1`, `.step.v1`
-(`src/identity.ts:95,100,105,110,134`). The obligation id additionally length-prefixes both
+(`src/identity.ts#obligationId`,100,105,110,134`). The obligation id additionally length-prefixes both
 components, with the reasoning spelled out at `src/identity.ts#obligationId`: a plain `ns:id` preimage
 lets `("a","b:c")` and `("a:b","c")` collide, and banning `:` is not an option because the real
 namespace contains one. That is the right call.
@@ -91,8 +91,8 @@ on-chain effect — and therefore two different provider idempotency keys
 (`src/identity.ts#idempotencyKey`).
 
 This is **not** exploitable for a double payment. A second plan hash while the obligation is
-reserved is refused by `reserveObligation` (`src/store.ts#verifyAuditChain`), and once money has moved
-`canReplan` (`src/machine.ts#REPLANNABLE`) short-circuits the whole pipeline at `src/settle.ts#restate`.
+reserved is refused by `reserveObligation` (`src/store.ts#reserveObligation`), and once money has moved
+`canReplan` (`src/machine.ts#canReplan`) short-circuits the whole pipeline at `src/settle.ts#restate`.
 But it does mean `planHash` is not a canonical address of the effect, only of one spelling of it.
 
 **Rejection before broadcast: VERIFIED.** The order in `settleObligation` is the safety property
@@ -100,16 +100,16 @@ and it is correct. Everything that can refuse, refuses before the send at `src/s
 
 | § | Check | Line |
 |---|-------|------|
-| 0 | reference already claimed by another obligation | `settle.ts:200-219` |
-| 0b | re-entry on an obligation past the point of no return | `settle.ts:228-238` |
-| 1 | policy gate | `settle.ts:258-264` |
-| 1b | calldata vs the facts policy just cleared | `settle.ts:272-288` |
-| 3 | obligation reservation | `settle.ts:313-326` |
-| 4/5 | recorded human decision + distinct-approver quorum | `settle.ts:334-393` |
-| 6 | plan expiry, then `factsAtDispatch` re-hashed against the approved facts | `settle.ts:396-410` |
-| — | preflight simulation | `settle.ts:414-458` |
-| 7 | durable attempt row written **before** the call | `settle.ts:461-471` |
-| 8 | resend guard on `firstSendAt` | `settle.ts:478-501` |
+| 0 | reference already claimed by another obligation | `src/settle.ts#restate` |
+| 0b | re-entry on an obligation past the point of no return | `src/settle.ts#restate` |
+| 1 | policy gate | `src/settle.ts#derivePlan` |
+| 1b | calldata vs the facts policy just cleared | `src/settle.ts#derivePlan` |
+| 3 | obligation reservation | `src/settle.ts#referenceAlreadyClaimed` |
+| 4/5 | recorded human decision + distinct-approver quorum | `src/settle.ts#refusalForLostRace` |
+| 6 | plan expiry, then `factsAtDispatch` re-hashed against the approved facts | `src/settle.ts#receiptDisagreesWithPayment` |
+| — | preflight simulation | `src/settle.ts#receiptDisagreesWithPayment` |
+| 7 | durable attempt row written **before** the call | `src/settle.ts#settleObligation` |
+| 8 | resend guard on `firstSendAt` | `src/settle.ts#settleObligation` |
 
 Every pre-send return carries `providerWriteIssued: false`, and the live evidence file records
 45 rows with `refused_before_provider_write: true`.
@@ -130,7 +130,7 @@ keccak(utf8(requestId+salt+payee)) last 8 bytes : 0x050562a52ec69fa2
 
 **The indexed-bytes topic is right — `src/chain.ts#negativeCorroborationEndpoints`.** `TransferWithReferenceAndFee`'s
 `paymentReference` is an indexed `bytes`, so `topics[1]` is the keccak of the reference *bytes*,
-not of the hex string and not the bytes themselves. `referenceTopic` (`src/chain.ts#DEFAULT_RPC_FALLBACKS`)
+not of the hex string and not the bytes themselves. `referenceTopic` (`src/chain.ts#referenceTopic`)
 parses the hex into a `Uint8Array` and hashes that, on line 47. Getting this wrong returns zero
 logs and reads downstream as "not paid yet", which is the dangerous direction.
 
@@ -139,10 +139,10 @@ read from `https://sepolia.gateway.tenderly.co`, log emitted by `0x399f5ee127ce7
 
 ```
 on-chain topics[0]        0x9f16cbcc523c67a60c450e5ffe4f3b7b6dbe772e7abcadb2686ce029a9a0a2b6
-computed (chain.ts:38-40) 0x9f16cbcc523c67a60c450e5ffe4f3b7b6dbe772e7abcadb2686ce029a9a0a2b6
+computed (`src/chain.ts#DEFAULT_RPC_FALLBACKS`) 0x9f16cbcc523c67a60c450e5ffe4f3b7b6dbe772e7abcadb2686ce029a9a0a2b6
 
 on-chain topics[1]        0xeea8cc789ef59241406757e750ecc36c4eed8ba49faf1edb5e9fcb19342c58c8
-computed (chain.ts:42-48, for 0x050562a52ec69fa2)
+computed (`src/chain.ts#DEFAULT_RPC_FALLBACKS`, for 0x050562a52ec69fa2)
                           0xeea8cc789ef59241406757e750ecc36c4eed8ba49faf1edb5e9fcb19342c58c8
 ```
 
@@ -183,8 +183,8 @@ settlement path calls it. Measured behaviour against the real 260-byte payment c
 ```
 trailing bytes appended             : rejected (BAD_CALLDATA) re-encoding did not reproduce the original
 altered selector (0xdeadbeef)       : rejected (SELECTOR_MISMATCH) … is not 0xc219a14d
-dirty high bytes in an address word : rejected (BAD_CALLDATA)      [abi.ts:151]
-bytes offset bumped by 32           : rejected (BAD_CALLDATA)      [abi.ts:161]
+dirty high bytes in an address word : rejected (BAD_CALLDATA)      [`src/abi.ts#address`]
+bytes offset bumped by 32           : rejected (BAD_CALLDATA)      [`src/abi.ts#bytes`]
 changed payee / amount / token      : ACCEPTED by decodeAndVerify
 ```
 
@@ -212,8 +212,8 @@ that script having been run — not on an inline gate. Claim it that way.
 ## 4. Amount and decimals
 
 `src/money.ts` is exact throughout: no floats, `PRECISION_LOSS` thrown rather than truncating
-(`money.ts:51-71`), `MAX_UINT256` guarded before the ceiling comparison (`money.ts:103-109`,
-`policy.ts:169-171`), base units crossing every boundary as decimal strings.
+(`src/money.ts#toBaseUnits`), `MAX_UINT256` guarded before the ceiling comparison (`src/money.ts#MAX_UINT256`,
+`src/policy.ts#checkPolicy`), base units crossing every boundary as decimal strings.
 
 **Decimals are assumed, not read.** `src/plan.ts#TOKEN_DECIMALS` and `src/plan.ts#knownTokenDecimals`:
 
@@ -247,7 +247,7 @@ script that has to be run, but the settlement path assumes it.
 `src/machine.ts#State` states `CHAIN_CONFIRMED` is not `SETTLED`, and `src/settle.ts#settleOrRefuse`
 enforces it: a receipt with `receiptStatus === "success"` and `verified` moves the obligation to
 `CHAIN_CONFIRMED` only; `SETTLED` additionally needs `sourceSaysPaid` to confirm the fee-proxy log
-for **this** transaction hash and **this** amount (`settle.ts:568`; implementations at
+for **this** transaction hash and **this** amount (`src/settle.ts#settleOrRefuse`; implementations at
 `scripts/resolve.ts#rpcUrl`, `src/mcp.ts#toInvoiceFacts` and `:288-299`, `src/worker.ts#resolveJob`). Anything
 short of both leaves the obligation in `RECONCILIATION_PENDING` or `EVIDENCE_CONFLICT`.
 
@@ -266,7 +266,7 @@ ERC20FeeProxy event for the same transaction and the same amount." **What cannot
 "irreversible", or "N confirmations".
 
 One more finality-adjacent fact, empirically confirmed this session. The uncommitted RPC fallback
-in `src/chain.ts:21-31, 67-89, 142-151` is justified by real behaviour, not theory. For the
+in `src/chain.ts#RPC_FALLBACKS`, 67-89, 142-151` is justified by real behaviour, not theory. For the
 settled transaction above:
 
 ```
@@ -309,7 +309,7 @@ The real execution shape, from the settled transaction:
 to   0x5af5194b4b0909eb978e3cf1e25333852277f07d   <- forwarder, not the fee proxy
 from 0x809d8252aa4f9b8f7d9be7213855b289fe7d0444   <- relayer, not the payer
 allowance spent by 0x027d54a692e0e80173141777bdb847c1726fa1f3
-      (= KEEPERHUB_PAYER, tools/invoice/create-batch.mjs:26)
+      (= KEEPERHUB_PAYER, `tools/invoice/create-batch.mjs#ENV`)
 fee-proxy event emitted by 0x399f5ee127ce7432e4921a61b8cf52b0af52cbfe, inside the meta-tx
 ```
 

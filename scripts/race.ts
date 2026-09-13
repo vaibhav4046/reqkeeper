@@ -328,6 +328,32 @@ const artifact = {
   // summary keys against row fields can see none of it. Only the numbers that ARE a function of
   // the rows are declared -- `duplicates` is arithmetic over a total, and in live mode
   // `postsReachingTheProvider` and `dedupedByKey` are the -1 sentinel, so neither is claimed here.
+  // Why the five above cannot be derived in LIVE mode, stated in the artifact rather than left
+  // to a reader. `verify:all` FAILS on a summary number that is neither recomputable from rows nor
+  // explained here -- it used to list them inside a passing check, which is how twelve of them sat
+  // unexamined.
+  ...(LIVE
+    ? {
+        underivableTotals: {
+          broadcasts:
+            "Recounted from the chain by `npm run race -- --recount`, not from the worker rows: a " +
+            "worker reports what it was told, and what this number must count is fee-proxy events " +
+            "carrying this reference.",
+          postsReachingTheProvider:
+            "The -1 sentinel. No fixture ran in this mode, so nothing counted calls reaching the " +
+            "provider. 0 would read as \"nothing reached it\", which is a claim this run cannot make.",
+          dedupedByKey:
+            "The -1 sentinel, same reason: with no fixture there is nothing to observe KeeperHub's " +
+            "own idempotency cache absorbing, and 0 would assert that it absorbed nothing.",
+          duplicates:
+            "Derived from the chain recount (max(0, payments - 1)), not from the rows, for the same " +
+            "reason as `broadcasts`.",
+          secondWaveBroadcasts:
+            "The second wave's worker rows record refusals, not sends; this is the chain recount of " +
+            "that window. Zero means the chain showed nothing new, which the rows cannot establish.",
+        },
+      }
+    : {}),
   totalsFrom: {
     // First wave only, and that is the point of the metric: the second wave exists to show that
     // nothing happens in it, so folding it in would count the proof as part of the claim.

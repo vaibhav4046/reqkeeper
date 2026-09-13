@@ -3,6 +3,33 @@
   "mode": "LIVE",
   "chainId": 11155111,
   "note": "N independent processes, one SQLite file, one Request obligation, released from a barrier. The fixture counts every non-simulate POST regardless of idempotency key, and reports the deduplicated ones separately, so the result cannot be KeeperHub's cache taking the credit.",
+  "totalsFrom": {
+    "settled": {
+      "from": "waves[0].workers",
+      "count": true,
+      "where": [
+        {
+          "field": "state",
+          "equals": "SETTLED"
+        },
+        {
+          "field": "refusal",
+          "equals": null
+        }
+      ]
+    },
+    "distinctTransactions": {
+      "from": "waves[0].workers",
+      "distinct": "txHash"
+    }
+  },
+  "underivableTotals": {
+    "broadcasts": "Recounted from the chain by `npm run race -- --recount`, not from the worker rows: a worker reports what it was told, and what this number must count is fee-proxy events carrying this reference. The rows cannot produce it and must not.",
+    "postsReachingTheProvider": "The -1 sentinel. No fixture ran in this mode, so nothing counted calls reaching the provider. 0 would read as \"nothing reached it\", which is a claim this run cannot make.",
+    "dedupedByKey": "The -1 sentinel, same reason: with no fixture there is nothing to observe KeeperHub's own idempotency cache absorbing, and 0 would assert that it absorbed nothing.",
+    "duplicates": "Derived from the chain recount (max(0, payments - 1)), not from the rows, for the same reason as `broadcasts`.",
+    "secondWaveBroadcasts": "The second wave ran after every process exited and its worker rows record refusals, not sends; the number is the chain recount of that window. Zero here means the chain showed nothing new, which the rows alone cannot establish."
+  },
   "workers": 3,
   "totals": {
     "broadcasts": 1,

@@ -36,9 +36,35 @@ const USAGE = [
 ].join("\n");
 
 const args = new Map<string, string>();
-for (const a of process.argv.slice(2)) {
-  const m = /^--([a-zA-Z]+)(?:=(.*))?$/.exec(a);
-  if (m) args.set(m[1], m[2] ?? "true");
+{
+  // `--key=value` AND `--key value`, with hyphens in the key.
+  //
+  // The pattern without a hyphen silently broke `--release-preflight` in `scripts/resolve.ts`:
+  // the flag never matched, the command took the ordinary path and reported success. The pattern
+  // without a space form broke `npm run approve` in a worse way -- every flag became the string
+  // "true", `new Store("true")` created a settlement database in a file called `true`, and then
+  // it crashed converting "true" to a BigInt. That is the one command in this repository that
+  // can authorise money, invoked exactly as its own usage text and docs/RUNBOOK.md print it.
+  //
+  // One parser, in every script. `test/liveness-and-flags.test.ts` reads this pattern out of each
+  // script's source and runs every documented flag through it, so a third spelling has to fail a
+  // test rather than a user.
+  const argv = process.argv.slice(2);
+  for (let i = 0; i < argv.length; i++) {
+    const m = /^--([a-zA-Z][a-zA-Z0-9-]*)(?:=(.*))?$/.exec(argv[i] as string);
+    if (!m) continue;
+    if (m[2] !== undefined) {
+      args.set(m[1] as string, m[2]);
+      continue;
+    }
+    const next = argv[i + 1];
+    if (next !== undefined && !next.startsWith("--")) {
+      args.set(m[1] as string, next);
+      i += 1;
+    } else {
+      args.set(m[1] as string, "true");
+    }
+  }
 }
 
 function need(flag: string): string {

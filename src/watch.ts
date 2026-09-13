@@ -11,14 +11,25 @@
  * references are absent from the ERC20FeeProxy log, and propose exactly those. Request's own
  * state is what causes a proposal to exist.
  *
- * **It cannot pay, by construction.** No approval is passed to `settleObligation`, so every
- * proposal stops at the human gate with `AWAITING_APPROVAL` and nothing is dispatched — and
- * there is no argument on this path that could supply one, because approvals are written
- * only by `scripts/approve.ts`, which this module neither imports nor can invoke. The
- * provider it runs with refuses every write outright, so an edit that somehow reached
- * dispatch would fail loudly rather than quietly pay. A poller that could approve its own
- * proposals would be an agent paying invoices on a timer, which is the exact thing this
- * project exists to make impossible.
+ * **It cannot approve. It CAN dispatch what a human has approved — and that is the point.**
+ *
+ * This docblock used to say "it cannot pay, by construction", reasoning that no `approval` is
+ * passed to `settleObligation` and no argument on this path could supply one. That argument
+ * described the caller-authority model, which was removed: `settleObligation` reads the decision
+ * from the STORE, keyed by plan hash, so the approval `scripts/approve.ts` writes is picked up on
+ * this poller's next tick. Not passing one changes nothing. A reviewer demonstrated it in two
+ * passes — propose, a human approves at the CLI, and the next tick dispatched.
+ *
+ * That behaviour is correct and is the documented workflow: `watchPass` prints the approve
+ * command itself. What was wrong was the claim. The real property is narrower and worth stating
+ * exactly: **this module can never be the thing that decides.** It writes no approval, imports
+ * nothing that can, and every payment it dispatches was authorised by a person at a separate
+ * command, against a plan hash recomputed from the invoice rather than taken from the proposal.
+ *
+ * The shipped wiring also defaults `deps.provider` to one that refuses every write
+ * (`NO_DISPATCH_PROVIDER`), so a deployment that has not deliberately handed this loop a real
+ * provider cannot dispatch at all. That is a belt, not the braces, and it is named as a belt
+ * here because the braces in the old paragraph did not exist.
  */
 
 import { matchPaymentLog, verdictFor, type PaymentExpectation, type PaymentSighting } from "./chain.ts";
@@ -99,6 +110,14 @@ export interface WatchDeps {
   readonly findPayment: (
     paymentReference: string,
     expect: PaymentExpectation,
+    /**
+     * The invoice's own anchor block, the floor below which no payment for it can exist.
+     *
+     * There was no parameter for it, so every scan on this path was truncated by construction and
+     * the already-paid screen could never conclude -- on the surface that hands a human an
+     * approve command.
+     */
+    anchorBlock?: number,
   ) => Promise<PaymentSighting>;
   /**
    * Where the plans this pass writes actually live.
@@ -292,7 +311,15 @@ export async function watchPass(
       continue;
     }
     const facts = factsFor(inv);
-    const sighting = await deps.findPayment(inv.paymentReference, expectationFor(facts));
+    // With the anchor the invoice was just read with. Without it every scan on this path was
+    // truncated by construction -- `truncated = floor > 0` -- so the watcher's already-paid screen
+    // could never conclude anything, and the answer it could never reach was the one that decides
+    // whether an invoice is proposed at all. The anchor was read three lines above and dropped.
+    const sighting = await deps.findPayment(
+      inv.paymentReference,
+      expectationFor(facts),
+      inv.anchorBlock,
+    );
     // Through the shared verdict, with corroboration required. Reading `sighting.found` directly
     // meant a positive only ONE endpoint could see -- the primary having already said no --
     // marked the invoice PAID_ON_CHAIN and suppressed it from ever being proposed again.
@@ -300,6 +327,50 @@ export async function watchPass(
     // this was the caller treating it as settlement. Suppressing a real debt for ever is the
     // mirror of paying it twice, and just as permanent.
     const verdict = verdictFor(sighting, { requireCorroboration: true });
+
+    // Four answers, four rows. This collapsed all of them but PAID into one branch that wrote
+    // `chainSaysPaid: false` -- rendered to an operator as the word "unpaid" -- and attached a
+    // ready-to-paste approve command.
+    //
+    // So a scan that could not reach the invoice's anchor, a positive no second endpoint would
+    // confirm, and a log paying OUR payee in OUR token for the wrong amount were all presented to
+    // a human as "this debt is unpaid, here is the command to approve it". The MCP surface
+    // refuses exactly those sightings (SOURCE_UNVERIFIABLE) and the live settle script exits 2 on
+    // them. Same sighting, three readings, and the weakest one had a person's finger on the
+    // button. That is the defect this whole codebase is organised against, on the one path where
+    // the machine is not the last line.
+    // A log that pays SOMEBODY ELSE says nothing about this debt, whoever saw it.
+    //
+    // Narrow on purpose. Diverting every non-PAID verdict would hand the grief case back its
+    // win: a stranger emits one log carrying this invoice's public reference, the scan returns a
+    // positive that pays somebody else, and the invoice is refused for ever -- never proposed,
+    // never approved, never paid, with no refusal anywhere that explains the silence. That is the
+    // damage this row exists to prevent, and it fails safe on money, which is exactly why it
+    // survived so long. Foreign logs fall through to the proposal below, named in the detail.
+    const foreignPositive = sighting.found === true && !paysThisInvoice(sighting, facts).ok;
+    if (!foreignPositive && (verdict.kind === "UNKNOWN" || verdict.kind === "CONFLICT_OURS")) {
+      rows.push({
+        requestId: inv.requestId,
+        paymentReference: inv.paymentReference,
+        chainSaysPaid: false,
+        state: "UNREAD",
+        refusal: "SOURCE_UNVERIFIABLE",
+        detail:
+          verdict.kind === "CONFLICT_OURS"
+            ? `${verdict.detail}. Nobody else has a reason to pay this payee, in this token, under ` +
+              "this reference: that is either this invoice settled outside this system or our own " +
+              "funds moving in a plan nobody made. Not proposed, and no approval command offered."
+            : `the chain could not say whether this invoice is already paid (${verdict.reason}): ` +
+              `${verdict.detail}. Nothing is proposed on a scan that did not conclude.`,
+        planHash: null,
+        providerWriteIssued: false,
+        // Deliberately null. The command is the dangerous half: a human who is handed one reads
+        // the row as a decision waiting to be made rather than a question nobody answered.
+        approvalCommand: null,
+      });
+      continue;
+    }
+
     const paid = verdict.kind === "PAID" ? paysThisInvoice(sighting, facts) : { ok: false, conflicts: [] };
     if (paid.ok) {
       // Paid means there is no obligation to propose, so nothing is imported and no
@@ -328,7 +399,16 @@ export async function watchPass(
     // wrong here is a proposal, not a payment, and the reference index and the attempt guard
     // both still refuse a duplicate further down. So a short window, or a forged log, costs
     // an extra row for a human to look at, and cannot cost money.
-    const sourceFacts = buildSourceFacts(facts);
+    // What the chain just said, carried into the plan rather than discarded.
+    //
+    // `hasBeenPaid` was never set here, so `plan.ts` defaulted it to false and `SOURCE_ALREADY_PAID`
+    // was structurally unreachable on this path -- while `plan.ts` says in as many words that a
+    // caller which can read the chain must read it and pass the answer. This caller read it and
+    // threw the answer away.
+    // `paid.ok`, not `verdict.kind === "PAID"`: a corroborated log that pays somebody ELSE is a
+    // payment, just not of this invoice, and marking the debt settled on it is how a real
+    // obligation disappears.
+    const sourceFacts = buildSourceFacts({ ...facts, hasBeenPaid: paid.ok });
     const outcome = await settleObligation(
       {
         store: deps.store,
@@ -346,8 +426,11 @@ export async function watchPass(
         obligationId: obligationId(NAMESPACE, inv.requestId),
         facts: sourceFacts,
         steps: buildSteps(facts),
-        // No `approval` key. Not undefined-because-nothing-was-found: absent, always, on
-        // every pass. This is the line that makes the poller a proposer.
+        // No `approval` key -- but that is no longer what stops a dispatch, and pretending it is
+        // was the bug in this file's own docblock. `settleObligation` reads the decision from the
+        // store by plan hash, so a human who approved this exact plan at the CLI is honoured on
+        // the next tick. What this line does mean is that the POLLER never supplies one: every
+        // payment from here traces to a person at a separate command.
         now,
       },
     );

@@ -31,13 +31,35 @@ function loadDotEnv(): void {
 loadDotEnv();
 
 const args = new Map<string, string>();
-for (const a of process.argv.slice(2)) {
-  // Hyphens, and `--key value` as well as `--key=value`. The same pattern without the hyphen
-  // silently broke `--release-preflight` in `resolve.ts` -- the flag never matched, the command
-  // took the ordinary path and reported success. Nothing here has a hyphen yet; the point is
-  // that the next flag to grow one does not have to find that out the same way.
-  const m = /^--([a-zA-Z][a-zA-Z0-9-]*)(?:=(.*))?$/.exec(a);
-  if (m) args.set(m[1], m[2] ?? "true");
+{
+  // `--key=value` AND `--key value`, with hyphens in the key.
+  //
+  // The pattern without a hyphen silently broke `--release-preflight` in `scripts/resolve.ts`:
+  // the flag never matched, the command took the ordinary path and reported success. The pattern
+  // without a space form broke `npm run approve` in a worse way -- every flag became the string
+  // "true", `new Store("true")` created a settlement database in a file called `true`, and then
+  // it crashed converting "true" to a BigInt. That is the one command in this repository that
+  // can authorise money, invoked exactly as its own usage text and docs/RUNBOOK.md print it.
+  //
+  // One parser, in every script. `test/liveness-and-flags.test.ts` reads this pattern out of each
+  // script's source and runs every documented flag through it, so a third spelling has to fail a
+  // test rather than a user.
+  const argv = process.argv.slice(2);
+  for (let i = 0; i < argv.length; i++) {
+    const m = /^--([a-zA-Z][a-zA-Z0-9-]*)(?:=(.*))?$/.exec(argv[i] as string);
+    if (!m) continue;
+    if (m[2] !== undefined) {
+      args.set(m[1] as string, m[2]);
+      continue;
+    }
+    const next = argv[i + 1];
+    if (next !== undefined && !next.startsWith("--")) {
+      args.set(m[1] as string, next);
+      i += 1;
+    } else {
+      args.set(m[1] as string, "true");
+    }
+  }
 }
 
 const once = args.has("once");
@@ -68,8 +90,11 @@ const deps = {
   dbPath,
   // `expect` is forwarded, so a log that carries the reference but pays another token, payee,
   // amount or fee is skipped by the scan rather than returned as this invoice's payment.
-  findPayment: (reference: string, expect: PaymentExpectation) =>
-    findPaymentByReference(reference, { rpcUrl, expect }),
+  // The anchor reaches the scan. Without it `truncated` is true on every pass and the watcher can
+  // never tell an unpaid invoice from one it could not check -- which is the difference between
+  // offering a human an approval and refusing to.
+  findPayment: (reference: string, expect: PaymentExpectation, anchorBlock?: number) =>
+    findPaymentByReference(reference, { rpcUrl, expect, anchorBlock }),
 };
 
 function report(rows: readonly WatchRow[]): void {
