@@ -455,7 +455,27 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
         feeAddress: facts.feeAddress,
       };
 
-      let alreadyPaid = false;
+      // The already-paid gate, and the one place a boolean is the wrong shape.
+      //
+      // This check exists SPECIFICALLY to catch a payment this store did not make -- the
+      // reference index only ever sees obligations inside this database -- so it is the only
+      // thing between the system and paying an invoice somebody already settled elsewhere. It
+      // used to read `sighting?.found === true` and default to false on a throw, which collapsed
+      // a deliberate tri-state into a boolean and answered "not paid" for BOTH "I looked and
+      // nothing paid it" and "I could not look". chain.ts says so in as many words: `found:
+      // false` means "I could not tell", never "unpaid".
+      //
+      // Two ways an unknown reached it. A truncated scan: `truncated` is true whenever the floor
+      // sits above the invoice's anchor, and the anchor is absent for any invoice Request has not
+      // confirmed yet, and on the whole `verifyAgainstRequest: false` path. And a throw: the
+      // chain read raises on chain-id mismatch, on a dead endpoint, on an HTML error page, on a
+      // timeout -- none of which is evidence about the invoice.
+      //
+      // So the outcome is carried as a tri-state and an unknown REFUSES, before any write, at
+      // zero gas. Refusing to propose because the chain could not be read is recoverable in a
+      // way that paying an invoice twice is not, and it matches what request.ts already does one
+      // layer up: a gateway that did not answer is not an invoice that does not exist.
+      let paidCheck: "PAID" | "NOT_PAID" | "UNKNOWN" = "NOT_PAID";
       if (!ctx.store.sentAttemptFor(oid)) {
         try {
           // Every field, not the reference and not the amount alone. Nothing has been
@@ -465,14 +485,28 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
           // reference off-chain refuse payment of that invoice permanently. References are
           // public: they derive from data anchored openly on Sepolia.
           const sighting = await findPayment(facts.paymentReference, { expect: expectation, anchorBlock });
-          alreadyPaid = sighting?.found === true;
+          // Only an EXPLICIT `truncated: false` is conclusive. An absent flag is not a promise
+          // that the window was covered -- it is a reader that did not say, and the entire
+          // lesson of this file is that absent must not read as "no".
+          paidCheck = sighting?.found === true ? "PAID" : sighting?.truncated === false ? "NOT_PAID" : "UNKNOWN";
         } catch {
-          alreadyPaid = false;
+          paidCheck = "UNKNOWN";
         }
+      }
+      if (paidCheck === "UNKNOWN") {
+        return refusedBeforeWrite(
+          oid,
+          "SOURCE_UNVERIFIABLE",
+          "the chain could not be read far enough to establish whether this invoice has already " +
+            "been paid, so nothing is proposed on it. A scan that did not reach the invoice's own " +
+            "anchor block, or that could not run at all, is not evidence that the debt is unpaid. " +
+            "Retry when an endpoint answers, or once Request has confirmed the invoice so its " +
+            "anchor block bounds the search.",
+        );
       }
       const sourceFacts = buildSourceFacts({
         ...facts,
-        hasBeenPaid: alreadyPaid,
+        hasBeenPaid: paidCheck === "PAID",
         ...(anchorBlock === undefined ? {} : { anchorBlock }),
       });
 

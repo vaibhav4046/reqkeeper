@@ -103,7 +103,7 @@ function ctx(): McpContext {
   return {
     store: new Store(),
     provider: new FixtureProvider(),
-    findPayment: async () => ({ found: false }),
+    findPayment: async () => ({ found: false, truncated: false }),
     fetchInvoice: async () => INVOICE_AS_REQUEST_HOLDS_IT,
   } as McpContext;
 }

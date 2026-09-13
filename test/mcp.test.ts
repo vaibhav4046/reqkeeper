@@ -40,7 +40,10 @@ function ctx(over: Partial<McpContext> = {}): McpContext & { provider: FixturePr
     store: new Store(),
     provider,
     // No chain in tests. Nothing is paid until the fixture provider says so.
-    findPayment: async () => ({ found: false }),
+    // `truncated: false` because that is what a real chain read returns when it covered the
+    // window. A stub that omits it is claiming a conclusion the reader never made, and the
+    // already-paid gate now refuses on exactly that ambiguity.
+    findPayment: async () => ({ found: false, truncated: false }),
     // No gateway in tests either — but the verification still runs, against this.
     fetchInvoice: async () => INVOICE_AS_REQUEST_HOLDS_IT,
     ...over,
@@ -245,7 +248,7 @@ test("resolve_pending closes out a payment the indexer had not caught up with", 
     findPayment: async () =>
       indexed && c.provider.totalSends() > 0
         ? { found: true, txHash: `0x${"0".repeat(63)}1`, amount: ONE }
-        : { found: false },
+        : { found: false, truncated: false },
   };
 
   const proposal = await call(lagging, "propose_payment", INVOICE);
@@ -318,7 +321,7 @@ test("a settled obligation is never re-entered, and its state never regresses", 
     findPayment: async () =>
       c.provider.totalSends() > 0
         ? { found: true, txHash: `0x${"0".repeat(63)}1`, amount: ONE }
-        : { found: false },
+        : { found: false, truncated: false },
   };
   const first = await call(paid, "settle_obligation", INVOICE);
   assert.equal(first.json.state, "SETTLED");
