@@ -104,6 +104,31 @@ describe("the evidence artifacts keep their derivations honest", () => {
     }
   });
 
+  test("a spec naming a field no row carries cannot be evaluated, and does not count zero", () => {
+    // The tenth instance of this project's recurring defect, and it was inside the machinery built
+    // to catch it. `undefined === "SETTLED"` is false for every row, so a spec whose field had
+    // been renamed out from under it returned a count of ZERO — and agreed with any summary that
+    // happened to state zero, while reporting itself as recomputed.
+    const rows = [{ state: "SETTLED" }, { state: "SETTLED" }, { state: "OPEN" }];
+    assert.equal(
+      evaluateSpec({ count: true, where: { field: "finalState", equals: "SETTLED" } }, {}, rows),
+      null,
+      "a field nobody writes is 'I cannot tell', never a zero",
+    );
+    assert.equal(evaluateSpec({ sum: "noSuchNumber" }, {}, rows), null);
+    assert.equal(evaluateSpec({ distinct: "noSuchField" }, {}, rows), null);
+
+    // The field that IS there still evaluates, so this is not a blanket refusal.
+    assert.deepEqual(
+      evaluateSpec({ count: true, where: { field: "state", equals: "SETTLED" } }, {}, rows)?.value,
+      2,
+    );
+
+    // `present` is the exception: "how many rows carry this field" over rows that carry none is a
+    // real question whose answer is zero.
+    assert.equal(evaluateSpec({ count: true, where: { field: "absent", present: true } }, {}, rows)?.value, 0);
+  });
+
   test("the credential-free artifacts still declare their derivations", () => {
     // A generator that drops its totalsFrom block would leave verify:all reporting those numbers
     // as "not recomputed" — and still exiting 0, because absent coverage is reported rather than

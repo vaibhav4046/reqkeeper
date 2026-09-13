@@ -104,7 +104,27 @@ export function evaluateSpec(
   fallback: Array<Record<string, unknown>>,
 ): { value: number; how: string } | null {
   const preds = spec.where === undefined ? [] : Array.isArray(spec.where) ? spec.where : [spec.where];
-  const rows = arrayFor(doc, spec.from, fallback).filter((r) => preds.every((p) => matches(r, p)));
+  const all = arrayFor(doc, spec.from, fallback);
+
+  // A field no row carries is "I cannot evaluate this", never a count of zero.
+  //
+  // This counted `undefined === "SETTLED"` as false for every row and returned 0 — so a spec whose
+  // field had been renamed out from under it agreed with any summary that happened to state 0,
+  // and reported itself as recomputed. The tenth instance of the defect this whole file exists to
+  // catch, inside the file that catches it: a value meaning "I do not know" consumed as "no".
+  //
+  // `present` is the exception: asking whether a field is present over rows that lack it is a
+  // real question with the answer zero.
+  const named = [
+    ...preds.filter((pr) => pr.present !== true).flatMap((pr) => [pr.field, ...(pr.equalsField ? [pr.equalsField] : [])]),
+    ...(spec.sum ? [spec.sum] : []),
+    ...(spec.max ? [spec.max] : []),
+    ...(spec.distinct ? [spec.distinct] : []),
+  ];
+  for (const path of named) {
+    if (!all.some((r) => at(r, path) !== undefined)) return null;
+  }
+  const rows = all.filter((r) => preds.every((p) => matches(r, p)));
   const scope = preds.length === 0 ? describe(undefined, spec.from) : preds.map((p) => describe(p, spec.from)).join(" and ");
   const adjust = (v: number, how: string): { value: number; how: string } => {
     let value = v;

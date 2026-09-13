@@ -985,7 +985,14 @@ if (payeeSet.size === 0) {
       ])) as Array<{ data?: string; transactionHash?: string; topics?: string[] }>;
       for (const log of logs ?? []) {
         const fields = decodePaymentLogFields(log.data ?? "");
-        if (!fields || !payeeSet.has(fields.to.toLowerCase())) continue;
+        if (!fields) {
+          // A fee-proxy log carrying this event that will not decode is NOT "somebody else's
+          // payment". It is a log this tool could not read, sitting in the contract and event
+          // whose payments it is counting, and skipping it shrinks the denominator silently —
+          // which is the whole failure this sweep was built to stop. It stops the scan instead.
+          throw new Error(`a fee-proxy log in ${log.transactionHash ?? "an unnamed tx"} would not decode`);
+        }
+        if (!payeeSet.has(fields.to.toLowerCase())) continue;
         hits.set((log.transactionHash ?? "").toLowerCase(), (log.topics?.[1] ?? "").toLowerCase());
       }
     }
