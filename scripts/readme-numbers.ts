@@ -40,7 +40,12 @@ const verifiedAt = Date.parse(verify.generatedAt);
 for (const artifact of ["race.json", "race-live.json", "crash.json", "mcp-settlements.json"]) {
   const generatedAt = Date.parse(json(`docs/evidence/${artifact}`).generatedAt);
   if (generatedAt > verifiedAt) {
-    console.error(`docs/evidence/${artifact} is newer than verify.json — run \`npm run verify:all\``);
+    // Ordering, not corruption: this command reads facts out of verify.json, so an artifact
+    // regenerated after it would have its numbers read from a stale run. `verify:all` regenerates
+    // verify.json AND invokes this with --check, so it is the only entry point that cannot be out
+    // of order — which is why it is the one the README documents.
+    console.error(`docs/evidence/${artifact} is newer than verify.json, so the facts here would come from`);
+    console.error("a run that predates it. Run `npm run verify:all`, which regenerates both in the right order.");
     process.exit(1);
   }
 }

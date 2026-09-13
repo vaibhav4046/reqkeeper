@@ -37,7 +37,12 @@
        #476C74 keeps the --line-2 hue, clears 3:1 on all three surfaces (bg 3.51, panel
        3.34, panel-2 3.19), and stays far below --signal (12.87) so one send still reads as
        the loud series. One token for both the bar and its key, so the two cannot drift. */
-    --chart-zero: #476C74;
+    /* 4.31:1 on the darkest panel this sits on, against a 3:1 requirement (WCAG 1.4.11).
+       Its own token rather than --line-2, which also paints borders, chips, scrollbars and the
+       disabled Run button -- none of which need 3:1, and all of which would have been repainted
+       to fix a chart. Used by BOTH the bar and its legend key, so the key cannot come to
+       disagree with the thing it labels. */
+    --chart-zero: #55828B;
     --signal: #35F0A0;
     --amber: #F5C451;
     --alarm: #FF6B6B;
