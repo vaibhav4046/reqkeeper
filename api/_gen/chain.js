@@ -321,6 +321,9 @@ export async function findPaymentByReference(reference, opts = {}) {
      * return, with no error — so a single endpoint's silence is not evidence of absence.
      * Only re-scan on a negative, so the common path still costs one pass.
      */
+    // Counted, not assumed. An endpoint that threw told us nothing, and the difference between
+    // "they agreed" and "they never answered" is the difference between evidence and silence.
+    let negativeCorroborations = 0;
     for (const alt of rpcFallbacks()) {
         if (alt === rpcUrl)
             continue;
@@ -337,6 +340,8 @@ export async function findPaymentByReference(reference, opts = {}) {
                 // caller decides. It is enough to refuse a payment, not enough to declare one settled.
                 return { ...second, corroborated: false };
             }
+            // This endpoint answered, and answered no, over the same window.
+            negativeCorroborations++;
             // A negative from the fallback can still carry conflicts the primary never saw, and those
             // outrank a bare negative: a log that carries this reference and pays the wrong amount is
             // not "no payment", it is a question. Merged rather than dropped.
@@ -347,6 +352,7 @@ export async function findPaymentByReference(reference, opts = {}) {
                     ...(second.conflictKinds ? { conflictKinds: second.conflictKinds } : {}),
                     truncated,
                     scannedFrom: floor,
+                    negativeCorroborations,
                 };
             }
         }
@@ -356,7 +362,7 @@ export async function findPaymentByReference(reference, opts = {}) {
     }
     // The window is reported with the negative, not separately: a caller that has to ask a second
     // question to find out whether the first answer meant anything will eventually stop asking.
-    return { ...first, truncated, scannedFrom: floor };
+    return { ...first, truncated, scannedFrom: floor, negativeCorroborations };
 }
 async function scanForReference(reference, rpcUrl, head, floor, expect) {
     const topics = [EVENT_TOPIC, referenceTopic(reference)];

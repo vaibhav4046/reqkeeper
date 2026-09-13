@@ -47,6 +47,8 @@ export type ExclusionGap =
   | "NONCE_UNCHANGED"
   /** The nonce moved, but the scan stopped short of the block that proves it. */
   | "SCAN_BEHIND_PROOF"
+  /** Only one endpoint said no, and one endpoint's silence is not evidence of absence. */
+  | "NEGATIVE_UNCORROBORATED"
   /**
    * The payer is shared, so a moved nonce says nothing about THIS transaction's slot.
    * See `payerIsDedicated`.
@@ -236,6 +238,8 @@ export type OperatorRelease =
   | { readonly kind: "REFUSE_INCONCLUSIVE" }
   /** A log paying this invoice's token and payee disagreed about amount or fee. */
   | { readonly kind: "REFUSE_CONFLICT" }
+  /** Only one endpoint returned this negative, and one endpoint's silence is not absence. */
+  | { readonly kind: "REFUSE_UNCORROBORATED" }
   | { readonly kind: "REFUSE_STATE"; readonly state: string };
 
 export function operatorReleaseDecision(input: {
@@ -255,6 +259,7 @@ export function operatorReleaseDecision(input: {
     readonly truncated?: boolean;
     readonly txHash?: string;
     readonly conflictKinds?: readonly ConflictKind[];
+    readonly negativeCorroborations?: number;
   };
 }): OperatorRelease {
   // Only an obligation actually waiting on a dry run can be released this way. Anything else is
@@ -275,6 +280,14 @@ export function operatorReleaseDecision(input: {
   const conflict = conflictVerdict(input.sighting);
   if (conflict === "OURS_AND_WRONG") return { kind: "REFUSE_CONFLICT" };
   if (conflict === "UNKNOWN") return { kind: "REFUSE_INCONCLUSIVE" };
+
+  // One endpoint's "no" is not evidence of absence. publicnode has been observed returning an
+  // empty `eth_getLogs` for a fee-proxy log that demonstrably exists and that other endpoints
+  // return, with no error — which is why a negative is re-asked at all. What was never recorded
+  // is whether anyone ANSWERED: a reviewer showed that "the primary said no and two fallbacks
+  // agreed" and "the primary said no and both fallbacks' sockets were destroyed" came back
+  // byte-identical, so silence authorised a payment.
+  if ((input.sighting.negativeCorroborations ?? 0) < 1) return { kind: "REFUSE_UNCORROBORATED" };
 
   return { kind: "RELEASE" };
 }

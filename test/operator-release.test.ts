@@ -19,7 +19,7 @@ import { describe, test } from "node:test";
 
 import { operatorReleaseDecision } from "../src/exclusion.ts";
 
-const conclusiveNegative = { found: false, truncated: false, conflictKinds: [] };
+const conclusiveNegative = { found: false, truncated: false, conflictKinds: [], negativeCorroborations: 2 };
 
 describe("an operator may release a wedged preflight, but not over a payment", () => {
   test("a conclusive negative on a waiting obligation releases", () => {
@@ -33,7 +33,8 @@ describe("an operator may release a wedged preflight, but not over a payment", (
     const d = operatorReleaseDecision({
       state: "PAYMENT_PREFLIGHT",
       sighting: { found: true, truncated: false,
-    conflictKinds: [], txHash: "0xabc" },
+    conflictKinds: [],
+    negativeCorroborations: 2, txHash: "0xabc" },
     });
     assert.equal(d.kind, "REFUSE_PAID");
     assert.equal(d.kind === "REFUSE_PAID" ? d.txHash : undefined, "0xabc");
@@ -79,7 +80,7 @@ describe("an operator may release a wedged preflight, but not over a payment", (
     // invoice for ever. This is the same split the worker draws, from the same function.
     const d = operatorReleaseDecision({
       state: "PAYMENT_PREFLIGHT",
-      sighting: { found: false, truncated: false, conflictKinds: ["to", "amount"] },
+      sighting: { found: false, truncated: false, conflictKinds: ["to", "amount"], negativeCorroborations: 2 },
     });
     assert.equal(d.kind, "RELEASE");
   });
@@ -94,6 +95,28 @@ describe("an operator may release a wedged preflight, but not over a payment", (
       sighting: { found: false, truncated: false },
     });
     assert.equal(d.kind, "REFUSE_INCONCLUSIVE");
+  });
+
+  test("a negative only one endpoint returned is not evidence of absence", () => {
+    // publicnode has been observed returning an empty log query for a fee-proxy payment that
+    // demonstrably exists and that other endpoints return, with no error — which is why a negative
+    // is re-asked at all. What was never recorded is whether anyone ANSWERED: "two fallbacks
+    // agreed" and "both fallbacks' sockets were destroyed" came back byte-identical, so silence
+    // authorised a payment.
+    const d = operatorReleaseDecision({
+      state: "PAYMENT_PREFLIGHT",
+      sighting: { found: false, truncated: false, conflictKinds: [], negativeCorroborations: 0 },
+    });
+    assert.equal(d.kind, "REFUSE_UNCORROBORATED");
+
+    // And an absent count is not a zero that happens to be safe — it is a reader that did not say.
+    assert.equal(
+      operatorReleaseDecision({
+        state: "PAYMENT_PREFLIGHT",
+        sighting: { found: false, truncated: false, conflictKinds: [] },
+      }).kind,
+      "REFUSE_UNCORROBORATED",
+    );
   });
 
   test("an obligation that is not waiting on a dry run is refused by state", () => {

@@ -113,6 +113,7 @@ function honestScan(ceiling: number) {
     corroborated: true,
     truncated: false,
     conflictKinds: [],
+    negativeCorroborations: 2,
     scannedBlocks: 300_000,
     scannedFrom: ANCHOR_BLOCK,
     scannedTo: ceiling,

@@ -176,7 +176,7 @@ writes `docs/TRUTH.md`.
 - **46 of 46 payment references** re-derive from `last8Bytes(keccak256(lowercase(requestId + salt + paymentAddress)))`.
 - `npm run harness` — 26 fault-injection cases, asserted against a provider that counts physical
   sends rather than reporting a status string.
-- 511 unit tests, `tsc --noEmit` clean, CI runs typecheck, tests and a build with a clean-tree
+- 512 unit tests, `tsc --noEmit` clean, CI runs typecheck, tests and a build with a clean-tree
   check on every push.
 
 ## What is honest about it

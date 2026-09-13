@@ -45,6 +45,8 @@ export type ExclusionGap =
  | "NONCE_UNCHANGED"
 /** The nonce moved, but the scan stopped short of the block that proves it. */
  | "SCAN_BEHIND_PROOF"
+/** Only one endpoint said no, and one endpoint's silence is not evidence of absence. */
+ | "NEGATIVE_UNCORROBORATED"
 /**
  * The payer is shared, so a moved nonce says nothing about THIS transaction's slot.
  * See `payerIsDedicated`.
@@ -166,6 +168,10 @@ export type OperatorRelease = {
 /** A log paying this invoice's token and payee disagreed about amount or fee. */
  | {
     readonly kind: "REFUSE_CONFLICT";
+}
+/** Only one endpoint returned this negative, and one endpoint's silence is not absence. */
+ | {
+    readonly kind: "REFUSE_UNCORROBORATED";
 } | {
     readonly kind: "REFUSE_STATE";
     readonly state: string;
@@ -187,5 +193,6 @@ export declare function operatorReleaseDecision(input: {
         readonly truncated?: boolean;
         readonly txHash?: string;
         readonly conflictKinds?: readonly ConflictKind[];
+        readonly negativeCorroborations?: number;
     };
 }): OperatorRelease;

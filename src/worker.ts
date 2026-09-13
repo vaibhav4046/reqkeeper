@@ -335,6 +335,12 @@ async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Reso
     if (conflict === "UNKNOWN") {
       return { done: false, reason: "CONFLICTS_NOT_STATED", advanced };
     }
+    // How many OTHER endpoints answered this same negative. A scan that only one endpoint
+    // answered is one endpoint's word, and this module exists because one endpoint's word about
+    // an absent log has been wrong in production.
+    if ((sighting.negativeCorroborations ?? 0) < 1) {
+      return { done: false, reason: "NEGATIVE_UNCORROBORATED", advanced };
+    }
     if (conflict === "OURS_AND_WRONG") {
       move("EVIDENCE_CONFLICT");
       store.audit(job.obligationId, "worker", "PAYMENT_FIELDS_DISAGREE", {

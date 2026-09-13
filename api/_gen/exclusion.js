@@ -146,5 +146,13 @@ export function operatorReleaseDecision(input) {
         return { kind: "REFUSE_CONFLICT" };
     if (conflict === "UNKNOWN")
         return { kind: "REFUSE_INCONCLUSIVE" };
+    // One endpoint's "no" is not evidence of absence. publicnode has been observed returning an
+    // empty `eth_getLogs` for a fee-proxy log that demonstrably exists and that other endpoints
+    // return, with no error — which is why a negative is re-asked at all. What was never recorded
+    // is whether anyone ANSWERED: a reviewer showed that "the primary said no and two fallbacks
+    // agreed" and "the primary said no and both fallbacks' sockets were destroyed" came back
+    // byte-identical, so silence authorised a payment.
+    if ((input.sighting.negativeCorroborations ?? 0) < 1)
+        return { kind: "REFUSE_UNCORROBORATED" };
     return { kind: "RELEASE" };
 }

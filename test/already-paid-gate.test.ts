@@ -124,6 +124,7 @@ describe("a chain read that could not conclude is not evidence the invoice is un
       found: true,
       truncated: false,
     conflictKinds: [],
+    negativeCorroborations: 2,
       txHash: `0x${"cd".repeat(32)}`,
       amount: AMOUNT,
       to: PAYEE,
@@ -143,6 +144,7 @@ describe("a chain read that could not conclude is not evidence the invoice is un
       found: false,
       truncated: false,
     conflictKinds: [],
+    negativeCorroborations: 2,
       scannedBlocks: 450_000,
     }));
 

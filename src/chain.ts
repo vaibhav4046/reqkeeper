@@ -222,6 +222,20 @@ export interface PaymentSighting extends Partial<PaymentLogFields> {
    */
   readonly conflicts?: readonly string[];
   /** The same disagreements as `conflicts`, classified, for callers that must branch on them. */
+  /**
+   * How many OTHER endpoints independently returned this same negative over this window.
+   *
+   * A negative is the dangerous answer — it is the one that reads as "this invoice is unpaid, go
+   * ahead" — and publicnode has been observed returning an empty `eth_getLogs` for a fee-proxy log
+   * that demonstrably exists and that other endpoints return, with no error at all. So a negative
+   * is re-asked. What was never recorded is whether anyone ANSWERED: "the primary said no and two
+   * fallbacks agreed" and "the primary said no and both fallbacks' sockets were destroyed" came
+   * back byte-identical, so one endpoint's silence authorised a payment. That is the thing this
+   * module's own header says it exists to prevent.
+   *
+   * Absent means the reader did not say, which is not zero and is not a number of agreements.
+   */
+  readonly negativeCorroborations?: number;
   readonly conflictKinds?: readonly ConflictKind[];
   /**
    * The highest block this scan covered.
@@ -538,6 +552,9 @@ export async function findPaymentByReference(
    * return, with no error — so a single endpoint's silence is not evidence of absence.
    * Only re-scan on a negative, so the common path still costs one pass.
    */
+  // Counted, not assumed. An endpoint that threw told us nothing, and the difference between
+  // "they agreed" and "they never answered" is the difference between evidence and silence.
+  let negativeCorroborations = 0;
   for (const alt of rpcFallbacks()) {
     if (alt === rpcUrl) continue;
     try {
@@ -553,6 +570,8 @@ export async function findPaymentByReference(
         // caller decides. It is enough to refuse a payment, not enough to declare one settled.
         return { ...second, corroborated: false };
       }
+      // This endpoint answered, and answered no, over the same window.
+      negativeCorroborations++;
       // A negative from the fallback can still carry conflicts the primary never saw, and those
       // outrank a bare negative: a log that carries this reference and pays the wrong amount is
       // not "no payment", it is a question. Merged rather than dropped.
@@ -563,6 +582,7 @@ export async function findPaymentByReference(
           ...(second.conflictKinds ? { conflictKinds: second.conflictKinds } : {}),
           truncated,
           scannedFrom: floor,
+          negativeCorroborations,
         };
       }
     } catch {
@@ -571,7 +591,7 @@ export async function findPaymentByReference(
   }
   // The window is reported with the negative, not separately: a caller that has to ask a second
   // question to find out whether the first answer meant anything will eventually stop asking.
-  return { ...first, truncated, scannedFrom: floor };
+  return { ...first, truncated, scannedFrom: floor, negativeCorroborations };
 }
 
 interface RawLog {

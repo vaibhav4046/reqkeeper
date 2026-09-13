@@ -175,6 +175,13 @@ if (releaseTarget) {
       console.error("  plan nobody made, not an unpaid invoice. Investigate it before releasing anything.");
       process.exit(1);
       break;
+    case "REFUSE_UNCORROBORATED":
+      console.error("  REFUSED: only one endpoint returned this negative, and one endpoint's silence is not");
+      console.error("  evidence that nothing was paid — publicnode has been observed returning an empty log");
+      console.error("  query for a payment that demonstrably exists. Set REQKEEPER_RPC_ENDPOINTS to a");
+      console.error("  comma-separated list of endpoints that answer, and run this again.");
+      process.exit(1);
+      break;
     case "REFUSE_INCONCLUSIVE":
       console.error("  REFUSED: the scan could not reach this invoice's anchor, so it cannot say the invoice is unpaid.");
       console.error("  Set REQKEEPER_RPC_ENDPOINTS to endpoints that answer, and run this again.");

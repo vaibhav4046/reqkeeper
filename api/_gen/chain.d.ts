@@ -86,6 +86,20 @@ export interface PaymentSighting extends Partial<PaymentLogFields> {
      */
     readonly conflicts?: readonly string[];
     /** The same disagreements as `conflicts`, classified, for callers that must branch on them. */
+    /**
+     * How many OTHER endpoints independently returned this same negative over this window.
+     *
+     * A negative is the dangerous answer — it is the one that reads as "this invoice is unpaid, go
+     * ahead" — and publicnode has been observed returning an empty `eth_getLogs` for a fee-proxy log
+     * that demonstrably exists and that other endpoints return, with no error at all. So a negative
+     * is re-asked. What was never recorded is whether anyone ANSWERED: "the primary said no and two
+     * fallbacks agreed" and "the primary said no and both fallbacks' sockets were destroyed" came
+     * back byte-identical, so one endpoint's silence authorised a payment. That is the thing this
+     * module's own header says it exists to prevent.
+     *
+     * Absent means the reader did not say, which is not zero and is not a number of agreements.
+     */
+    readonly negativeCorroborations?: number;
     readonly conflictKinds?: readonly ConflictKind[];
     /**
      * The highest block this scan covered.
