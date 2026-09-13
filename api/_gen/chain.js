@@ -171,6 +171,59 @@ export function amountOrFeeConflict(sighting) {
     return wrongValue && !wrongCounterparty;
 }
 /**
+ * The single place a sighting becomes a decision.
+ *
+ * `requireCorroboration` is for callers deciding whether to treat a payment as THIS obligation's
+ * settlement, where an uncorroborated positive must not count. A caller merely reporting what is
+ * on chain passes false and gets the sighting's own word.
+ */
+export function verdictFor(sighting, opts = {}) {
+    if (!sighting) {
+        return { kind: "UNKNOWN", reason: "UNREADABLE", detail: "the chain could not be read" };
+    }
+    if (sighting.found === true) {
+        // A positive only one endpoint can see is not a positive. `corroborated: null` means no
+        // second endpoint answered at all, which is different from one disagreeing.
+        if (opts.requireCorroboration && sighting.corroborated === false) {
+            return {
+                kind: "UNKNOWN",
+                reason: "UNCORROBORATED",
+                detail: "a log was seen but no second endpoint confirmed it",
+            };
+        }
+        return {
+            kind: "PAID",
+            txHash: sighting.txHash ?? "",
+            ...(sighting.block === undefined ? {} : { block: sighting.block }),
+        };
+    }
+    // A negative that carries conflicts is not a negative. A log DID carry this reference and
+    // disagreed about the payment; discarding that is how an invoice already paid for a different
+    // fee got paid a second time.
+    if (sighting.conflicts && sighting.conflicts.length > 0) {
+        return {
+            kind: "UNKNOWN",
+            reason: "CONFLICTS",
+            detail: `a log carries this reference but disagrees: ${sighting.conflicts.join("; ")}`,
+            conflicts: sighting.conflicts,
+            ...(sighting.conflictKinds ? { conflictKinds: sighting.conflictKinds } : {}),
+        };
+    }
+    // Only an explicit `false` is a covered window. Absent means the reader did not say.
+    if (sighting.truncated !== false) {
+        return {
+            kind: "UNKNOWN",
+            reason: "TRUNCATED",
+            detail: "the scan did not cover the window a payment for this obligation could be in",
+        };
+    }
+    return {
+        kind: "NOT_PAID",
+        ...(sighting.scannedFrom === undefined ? {} : { scannedFrom: sighting.scannedFrom }),
+        ...(sighting.scannedTo === undefined ? {} : { scannedTo: sighting.scannedTo }),
+    };
+}
+/**
  * The five non-indexed words: tokenAddress, to, amount, feeAmount, feeAddress.
  *
  * There is no offset placeholder among them. An indexed dynamic parameter is removed from
@@ -258,12 +311,28 @@ export async function findPaymentByReference(reference, opts = {}) {
             continue;
         try {
             await ensureChain(alt);
+            // Conflicts from the FIRST scan survive the fallback. The re-scan exists because a public
+            // endpoint can return zero logs for a log that plainly exists -- measured against this
+            // project's own payment -- but rescuing `found` while dropping `conflicts` throws away the
+            // one field that says "a log carried this reference and paid something else".
             const second = await scanForReference(reference, alt, head, floor, opts.expect);
             if (second.found) {
                 // The primary said no and this endpoint says yes. The primary IS the second opinion
                 // here — it has already disagreed — so the sighting is reported uncorroborated and the
                 // caller decides. It is enough to refuse a payment, not enough to declare one settled.
                 return { ...second, corroborated: false };
+            }
+            // A negative from the fallback can still carry conflicts the primary never saw, and those
+            // outrank a bare negative: a log that carries this reference and pays the wrong amount is
+            // not "no payment", it is a question. Merged rather than dropped.
+            if (second.conflicts && second.conflicts.length > 0 && !(first.conflicts && first.conflicts.length > 0)) {
+                return {
+                    ...first,
+                    conflicts: second.conflicts,
+                    ...(second.conflictKinds ? { conflictKinds: second.conflictKinds } : {}),
+                    truncated,
+                    scannedFrom: floor,
+                };
             }
         }
         catch {

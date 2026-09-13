@@ -21,7 +21,7 @@
  * project exists to make impossible.
  */
 
-import { matchPaymentLog, type PaymentExpectation, type PaymentSighting } from "./chain.ts";
+import { matchPaymentLog, verdictFor, type PaymentExpectation, type PaymentSighting } from "./chain.ts";
 import { obligationId } from "./identity.ts";
 import type { State } from "./machine.ts";
 import { buildPolicy, buildSourceFacts, buildSteps, FAU, NAMESPACE, type InvoiceFacts } from "./plan.ts";
@@ -239,7 +239,14 @@ export async function watchPass(
   for (const inv of invoices) {
     const facts = factsFor(inv);
     const sighting = await deps.findPayment(inv.paymentReference, expectationFor(facts));
-    const paid = sighting.found ? paysThisInvoice(sighting, facts) : { ok: false, conflicts: [] };
+    // Through the shared verdict, with corroboration required. Reading `sighting.found` directly
+    // meant a positive only ONE endpoint could see -- the primary having already said no --
+    // marked the invoice PAID_ON_CHAIN and suppressed it from ever being proposed again.
+    // chain.ts reports that case as uncorroborated precisely so it cannot settle anything, and
+    // this was the caller treating it as settlement. Suppressing a real debt for ever is the
+    // mirror of paying it twice, and just as permanent.
+    const verdict = verdictFor(sighting, { requireCorroboration: true });
+    const paid = verdict.kind === "PAID" ? paysThisInvoice(sighting, facts) : { ok: false, conflicts: [] };
     if (paid.ok) {
       // Paid means there is no obligation to propose, so nothing is imported and no
       // obligation row is created. Proposing here would be harmless — the policy gate would

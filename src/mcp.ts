@@ -17,7 +17,7 @@
  * An agent calling it before a human has decided gets `AWAITING_APPROVAL` and no send.
  */
 
-import { currentBlock, findPaymentByReference, type PaymentExpectation } from "./chain.ts";
+import { currentBlock, findPaymentByReference, verdictFor, type PaymentExpectation } from "./chain.ts";
 import { assertReferenceMatches, fetchInvoice } from "./request.ts";
 import { obligationId } from "./identity.ts";
 import type { ExecutionProvider } from "./provider.ts";
@@ -485,10 +485,12 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
           // reference off-chain refuse payment of that invoice permanently. References are
           // public: they derive from data anchored openly on Sepolia.
           const sighting = await findPayment(facts.paymentReference, { expect: expectation, anchorBlock });
-          // Only an EXPLICIT `truncated: false` is conclusive. An absent flag is not a promise
-          // that the window was covered -- it is a reader that did not say, and the entire
-          // lesson of this file is that absent must not read as "no".
-          paidCheck = sighting?.found === true ? "PAID" : sighting?.truncated === false ? "NOT_PAID" : "UNKNOWN";
+          // One shared verdict, not a local recombination of `found` and `truncated`. The
+          // hand-rolled version here dropped `conflicts`, and a log paying this invoice's payee
+          // and token for a DIFFERENT fee -- a fee the paying client chooses -- came back as
+          // "not paid", so an invoice the chain already showed settled was paid again.
+          const verdict = verdictFor(sighting, { requireCorroboration: true });
+          paidCheck = verdict.kind === "PAID" ? "PAID" : verdict.kind === "NOT_PAID" ? "NOT_PAID" : "UNKNOWN";
         } catch {
           paidCheck = "UNKNOWN";
         }

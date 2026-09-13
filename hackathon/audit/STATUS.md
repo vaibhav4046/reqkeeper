@@ -6,7 +6,7 @@ still breaks or is unfinished?" and the last section is the source for that answ
 
 Reproduce any probe with `node --experimental-strip-types hackathon/audit/probes/<probe>.ts`.
 
-Gates: `npm test` 410 pass / 0 fail / 82 suites · `npm run typecheck` clean · `npm run build`
+Gates: `npm test` 422 pass / 0 fail / 84 suites · `npm run typecheck` clean · `npm run build`
 clean, and reproducible from a bare clone: the page is a function of the committed evidence and
 reads no environment at all, so `git diff --exit-code web api/_gen` passes on a machine that has
 never had a `.env` · `npm run gate-a` 10 ok / 0 failed / 2 blocked here, 9 ok / 0 failed / 3

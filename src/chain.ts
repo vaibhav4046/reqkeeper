@@ -286,6 +286,108 @@ export function amountOrFeeConflict(sighting: { readonly conflictKinds?: readonl
 }
 
 /**
+ * What a chain read ESTABLISHED about a payment, as three mutually exclusive answers.
+ *
+ * `PaymentSighting` carries `found`, `truncated`, `corroborated` and `conflicts`, and five call
+ * sites combined them five different ways. Every duplicate-payment finding in this project has
+ * been one of those combinations getting it wrong, in one direction or the other:
+ *
+ *   - `found === true` alone → a forged log paying somebody else read as settlement
+ *   - `found === false` alone → "I could not look" read as "not paid"
+ *   - `truncated !== true` → an absent flag read as a conclusive scan
+ *   - `found || truncated !== true` → the permissive inverse, on the hosted surface
+ *   - conflicts discarded → a log paying the wrong amount read as no payment at all
+ *
+ * The dry-run path had exactly this shape and was fixed by giving it a union with an exhaustive
+ * switch (`SimulateOutcome`). That fix was never carried across to the chain-read path, which is
+ * where the remaining instances have all been found. This is the same repair, applied here.
+ *
+ * The three answers are deliberately NOT "paid / not paid / error". `UNKNOWN` is the normal
+ * outcome of reading a distributed system through a public endpoint, and it is the one every
+ * caller has to handle explicitly, because it is the one that has been silently collapsing into
+ * "no".
+ */
+export type PaymentVerdict =
+  /** A log corroborated against what this obligation actually owes. Safe to treat as settlement. */
+  | { readonly kind: "PAID"; readonly txHash: string; readonly block?: number }
+  /**
+   * The scan covered the whole window in which a payment could exist and there was none. Only
+   * ever returned when the caller supplied the floor that makes coverage provable.
+   */
+  | { readonly kind: "NOT_PAID"; readonly scannedFrom?: number; readonly scannedTo?: number }
+  /**
+   * Anything else, and there are more ways to land here than to land anywhere else: a scan that
+   * ran out of window, a log that carries the reference but disagrees about the payment, a
+   * positive no second endpoint would corroborate, or a read that could not be made at all.
+   *
+   * Never a licence to send, and never a licence to release an obligation either.
+   */
+  | {
+      readonly kind: "UNKNOWN";
+      readonly reason: "TRUNCATED" | "CONFLICTS" | "UNCORROBORATED" | "UNREADABLE";
+      readonly detail: string;
+      readonly conflicts?: readonly string[];
+      readonly conflictKinds?: readonly ConflictKind[];
+    };
+
+/**
+ * The single place a sighting becomes a decision.
+ *
+ * `requireCorroboration` is for callers deciding whether to treat a payment as THIS obligation's
+ * settlement, where an uncorroborated positive must not count. A caller merely reporting what is
+ * on chain passes false and gets the sighting's own word.
+ */
+export function verdictFor(
+  sighting: PaymentSighting | null | undefined,
+  opts: { readonly requireCorroboration?: boolean } = {},
+): PaymentVerdict {
+  if (!sighting) {
+    return { kind: "UNKNOWN", reason: "UNREADABLE", detail: "the chain could not be read" };
+  }
+  if (sighting.found === true) {
+    // A positive only one endpoint can see is not a positive. `corroborated: null` means no
+    // second endpoint answered at all, which is different from one disagreeing.
+    if (opts.requireCorroboration && sighting.corroborated === false) {
+      return {
+        kind: "UNKNOWN",
+        reason: "UNCORROBORATED",
+        detail: "a log was seen but no second endpoint confirmed it",
+      };
+    }
+    return {
+      kind: "PAID",
+      txHash: sighting.txHash ?? "",
+      ...(sighting.block === undefined ? {} : { block: sighting.block }),
+    };
+  }
+  // A negative that carries conflicts is not a negative. A log DID carry this reference and
+  // disagreed about the payment; discarding that is how an invoice already paid for a different
+  // fee got paid a second time.
+  if (sighting.conflicts && sighting.conflicts.length > 0) {
+    return {
+      kind: "UNKNOWN",
+      reason: "CONFLICTS",
+      detail: `a log carries this reference but disagrees: ${sighting.conflicts.join("; ")}`,
+      conflicts: sighting.conflicts,
+      ...(sighting.conflictKinds ? { conflictKinds: sighting.conflictKinds } : {}),
+    };
+  }
+  // Only an explicit `false` is a covered window. Absent means the reader did not say.
+  if (sighting.truncated !== false) {
+    return {
+      kind: "UNKNOWN",
+      reason: "TRUNCATED",
+      detail: "the scan did not cover the window a payment for this obligation could be in",
+    };
+  }
+  return {
+    kind: "NOT_PAID",
+    ...(sighting.scannedFrom === undefined ? {} : { scannedFrom: sighting.scannedFrom }),
+    ...(sighting.scannedTo === undefined ? {} : { scannedTo: sighting.scannedTo }),
+  };
+}
+
+/**
  * The five non-indexed words: tokenAddress, to, amount, feeAmount, feeAddress.
  *
  * There is no offset placeholder among them. An indexed dynamic parameter is removed from
@@ -398,12 +500,28 @@ export async function findPaymentByReference(
     if (alt === rpcUrl) continue;
     try {
       await ensureChain(alt);
+      // Conflicts from the FIRST scan survive the fallback. The re-scan exists because a public
+      // endpoint can return zero logs for a log that plainly exists -- measured against this
+      // project's own payment -- but rescuing `found` while dropping `conflicts` throws away the
+      // one field that says "a log carried this reference and paid something else".
       const second = await scanForReference(reference, alt, head, floor, opts.expect);
       if (second.found) {
         // The primary said no and this endpoint says yes. The primary IS the second opinion
         // here — it has already disagreed — so the sighting is reported uncorroborated and the
         // caller decides. It is enough to refuse a payment, not enough to declare one settled.
         return { ...second, corroborated: false };
+      }
+      // A negative from the fallback can still carry conflicts the primary never saw, and those
+      // outrank a bare negative: a log that carries this reference and pays the wrong amount is
+      // not "no payment", it is a question. Merged rather than dropped.
+      if (second.conflicts && second.conflicts.length > 0 && !(first.conflicts && first.conflicts.length > 0)) {
+        return {
+          ...first,
+          conflicts: second.conflicts,
+          ...(second.conflictKinds ? { conflictKinds: second.conflictKinds } : {}),
+          truncated,
+          scannedFrom: floor,
+        };
       }
     } catch {
       // an unreachable endpoint is not a second opinion; keep asking

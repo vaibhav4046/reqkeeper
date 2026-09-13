@@ -12,7 +12,7 @@
  * business calling.
  */
 
-import { findPaymentByReference, type PaymentExpectation } from "./chain.ts";
+import { findPaymentByReference, verdictFor, type PaymentExpectation } from "./chain.ts";
 import { EVIDENCE } from "./evidence.generated.ts";
 
 export const PUBLIC_SERVER_INFO = { name: "reqkeeper-public", version: "0.1.0" };
@@ -238,7 +238,10 @@ async function callTool(name: string, args: Record<string, unknown>, deps: Publi
         conflicts: conflicts.length > 0 ? conflicts : null,
         scannedBlocks: seen.scannedBlocks ?? null,
         // A miss inside a bounded window is "not seen recently", never "unpaid".
-        conclusive: seen.found || seen.truncated !== true,
+        // Was `seen.found || seen.truncated !== true`, which called a scan conclusive whenever
+        // the flag was merely absent -- the permissive inverse of the rule the money paths
+        // use. One shared verdict answers it the same way everywhere.
+        conclusive: verdictFor(seen).kind !== "UNKNOWN",
         caveat: !seen.found
           ? seen.truncated
             ? "not seen in the scanned window; this is not proof the invoice is unpaid"

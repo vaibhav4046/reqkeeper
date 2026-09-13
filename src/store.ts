@@ -607,11 +607,17 @@ export class Store {
       // Absence becomes evidence only once enough chain has passed since the send could have
       // happened, and this is the block that "since" is measured from. Stored here because it
       // has to be captured before the call, in the same transaction as the state and the job.
-      if (preflightBlock !== undefined) {
-        this.#db
-          .prepare("UPDATE obligations SET preflight_block = ? WHERE obligation_id = ?")
-          .run(preflightBlock, obligationId);
-      }
+      //
+      // Written UNCONDITIONALLY, including as NULL. Guarding this on `!== undefined` was a
+      // duplicate-payment path: an obligation that preflighted once at a high block and later
+      // preflighted again when the head read failed kept the FIRST preflight's block. A stale
+      // block is always low enough that the age gate opens immediately, so "we could not read
+      // the head, so the observer stays inconclusive" was true only for an obligation's very
+      // first preflight. Every retry after a failed head read released on a number that
+      // described a different attempt.
+      this.#db
+        .prepare("UPDATE obligations SET preflight_block = ? WHERE obligation_id = ?")
+        .run(preflightBlock ?? null, obligationId);
       this.#setStateInTx(obligationId, "PAYMENT_PREFLIGHT", now);
       this.#db
         .prepare(

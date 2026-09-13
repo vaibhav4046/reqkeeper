@@ -11,7 +11,7 @@
  * anyone can reproduce without a credential. That is the half of the system a stranger has any
  * business calling.
  */
-import { findPaymentByReference } from "./chain.js";
+import { findPaymentByReference, verdictFor } from "./chain.js";
 import { EVIDENCE } from "./evidence.generated.js";
 export const PUBLIC_SERVER_INFO = { name: "reqkeeper-public", version: "0.1.0" };
 export const PUBLIC_TOOLS = [
@@ -218,7 +218,10 @@ async function callTool(name, args, deps) {
                 conflicts: conflicts.length > 0 ? conflicts : null,
                 scannedBlocks: seen.scannedBlocks ?? null,
                 // A miss inside a bounded window is "not seen recently", never "unpaid".
-                conclusive: seen.found || seen.truncated !== true,
+                // Was `seen.found || seen.truncated !== true`, which called a scan conclusive whenever
+                // the flag was merely absent -- the permissive inverse of the rule the money paths
+                // use. One shared verdict answers it the same way everywhere.
+                conclusive: verdictFor(seen).kind !== "UNKNOWN",
                 caveat: !seen.found
                     ? seen.truncated
                         ? "not seen in the scanned window; this is not proof the invoice is unpaid"

@@ -131,6 +131,68 @@ export declare function amountOrFeeConflict(sighting: {
     readonly conflictKinds?: readonly ConflictKind[];
 }): boolean;
 /**
+ * What a chain read ESTABLISHED about a payment, as three mutually exclusive answers.
+ *
+ * `PaymentSighting` carries `found`, `truncated`, `corroborated` and `conflicts`, and five call
+ * sites combined them five different ways. Every duplicate-payment finding in this project has
+ * been one of those combinations getting it wrong, in one direction or the other:
+ *
+ *   - `found === true` alone → a forged log paying somebody else read as settlement
+ *   - `found === false` alone → "I could not look" read as "not paid"
+ *   - `truncated !== true` → an absent flag read as a conclusive scan
+ *   - `found || truncated !== true` → the permissive inverse, on the hosted surface
+ *   - conflicts discarded → a log paying the wrong amount read as no payment at all
+ *
+ * The dry-run path had exactly this shape and was fixed by giving it a union with an exhaustive
+ * switch (`SimulateOutcome`). That fix was never carried across to the chain-read path, which is
+ * where the remaining instances have all been found. This is the same repair, applied here.
+ *
+ * The three answers are deliberately NOT "paid / not paid / error". `UNKNOWN` is the normal
+ * outcome of reading a distributed system through a public endpoint, and it is the one every
+ * caller has to handle explicitly, because it is the one that has been silently collapsing into
+ * "no".
+ */
+export type PaymentVerdict = 
+/** A log corroborated against what this obligation actually owes. Safe to treat as settlement. */
+{
+    readonly kind: "PAID";
+    readonly txHash: string;
+    readonly block?: number;
+}
+/**
+ * The scan covered the whole window in which a payment could exist and there was none. Only
+ * ever returned when the caller supplied the floor that makes coverage provable.
+ */
+ | {
+    readonly kind: "NOT_PAID";
+    readonly scannedFrom?: number;
+    readonly scannedTo?: number;
+}
+/**
+ * Anything else, and there are more ways to land here than to land anywhere else: a scan that
+ * ran out of window, a log that carries the reference but disagrees about the payment, a
+ * positive no second endpoint would corroborate, or a read that could not be made at all.
+ *
+ * Never a licence to send, and never a licence to release an obligation either.
+ */
+ | {
+    readonly kind: "UNKNOWN";
+    readonly reason: "TRUNCATED" | "CONFLICTS" | "UNCORROBORATED" | "UNREADABLE";
+    readonly detail: string;
+    readonly conflicts?: readonly string[];
+    readonly conflictKinds?: readonly ConflictKind[];
+};
+/**
+ * The single place a sighting becomes a decision.
+ *
+ * `requireCorroboration` is for callers deciding whether to treat a payment as THIS obligation's
+ * settlement, where an uncorroborated positive must not count. A caller merely reporting what is
+ * on chain passes false and gets the sighting's own word.
+ */
+export declare function verdictFor(sighting: PaymentSighting | null | undefined, opts?: {
+    readonly requireCorroboration?: boolean;
+}): PaymentVerdict;
+/**
  * The five non-indexed words: tokenAddress, to, amount, feeAmount, feeAddress.
  *
  * There is no offset placeholder among them. An indexed dynamic parameter is removed from
