@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-13T05:45:20.011Z",
+  "generatedAt": "2026-09-13T06:07:45.510Z",
   "mode": "FIXTURE",
   "chainId": 11155111,
   "note": "One obligation and one database per checkpoint. The child is killed with a real SIGKILL at the named moment, then the outbox is drained by the shipped worker and the agent retries settlement with the real provider. Sends are counted by an out-of-process KeeperHub fixture, so the count survives the kill. End states differ by checkpoint and that is the result, not a defect; `duplicate` is the cell that must be false on every row.",
@@ -166,7 +166,7 @@
       "executionId": "exec-fixture-1",
       "transactionHash": "0x0001abababababababababababababababababababababababababababababab",
       "blockNumber": 11699994,
-      "reference": "0x00001a0994c6d580",
+      "reference": "0x00001a09960f5410",
       "to": "0xc43d766cb7c48b9b198db87441b97c09e81717a1",
       "amount": "1000000000000000000"
     },
@@ -174,7 +174,7 @@
       "executionId": "exec-fixture-2",
       "transactionHash": "0x0002abababababababababababababababababababababababababababababab",
       "blockNumber": 11699994,
-      "reference": "0x00001a0994c6e441",
+      "reference": "0x00001a09960f6341",
       "to": "0xc43d766cb7c48b9b198db87441b97c09e81717a1",
       "amount": "1000000000000000000"
     },
@@ -182,7 +182,7 @@
       "executionId": "exec-fixture-3",
       "transactionHash": "0x0003abababababababababababababababababababababababababababababab",
       "blockNumber": 11699994,
-      "reference": "0x00001a0994c6f102",
+      "reference": "0x00001a09960f6fd2",
       "to": "0xc43d766cb7c48b9b198db87441b97c09e81717a1",
       "amount": "1000000000000000000"
     },
@@ -190,7 +190,7 @@
       "executionId": "exec-fixture-4",
       "transactionHash": "0x0004abababababababababababababababababababababababababababababab",
       "blockNumber": 11699994,
-      "reference": "0x00001a0994c71bc5",
+      "reference": "0x00001a09960f9955",
       "to": "0xc43d766cb7c48b9b198db87441b97c09e81717a1",
       "amount": "1000000000000000000"
     },
@@ -198,7 +198,7 @@
       "executionId": "exec-fixture-5",
       "transactionHash": "0x0005abababababababababababababababababababababababababababababab",
       "blockNumber": 11699994,
-      "reference": "0x00001a0994c72ae6",
+      "reference": "0x00001a09960fa8f6",
       "to": "0xc43d766cb7c48b9b198db87441b97c09e81717a1",
       "amount": "1000000000000000000"
     },
@@ -206,7 +206,7 @@
       "executionId": "exec-fixture-6",
       "transactionHash": "0x0006abababababababababababababababababababababababababababababab",
       "blockNumber": 11699994,
-      "reference": "0x00001a0994c73a27",
+      "reference": "0x00001a09960fb867",
       "to": "0xc43d766cb7c48b9b198db87441b97c09e81717a1",
       "amount": "1000000000000000000"
     },
@@ -214,7 +214,7 @@
       "executionId": "exec-fixture-7",
       "transactionHash": "0x0007abababababababababababababababababababababababababababababab",
       "blockNumber": 11699994,
-      "reference": "0x00001a0994c74918",
+      "reference": "0x00001a09960fc768",
       "to": "0xc43d766cb7c48b9b198db87441b97c09e81717a1",
       "amount": "1000000000000000000"
     }

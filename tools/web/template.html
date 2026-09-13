@@ -174,9 +174,16 @@
   .bars i { flex: 1 1 0; min-width: 0; background: var(--signal); animation: grow .4s steps(5,end) both; transform-origin: bottom; }
   .bars i.zero { background: var(--chart-zero); }
   @keyframes grow { from { transform: scaleY(0) } to { transform: scaleY(1) } }
+  /* The key is drawn, not typed. It used to be a U+25AE glyph coloured with the series
+     colour, which a contrast checker reads as 10px text and holds to 4.5:1, and which a
+     screen reader reads aloud as "black vertical rectangle" before the label. A bare swatch
+     is what it always was: a graphical object, judged at 3:1, with the words beside it
+     carrying the meaning. It takes its colour from the same token as the bar it labels, so
+     the key cannot disagree with the chart. */
   .legend { display: flex; gap: 16px; margin-top: 10px; color: var(--faint); font-size: 10px; }
-  .legend b { color: var(--signal); font-weight: 400; }
-  .legend em { color: var(--chart-zero); font-style: normal; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 9px; height: 9px; flex: none; background: var(--signal); }
+  .legend i.zero { background: var(--chart-zero); }
 
   /* --- table ------------------------------------------------------------- */
   .toolbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
@@ -391,8 +398,8 @@
           <div class="body">
             <div class="bars" id="bars"></div>
             <div class="legend">
-              <span><b>&#9646;</b> one send</span>
-              <span><em>&#9646;</em> zero sends</span>
+              <span><i></i>one send</span>
+              <span><i class="zero"></i>zero sends</span>
             </div>
           </div>
         </div>

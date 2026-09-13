@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-09-13T05:44:13.378Z",
+  "generatedAt": "2026-09-13T06:06:31.423Z",
   "mode": "FIXTURE",
   "chainId": 11155111,
   "note": "N independent processes, one SQLite file, one Request obligation, released from a barrier. The fixture counts every non-simulate POST regardless of idempotency key, and reports the deduplicated ones separately, so the result cannot be KeeperHub's cache taking the credit.",
   "workers": 50,
   "invoice": {
-    "requestId": "01race1a0994b5786",
-    "reference": "0x000001a0994b5786",
+    "requestId": "01race1a0995fc85f",
+    "reference": "0x000001a0995fc85f",
     "payee": "0xc43d766CB7c48B9B198db87441b97c09e81717A1",
     "anchorBlock": 0
   },
@@ -70,16 +70,16 @@
       "label": "first wave",
       "workers": [
         {
-          "pid": 14460,
+          "pid": 20428,
           "startOrder": 0,
-          "state": "SETTLED",
-          "refusal": null,
-          "providerWriteIssued": true,
-          "txHash": "0x0001abababababababababababababababababababababababababababababab",
-          "planHash": "7f0e94cb6388b2dff04bc96ad784eb6cbf6398b7ad1d91c385a301158bd34acb"
+          "state": "OBLIGATION_RESERVED",
+          "refusal": "REFERENCE_ALREADY_CLAIMED",
+          "providerWriteIssued": false,
+          "txHash": null,
+          "planHash": null
         },
         {
-          "pid": 21196,
+          "pid": 3952,
           "startOrder": 1,
           "state": "PAYMENT_PREFLIGHT",
           "refusal": "ALREADY_DISPATCHED",
@@ -88,16 +88,16 @@
           "planHash": null
         },
         {
-          "pid": 19664,
+          "pid": 15292,
           "startOrder": 2,
-          "state": "OBLIGATION_RESERVED",
-          "refusal": "REFERENCE_ALREADY_CLAIMED",
+          "state": "PAYMENT_PREFLIGHT",
+          "refusal": "ALREADY_DISPATCHED",
           "providerWriteIssued": false,
           "txHash": null,
           "planHash": null
         },
         {
-          "pid": 24044,
+          "pid": 17744,
           "startOrder": 3,
           "state": "PAYMENT_PREFLIGHT",
           "refusal": "ALREADY_DISPATCHED",
@@ -106,7 +106,7 @@
           "planHash": null
         },
         {
-          "pid": 11112,
+          "pid": 24048,
           "startOrder": 4,
           "state": "PAYMENT_PREFLIGHT",
           "refusal": "ALREADY_DISPATCHED",
@@ -115,34 +115,34 @@
           "planHash": null
         },
         {
-          "pid": 1908,
+          "pid": 876,
           "startOrder": 5,
-          "state": "PAYMENT_PREFLIGHT",
-          "refusal": "ALREADY_DISPATCHED",
+          "state": "OBLIGATION_RESERVED",
+          "refusal": "REFERENCE_ALREADY_CLAIMED",
           "providerWriteIssued": false,
           "txHash": null,
           "planHash": null
         },
         {
-          "pid": 21964,
+          "pid": 19400,
           "startOrder": 6,
-          "state": "PAYMENT_PREFLIGHT",
-          "refusal": "ALREADY_DISPATCHED",
-          "providerWriteIssued": false,
-          "txHash": null,
-          "planHash": null
+          "state": "SETTLED",
+          "refusal": null,
+          "providerWriteIssued": true,
+          "txHash": "0x0001abababababababababababababababababababababababababababababab",
+          "planHash": "814c122f8c2ca180270e0cdff5ef555449db713e8172a75814cceaa4624d57b0"
         },
         {
-          "pid": 9480,
+          "pid": 20380,
           "startOrder": 7,
-          "state": "PAYMENT_PREFLIGHT",
-          "refusal": "ALREADY_DISPATCHED",
+          "state": "OBLIGATION_RESERVED",
+          "refusal": "REFERENCE_ALREADY_CLAIMED",
           "providerWriteIssued": false,
           "txHash": null,
           "planHash": null
         },
         {
-          "pid": 3212,
+          "pid": 9304,
           "startOrder": 8,
           "state": "PAYMENT_PREFLIGHT",
           "refusal": "ALREADY_DISPATCHED",
@@ -151,7 +151,7 @@
           "planHash": null
         },
         {
-          "pid": 9644,
+          "pid": 23760,
           "startOrder": 9,
           "state": "PAYMENT_PREFLIGHT",
           "refusal": "ALREADY_DISPATCHED",
@@ -160,7 +160,7 @@
           "planHash": null
         },
         {
-          "pid": 18704,
+          "pid": 23152,
           "startOrder": 10,
           "state": "PAYMENT_PREFLIGHT",
           "refusal": "ALREADY_DISPATCHED",
@@ -169,7 +169,7 @@
           "planHash": null
         },
         {
-          "pid": 15552,
+          "pid": 21204,
           "startOrder": 11,
           "state": "PAYMENT_PREFLIGHT",
           "refusal": "ALREADY_DISPATCHED",
@@ -178,7 +178,7 @@
           "planHash": null
         },
         {
-          "pid": 11764,
+          "pid": 15224,
           "startOrder": 12,
           "state": "PAYMENT_PREFLIGHT",
           "refusal": "ALREADY_DISPATCHED",
@@ -187,7 +187,7 @@
           "planHash": null
         },
         {
-          "pid": 22040,
+          "pid": 19596,
           "startOrder": 13,
           "state": "PAYMENT_PREFLIGHT",
           "refusal": "ALREADY_DISPATCHED",
@@ -196,25 +196,25 @@
           "planHash": null
         },
         {
-          "pid": 13880,
+          "pid": 23324,
           "startOrder": 14,
-          "state": "PAYMENT_PREFLIGHT",
-          "refusal": "ALREADY_DISPATCHED",
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
           "providerWriteIssued": false,
           "txHash": null,
           "planHash": null
         },
         {
-          "pid": 24508,
+          "pid": 22908,
           "startOrder": 15,
-          "state": "PAYMENT_PREFLIGHT",
-          "refusal": "ALREADY_DISPATCHED",
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
           "providerWriteIssued": false,
           "txHash": null,
           "planHash": null
         },
         {
-          "pid": 11640,
+          "pid": 21004,
           "startOrder": 16,
           "state": "PAYMENT_PREFLIGHT",
           "refusal": "ALREADY_DISPATCHED",
@@ -223,16 +223,16 @@
           "planHash": null
         },
         {
-          "pid": 22000,
+          "pid": 19720,
           "startOrder": 17,
-          "state": "PAYMENT_PREFLIGHT",
-          "refusal": "ALREADY_DISPATCHED",
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
           "providerWriteIssued": false,
           "txHash": null,
           "planHash": null
         },
         {
-          "pid": 7420,
+          "pid": 13568,
           "startOrder": 18,
           "state": "PAYMENT_PREFLIGHT",
           "refusal": "ALREADY_DISPATCHED",
@@ -241,7 +241,7 @@
           "planHash": null
         },
         {
-          "pid": 21632,
+          "pid": 24236,
           "startOrder": 19,
           "state": "PAYMENT_PREFLIGHT",
           "refusal": "ALREADY_DISPATCHED",
@@ -250,16 +250,16 @@
           "planHash": null
         },
         {
-          "pid": 18472,
+          "pid": 19200,
           "startOrder": 20,
-          "state": "PAYMENT_PREFLIGHT",
-          "refusal": "ALREADY_DISPATCHED",
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
           "providerWriteIssued": false,
           "txHash": null,
           "planHash": null
         },
         {
-          "pid": 7776,
+          "pid": 3052,
           "startOrder": 21,
           "state": "PAYMENT_PREFLIGHT",
           "refusal": "ALREADY_DISPATCHED",
@@ -268,7 +268,7 @@
           "planHash": null
         },
         {
-          "pid": 12456,
+          "pid": 14548,
           "startOrder": 22,
           "state": "PAYMENT_PREFLIGHT",
           "refusal": "ALREADY_DISPATCHED",
@@ -277,16 +277,16 @@
           "planHash": null
         },
         {
-          "pid": 2312,
+          "pid": 22804,
           "startOrder": 23,
-          "state": "PAYMENT_PREFLIGHT",
-          "refusal": "ALREADY_DISPATCHED",
+          "state": "SETTLED",
+          "refusal": "ALREADY_SETTLED",
           "providerWriteIssued": false,
           "txHash": null,
           "planHash": null
         },
         {
-          "pid": 12648,
+          "pid": 20708,
           "startOrder": 24,
           "state": "PAYMENT_PREFLIGHT",
           "refusal": "ALREADY_DISPATCHED",
@@ -295,7 +295,7 @@
           "planHash": null
         },
         {
-          "pid": 14380,
+          "pid": 6368,
           "startOrder": 25,
           "state": "PAYMENT_PREFLIGHT",
           "refusal": "ALREADY_DISPATCHED",
@@ -304,7 +304,7 @@
           "planHash": null
         },
         {
-          "pid": 22412,
+          "pid": 19580,
           "startOrder": 26,
           "state": "PAYMENT_PREFLIGHT",
           "refusal": "ALREADY_DISPATCHED",
@@ -313,7 +313,7 @@
           "planHash": null
         },
         {
-          "pid": 5248,
+          "pid": 1752,
           "startOrder": 27,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -322,7 +322,7 @@
           "planHash": null
         },
         {
-          "pid": 16464,
+          "pid": 21704,
           "startOrder": 28,
           "state": "PAYMENT_PREFLIGHT",
           "refusal": "ALREADY_DISPATCHED",
@@ -331,16 +331,16 @@
           "planHash": null
         },
         {
-          "pid": 15232,
+          "pid": 20832,
           "startOrder": 29,
-          "state": "PAYMENT_PREFLIGHT",
+          "state": "PAYMENT_EXECUTING",
           "refusal": "ALREADY_DISPATCHED",
           "providerWriteIssued": false,
           "txHash": null,
           "planHash": null
         },
         {
-          "pid": 24276,
+          "pid": 8156,
           "startOrder": 30,
           "state": "PAYMENT_PREFLIGHT",
           "refusal": "ALREADY_DISPATCHED",
@@ -349,7 +349,7 @@
           "planHash": null
         },
         {
-          "pid": 22484,
+          "pid": 24060,
           "startOrder": 31,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -358,16 +358,16 @@
           "planHash": null
         },
         {
-          "pid": 22664,
+          "pid": 1268,
           "startOrder": 32,
-          "state": "SETTLED",
-          "refusal": "ALREADY_SETTLED",
+          "state": "PAYMENT_PREFLIGHT",
+          "refusal": "ALREADY_DISPATCHED",
           "providerWriteIssued": false,
           "txHash": null,
           "planHash": null
         },
         {
-          "pid": 21732,
+          "pid": 16292,
           "startOrder": 33,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -376,34 +376,34 @@
           "planHash": null
         },
         {
-          "pid": 17780,
+          "pid": 23972,
           "startOrder": 34,
-          "state": "SETTLED",
-          "refusal": "ALREADY_SETTLED",
+          "state": "PAYMENT_PREFLIGHT",
+          "refusal": "ALREADY_DISPATCHED",
           "providerWriteIssued": false,
           "txHash": null,
           "planHash": null
         },
         {
-          "pid": 3428,
+          "pid": 19432,
           "startOrder": 35,
-          "state": "SETTLED",
-          "refusal": "ALREADY_SETTLED",
+          "state": "PAYMENT_PREFLIGHT",
+          "refusal": "ALREADY_DISPATCHED",
           "providerWriteIssued": false,
           "txHash": null,
           "planHash": null
         },
         {
-          "pid": 15404,
+          "pid": 2424,
           "startOrder": 36,
-          "state": "SETTLED",
-          "refusal": "ALREADY_SETTLED",
+          "state": "PAYMENT_PREFLIGHT",
+          "refusal": "ALREADY_DISPATCHED",
           "providerWriteIssued": false,
           "txHash": null,
           "planHash": null
         },
         {
-          "pid": 8748,
+          "pid": 4468,
           "startOrder": 37,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -412,7 +412,7 @@
           "planHash": null
         },
         {
-          "pid": 5396,
+          "pid": 11384,
           "startOrder": 38,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -421,7 +421,7 @@
           "planHash": null
         },
         {
-          "pid": 4192,
+          "pid": 4916,
           "startOrder": 39,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -430,16 +430,16 @@
           "planHash": null
         },
         {
-          "pid": 5388,
+          "pid": 6672,
           "startOrder": 40,
-          "state": "SETTLED",
-          "refusal": "ALREADY_SETTLED",
+          "state": "PAYMENT_PREFLIGHT",
+          "refusal": "ALREADY_DISPATCHED",
           "providerWriteIssued": false,
           "txHash": null,
           "planHash": null
         },
         {
-          "pid": 15576,
+          "pid": 23280,
           "startOrder": 41,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -448,7 +448,7 @@
           "planHash": null
         },
         {
-          "pid": 12156,
+          "pid": 23812,
           "startOrder": 42,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -457,7 +457,7 @@
           "planHash": null
         },
         {
-          "pid": 23460,
+          "pid": 15076,
           "startOrder": 43,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -466,7 +466,7 @@
           "planHash": null
         },
         {
-          "pid": 24444,
+          "pid": 14384,
           "startOrder": 44,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -475,7 +475,7 @@
           "planHash": null
         },
         {
-          "pid": 23368,
+          "pid": 5820,
           "startOrder": 45,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -484,7 +484,7 @@
           "planHash": null
         },
         {
-          "pid": 6688,
+          "pid": 2448,
           "startOrder": 46,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -493,7 +493,7 @@
           "planHash": null
         },
         {
-          "pid": 20408,
+          "pid": 20352,
           "startOrder": 47,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -502,7 +502,7 @@
           "planHash": null
         },
         {
-          "pid": 23652,
+          "pid": 21456,
           "startOrder": 48,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -511,7 +511,7 @@
           "planHash": null
         },
         {
-          "pid": 19376,
+          "pid": 7788,
           "startOrder": 49,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -532,7 +532,7 @@
       "label": "second wave",
       "workers": [
         {
-          "pid": 3872,
+          "pid": 1480,
           "startOrder": 0,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -541,7 +541,7 @@
           "planHash": null
         },
         {
-          "pid": 19236,
+          "pid": 19604,
           "startOrder": 1,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -550,7 +550,7 @@
           "planHash": null
         },
         {
-          "pid": 24216,
+          "pid": 9380,
           "startOrder": 2,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -559,7 +559,7 @@
           "planHash": null
         },
         {
-          "pid": 9468,
+          "pid": 6688,
           "startOrder": 3,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -568,7 +568,7 @@
           "planHash": null
         },
         {
-          "pid": 22336,
+          "pid": 18848,
           "startOrder": 4,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -577,7 +577,7 @@
           "planHash": null
         },
         {
-          "pid": 2060,
+          "pid": 21308,
           "startOrder": 5,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -586,7 +586,7 @@
           "planHash": null
         },
         {
-          "pid": 4816,
+          "pid": 22468,
           "startOrder": 6,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -595,7 +595,7 @@
           "planHash": null
         },
         {
-          "pid": 23036,
+          "pid": 24124,
           "startOrder": 7,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -604,7 +604,7 @@
           "planHash": null
         },
         {
-          "pid": 23752,
+          "pid": 2408,
           "startOrder": 8,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -613,7 +613,7 @@
           "planHash": null
         },
         {
-          "pid": 9380,
+          "pid": 7596,
           "startOrder": 9,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -622,7 +622,7 @@
           "planHash": null
         },
         {
-          "pid": 21184,
+          "pid": 18660,
           "startOrder": 10,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -631,7 +631,7 @@
           "planHash": null
         },
         {
-          "pid": 11776,
+          "pid": 20996,
           "startOrder": 11,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -640,7 +640,7 @@
           "planHash": null
         },
         {
-          "pid": 22548,
+          "pid": 13716,
           "startOrder": 12,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -649,7 +649,7 @@
           "planHash": null
         },
         {
-          "pid": 13240,
+          "pid": 22144,
           "startOrder": 13,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -658,7 +658,7 @@
           "planHash": null
         },
         {
-          "pid": 15568,
+          "pid": 22432,
           "startOrder": 14,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -667,7 +667,7 @@
           "planHash": null
         },
         {
-          "pid": 23160,
+          "pid": 7648,
           "startOrder": 15,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -676,7 +676,7 @@
           "planHash": null
         },
         {
-          "pid": 21500,
+          "pid": 24052,
           "startOrder": 16,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -685,7 +685,7 @@
           "planHash": null
         },
         {
-          "pid": 22740,
+          "pid": 21972,
           "startOrder": 17,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -694,7 +694,7 @@
           "planHash": null
         },
         {
-          "pid": 1360,
+          "pid": 10904,
           "startOrder": 18,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -703,7 +703,7 @@
           "planHash": null
         },
         {
-          "pid": 11692,
+          "pid": 16612,
           "startOrder": 19,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -712,7 +712,7 @@
           "planHash": null
         },
         {
-          "pid": 11340,
+          "pid": 2516,
           "startOrder": 20,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -721,7 +721,7 @@
           "planHash": null
         },
         {
-          "pid": 10796,
+          "pid": 6496,
           "startOrder": 21,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -730,7 +730,7 @@
           "planHash": null
         },
         {
-          "pid": 15084,
+          "pid": 22840,
           "startOrder": 22,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -739,7 +739,7 @@
           "planHash": null
         },
         {
-          "pid": 11716,
+          "pid": 3476,
           "startOrder": 23,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -748,7 +748,7 @@
           "planHash": null
         },
         {
-          "pid": 22364,
+          "pid": 9716,
           "startOrder": 24,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -757,7 +757,7 @@
           "planHash": null
         },
         {
-          "pid": 3204,
+          "pid": 18760,
           "startOrder": 25,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -766,7 +766,7 @@
           "planHash": null
         },
         {
-          "pid": 4388,
+          "pid": 4776,
           "startOrder": 26,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -775,7 +775,7 @@
           "planHash": null
         },
         {
-          "pid": 10516,
+          "pid": 21904,
           "startOrder": 27,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -784,7 +784,7 @@
           "planHash": null
         },
         {
-          "pid": 3036,
+          "pid": 18892,
           "startOrder": 28,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -793,7 +793,7 @@
           "planHash": null
         },
         {
-          "pid": 13812,
+          "pid": 21964,
           "startOrder": 29,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -802,7 +802,7 @@
           "planHash": null
         },
         {
-          "pid": 12704,
+          "pid": 23092,
           "startOrder": 30,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -811,7 +811,7 @@
           "planHash": null
         },
         {
-          "pid": 13756,
+          "pid": 24104,
           "startOrder": 31,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -820,7 +820,7 @@
           "planHash": null
         },
         {
-          "pid": 16136,
+          "pid": 12936,
           "startOrder": 32,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -829,7 +829,7 @@
           "planHash": null
         },
         {
-          "pid": 23784,
+          "pid": 7200,
           "startOrder": 33,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -838,7 +838,7 @@
           "planHash": null
         },
         {
-          "pid": 18256,
+          "pid": 24536,
           "startOrder": 34,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -847,7 +847,7 @@
           "planHash": null
         },
         {
-          "pid": 10860,
+          "pid": 22616,
           "startOrder": 35,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -856,7 +856,7 @@
           "planHash": null
         },
         {
-          "pid": 9388,
+          "pid": 19168,
           "startOrder": 36,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -865,7 +865,7 @@
           "planHash": null
         },
         {
-          "pid": 2464,
+          "pid": 21548,
           "startOrder": 37,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -874,7 +874,7 @@
           "planHash": null
         },
         {
-          "pid": 22984,
+          "pid": 23336,
           "startOrder": 38,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -883,7 +883,7 @@
           "planHash": null
         },
         {
-          "pid": 876,
+          "pid": 16096,
           "startOrder": 39,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -892,7 +892,7 @@
           "planHash": null
         },
         {
-          "pid": 22220,
+          "pid": 4812,
           "startOrder": 40,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -901,7 +901,7 @@
           "planHash": null
         },
         {
-          "pid": 22344,
+          "pid": 22580,
           "startOrder": 41,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -910,7 +910,7 @@
           "planHash": null
         },
         {
-          "pid": 7852,
+          "pid": 22600,
           "startOrder": 42,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -919,7 +919,7 @@
           "planHash": null
         },
         {
-          "pid": 20532,
+          "pid": 19196,
           "startOrder": 43,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -928,7 +928,7 @@
           "planHash": null
         },
         {
-          "pid": 24396,
+          "pid": 15732,
           "startOrder": 44,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -937,7 +937,7 @@
           "planHash": null
         },
         {
-          "pid": 23620,
+          "pid": 22272,
           "startOrder": 45,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -946,7 +946,7 @@
           "planHash": null
         },
         {
-          "pid": 24316,
+          "pid": 19132,
           "startOrder": 46,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -955,7 +955,7 @@
           "planHash": null
         },
         {
-          "pid": 23864,
+          "pid": 22868,
           "startOrder": 47,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -964,7 +964,7 @@
           "planHash": null
         },
         {
-          "pid": 13388,
+          "pid": 2640,
           "startOrder": 48,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -973,7 +973,7 @@
           "planHash": null
         },
         {
-          "pid": 12548,
+          "pid": 1708,
           "startOrder": 49,
           "state": "SETTLED",
           "refusal": "ALREADY_SETTLED",
@@ -996,7 +996,7 @@
       "executionId": "exec-fixture-1",
       "transactionHash": "0x0001abababababababababababababababababababababababababababababab",
       "blockNumber": 11699994,
-      "reference": "0x000001a0994b5786",
+      "reference": "0x000001a0995fc85f",
       "to": "0xc43d766cb7c48b9b198db87441b97c09e81717a1",
       "amount": "1000000000000000000"
     }

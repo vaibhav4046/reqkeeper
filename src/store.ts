@@ -189,6 +189,28 @@ CREATE TABLE IF NOT EXISTS audit (
  * the table, and rebuilding a table that holds payment history is not something to do on
  * process start.
  */
+/**
+ * `ALTER TABLE … ADD COLUMN`, safe when several processes open the same file at once.
+ *
+ * Every migration here reads `PRAGMA table_info` and then adds what is missing, which is two
+ * statements with a gap between them. Under the race harness — fifty real processes opening one
+ * database — two of them see the same column missing and both try to add it, and SQLite fails the
+ * loser with `duplicate column name`. That surfaced as a worker THROWING instead of refusing,
+ * which the race check counts as an undesigned outcome, and it did: CI caught it on one run in
+ * three.
+ *
+ * SQLite has no `ADD COLUMN IF NOT EXISTS`, so the race is resolved where it happens: the loser
+ * reads the error it was going to get anyway and carries on with the column the winner added.
+ * Any other failure still propagates — a migration that cannot run is not something to swallow.
+ */
+export function addColumnIfMissing(db: DatabaseSync, table: string, column: string, definition: string): void {
+  try {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  } catch (e) {
+    if (!/duplicate column name/i.test(e instanceof Error ? e.message : String(e))) throw e;
+  }
+}
+
 function migrate(db: DatabaseSync): void {
   // The audit chain links each row to the one before it, which catches an edited row and a
   // removed row in the middle. It cannot catch TRUNCATION: delete the last three rows and what
@@ -220,7 +242,7 @@ function migrate(db: DatabaseSync): void {
   const auditColumns = db.prepare("PRAGMA table_info(audit)").all() as Array<{ name: string }>;
   for (const col of ["prev_hash", "row_hash"]) {
     if (!auditColumns.some((c) => c.name === col)) {
-      db.exec(`ALTER TABLE audit ADD COLUMN ${col} TEXT NOT NULL DEFAULT ''`);
+      addColumnIfMissing(db, "audit", col, "TEXT NOT NULL DEFAULT ''");
     }
   }
 
@@ -230,7 +252,7 @@ function migrate(db: DatabaseSync): void {
     // "no payment anywhere" only means "nothing was broadcast" once the chain has moved past the
     // moment a broadcast could have happened. Rows written before this column existed carry NULL,
     // which reads as "unknown" and keeps the observer inconclusive -- the fail-safe direction.
-    db.exec("ALTER TABLE obligations ADD COLUMN preflight_block INTEGER");
+    addColumnIfMissing(db, "obligations", "preflight_block", "INTEGER");
   }
   if (!columns.some((c) => c.name === "anchor_block")) {
     // The invoice's storage block, which is the floor that makes a negative conclusive: a payment
@@ -246,19 +268,19 @@ function migrate(db: DatabaseSync): void {
     //
     // Its own column, immutable once set, so it can be learned whenever the gateway is next
     // reachable without touching the approved bytes.
-    db.exec("ALTER TABLE obligations ADD COLUMN anchor_block INTEGER");
+    addColumnIfMissing(db, "obligations", "anchor_block", "INTEGER");
   }
   if (!columns.some((c) => c.name === "preflight_nonce")) {
     // The payer's mined nonce as the dry run was about to be made. The block above bounds how
     // far the chain has moved; this bounds whether the leak can still be mined at all, which is
     // the question that actually decides whether a second payment is safe. See src/exclusion.ts.
-    db.exec("ALTER TABLE obligations ADD COLUMN preflight_nonce INTEGER");
+    addColumnIfMissing(db, "obligations", "preflight_nonce", "INTEGER");
   }
   if (!columns.some((c) => c.name === "payment_reference")) {
     // The debt's real identity. A request id is free text supplied by the caller, so two
     // spellings of one invoice used to mint two obligations and pay it twice. The reference
     // is derived from the invoice by Request and is what the chain actually carries.
-    db.exec("ALTER TABLE obligations ADD COLUMN payment_reference TEXT");
+    addColumnIfMissing(db, "obligations", "payment_reference", "TEXT");
   }
   // Existing rows predate canonicalisation, so fold them to one spelling before the unique
   // index is asked to hold. Rows that are not hex are left alone rather than mangled.
