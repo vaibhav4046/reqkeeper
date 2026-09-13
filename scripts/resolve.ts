@@ -155,6 +155,60 @@ if (!payer) {
   console.log("        by hand with --release-preflight <obligationId> --operator <who>.");
 }
 
+// ---- clearing a conflicting transaction a human has actually read ------------
+//
+//   npm run resolve -- --review-conflict=<obligationId> --tx=<hash,...> --operator=<who>
+//
+// A log carrying this invoice's public payment reference, paying its payee in its token for one
+// wei, reads as our own money moving in a plan nobody made -- and `propose_payment` refuses on it.
+// Correctly, the first time. References are public, so a stranger can emit that log for the price
+// of one transfer, and with no way to clear it the debt could never be proposed again: a permanent
+// wedge, bought for one wei, at the gate every payment starts from.
+//
+// So a person reads the transaction and names it back, one hash at a time. It goes in the audit
+// trail beside their name, and the trail is hash-chained, so it cannot be added retroactively. A
+// blanket flag is deliberately not offered: it would wave away the leaked dry run that this
+// refusal also exists to catch.
+if (args.has("review-conflict")) {
+  const target = args.get("review-conflict");
+  const hashes = (args.get("tx") ?? "")
+    .split(",")
+    .map((h) => h.trim().toLowerCase())
+    .filter((h) => h.length > 0);
+  const operator = args.get("operator") ?? "";
+  if (!target || target === "true" || hashes.length === 0 || !operator || operator === "true") {
+    console.error("\n  usage: npm run resolve -- --review-conflict=<obligationId> --tx=<hash,...> --operator=<who>\n");
+    store.close();
+    process.exit(2);
+  }
+  const malformed = hashes.filter((h) => !/^0x[0-9a-f]{64}$/.test(h));
+  if (malformed.length > 0) {
+    console.error(`\n  REFUSED: not transaction hashes: ${malformed.join(", ")}`);
+    console.error("  A review is only as good as the transaction it names, so a hash this tool cannot");
+    console.error("  recognise is refused rather than recorded.\n");
+    store.close();
+    process.exit(2);
+  }
+  // A request id works as well as an obligation id, because the operator is most likely reading
+  // this hash off a refusal for an invoice that has never been imported -- `propose_payment`
+  // refuses this one BEFORE any write, by design, so there is usually no row to look up.
+  const oid = /^[0-9a-f]{64}$/.test(target) ? target : obligationId(NAMESPACE, target);
+  const known = store.getObligation(oid);
+  store.recordConflictReview(oid, hashes, operator);
+  if (!known) {
+    console.log("\n  note: no obligation is imported under this id yet. That is the normal case here:");
+    console.log("        a proposal refused before any write leaves no row, which is the point of");
+    console.log("        refusing before the write. The review is recorded and will be found when a");
+    console.log("        proposal for this obligation is next made.");
+  }
+  console.log(`\n  recorded ${hashes.length} reviewed transaction(s) for ${oid.slice(0, 14)}…, by ${operator}:`);
+  for (const h of hashes) console.log(`    ${h}`);
+  console.log("\n  A proposal for this obligation will no longer refuse on those logs. Any OTHER");
+  console.log("  conflicting log, including one that appears later, still refuses.\n");
+  store.close();
+  process.exit(0);
+}
+
 // ---- what is actually open ---------------------------------------------------
 //
 //   npm run resolve -- --status

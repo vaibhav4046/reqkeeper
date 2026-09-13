@@ -593,6 +593,8 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
       // other tri-state exists because absence must not read as permission.
       let paidCheck: "PAID" | "NOT_PAID" | "UNKNOWN" | "CONFLICT" | "NOT_APPLICABLE" = "NOT_APPLICABLE";
       let conflictDetail = "";
+      /** Conflicting transactions no human has cleared. Named in the refusal, with the command. */
+      let unreviewedConflicts: string[] = [];
       let unknownReason: string | undefined;
       let unknownDetail: string | undefined;
       let unknownTxHash: string | undefined;
@@ -624,13 +626,34 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
             case "NOT_PAID":
               paidCheck = "NOT_PAID";
               break;
-            case "CONFLICT_OURS":
+            case "CONFLICT_OURS": {
               // Not "unknown". A log paid this invoice's payee, in its token, under its
               // reference, for a different amount or fee. That is our own money already moving
               // in a plan nobody made, and proposing over the top of it would bury the question.
+              //
+              // Unless a human has already read that transaction and said otherwise. References
+              // are public: a stranger can emit such a log for the price of one transfer, and with
+              // no door here the debt could never be proposed again -- a permanent wedge at the
+              // gate every payment starts from, bought for one wei. The door is a person at a
+              // separate command (`npm run resolve -- --review-conflict`), never an argument to
+              // this tool, and it clears transactions one hash at a time.
+              const reviewed = ctx.store.reviewedConflicts(oid);
+              const named = (verdict.conflictingLogs ?? []).map((log) => log.txHash);
+              const seenHashes = named.filter((h): h is string => typeof h === "string");
+              unreviewedConflicts = seenHashes.filter((h) => !reviewed.has(h.toLowerCase()));
+              // A conflicting log the scan could not name cannot be reviewed by hash, so it can
+              // never be cleared: it stays a refusal rather than becoming one a human can wave
+              // away by clearing the OTHER transactions in the same scan.
+              const unnamed = named.some((h) => typeof h !== "string");
+              if (seenHashes.length > 0 && unreviewedConflicts.length === 0 && !unnamed) {
+                ctx.store.audit(oid, "system", "CONFLICT_CLEARED_BY_REVIEW", { transactions: seenHashes });
+                paidCheck = "NOT_PAID";
+                break;
+              }
               paidCheck = "CONFLICT";
               conflictDetail = verdict.detail;
               break;
+            }
             case "UNKNOWN":
               paidCheck = "UNKNOWN";
               // WHY, and what was seen. `verdictFor` computes a precise reason and a detail that
@@ -653,13 +676,23 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
         }
       }
       if (paidCheck === "CONFLICT") {
+        // Named, with the way out. A refusal nobody can act on is a wedge with better manners: the
+        // transactions to read are listed, and the command that records having read them comes
+        // back with those hashes already in it.
+        const door =
+          unreviewedConflicts.length > 0
+            ? ` The transaction(s) to read: ${unreviewedConflicts.join(", ")}. If a person reads them and they ` +
+              "do NOT settle this invoice, that is recorded at a separate command, by hash: " +
+              `npm run resolve -- --review-conflict=${oid} --tx=${unreviewedConflicts.join(",")} --operator=<who>`
+            : " The scan named no transaction for the conflicting log, so there is nothing to review by " +
+              "hash. Re-run against an endpoint that returns transaction hashes with its logs.";
         return refusedBeforeWrite(
           oid,
           "SOURCE_UNVERIFIABLE",
           `${conflictDetail} Nobody else has a reason to pay this payee, in this token, under ` +
             "this reference, so that log is either this invoice being settled outside this system " +
             "or our own funds moving in a plan nobody made. Either way it is a question for a " +
-            "human, and nothing is proposed until it is answered.",
+            `human, and nothing is proposed until it is answered.${door}`,
         );
       }
       if (paidCheck === "UNKNOWN") {

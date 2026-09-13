@@ -481,6 +481,42 @@ export class Store {
   }
 
   /**
+   * A human has read a conflicting transaction and says it does not settle this obligation.
+   *
+   * Recorded in the audit trail rather than in a column, for the property the trail already has:
+   * the rows are hash-chained, so an acknowledgement cannot be slipped in afterwards without
+   * breaking the chain, and the operator's name sits beside every hash they cleared.
+   *
+   * Why it exists: a log carrying a public payment reference, paying this invoice's payee in its
+   * token for one wei, reads as CONFLICT_OURS -- our own money apparently moving in a plan nobody
+   * made -- and the propose path refuses on it. Correctly, the first time. But references ARE
+   * public, so anyone can emit that log for the price of one transfer, and with no way to clear it
+   * the debt could never be proposed again. `scripts/resolve.ts --release-preflight` had a door for
+   * exactly this (`--reviewed-tx`); the gate every payment starts from had none.
+   */
+  recordConflictReview(
+    obligationId: string,
+    txHashes: readonly string[],
+    operator: string,
+    now = Date.now(),
+  ): void {
+    for (const txHash of txHashes) {
+      this.audit(obligationId, operator, "CONFLICT_REVIEWED", { txHash: txHash.toLowerCase() }, now);
+    }
+  }
+
+  /** Every conflicting transaction a human has cleared for this obligation, lower-cased. */
+  reviewedConflicts(obligationId: string): Set<string> {
+    const out = new Set<string>();
+    for (const row of this.auditTrail(obligationId)) {
+      if (row.action !== "CONFLICT_REVIEWED") continue;
+      const txHash = (row.detail as { txHash?: unknown })?.txHash;
+      if (typeof txHash === "string") out.add(txHash.toLowerCase());
+    }
+    return out;
+  }
+
+  /**
    * The trail as an auditor needs it: who, what, when, and the detail.
    *
    * It used to return only actor and action, so the first question anyone asks of an approval

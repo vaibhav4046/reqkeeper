@@ -440,6 +440,23 @@ There is deliberately no blanket "ignore conflicts" flag: it would wave away the
 this refusal exists to catch, which looks exactly the same from here and is this deployment's own
 money.
 
+#### The same junk log, at the gate every payment starts from
+
+```bash
+npm run resolve -- --review-conflict=<obligationId or requestId> --tx=0xabc…,0xdef… --operator=alice@finance
+```
+
+`--reviewed-tx` above clears a conflicting log at the *release* door. The same log also reaches
+`propose_payment`, which is where every payment begins — and that gate had no door at all, so one
+junk transfer carrying a public reference refused a real debt for ever, and the only advice the
+refusal could offer was to look at a transaction and then do nothing with what you saw.
+
+This records that a person read those transactions and they do not settle this invoice. It works
+before anything is imported, which is the normal case: a proposal refused before any write leaves
+no row behind, on purpose. Each hash goes into the hash-chained audit trail beside your name; a
+conflicting log the scan could not name by hash cannot be cleared at all, and any OTHER conflicting
+log — including one that appears afterwards — still refuses.
+
 #### When the leak cannot be excluded
 
 ```bash
