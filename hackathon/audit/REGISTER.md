@@ -6,7 +6,7 @@ never on "code was edited" or "CI passed".
 States: **OPEN** · **FIXED_UNVERIFIED** (fixed, not yet retested by someone other than the fixer) ·
 **VERIFIED** (independently retested) · **ACCEPTED_LIMITATION** · **BLOCKED**.
 
-Baseline for this register: `d0e81a8`. CI green. Deployed revision byte-identical to HEAD
+Baseline for this register: `b4d3227`. CI green. Deployed revision byte-identical to HEAD
 (`2cc5c9ec85de1f1210618029eb0bb1bc`).
 
 ## Coverage, with denominators
@@ -18,7 +18,7 @@ Baseline for this register: `d0e81a8`. CI green. Deployed revision byte-identica
 | Rows in the hosted verifier's table | **86** (41 payments) | was 83 / 38; the three MCP settlements were absent |
 | Crash checkpoints exercised | **9 / 9** | 0 duplicates |
 | Refusal harness cases | **26 / 26** | 18 / 24 refusals before any provider write |
-| Unit tests | **394**, 78 suites | 0 failures |
+| Unit tests | **403**, 80 suites | 0 failures |
 | Settlements carrying a KeeperHub execution id | **3 / 41** | REST rows predate the field. Not fixable without re-running live; see KH-EXEC |
 | Duplicate-payment paths found by red team | 4 found, 4 fixed | rounds 1, 2, 3 |
 
@@ -36,6 +36,26 @@ instances in rounds 1-3; the class was closed by changing the contract.
 
 `SimulateOutcome` = `WOULD_SUCCEED | WOULD_REVERT | EXECUTED | UNKNOWN`, one classifier shared by
 both transports, exhaustive switch in `settleOrRefuse`.
+
+### And then two more, in a different gate
+
+A read-only audit swept for the class OUTSIDE the dry-run path and found it twice more, adjacent,
+in the already-paid check — the one guard against paying an invoice somebody settled elsewhere,
+since the reference index only ever sees obligations inside this database.
+
+| ID | Sev | Reproduction | Root cause | Fix | Mutation proof | State |
+|---|---|---|---|---|---|---|
+| F1 | high | propose against an invoice Request has not anchored yet, with a payment already on chain | `alreadyPaid = sighting?.found === true` dropped `truncated`, so "I could not look" read as "not paid" | b4d3227 | restore the collapse → 3 tests red | FIXED_UNVERIFIED |
+| F2 | high | propose while no RPC endpoint answers | `catch { alreadyPaid = false }` — a dead endpoint read as evidence the invoice is unpaid | b4d3227 | same | FIXED_UNVERIFIED |
+
+Now `PAID | NOT_PAID | UNKNOWN`, and an unknown refuses before any write at zero gas
+(`SOURCE_UNVERIFIABLE`). Only an explicit `truncated: false` counts as conclusive: an absent flag
+is a reader that did not say, and absent reading as "no" is the whole defect. Three test stubs
+were understating what a real read returns and now model the contract.
+
+**Six instances across four sweeps.** The refactor closed the class on the path it covered and did
+not generalise to a second gate, which is worth stating plainly rather than claiming the class is
+shut.
 
 ## Liveness — the other half of the same repair
 
@@ -63,6 +83,19 @@ Safety without liveness is not recovery. Never paying twice is not the whole pro
 | RQ-FALSE | major | README misstated Request's own detection ("sums events carrying it") | **VERIFIED** — judge checked the new wording clause-by-clause against installed SDK source |
 | RQ-ATTRIB | major | four surfaces credited Request with what ReqKeeper verified itself | FIXED_UNVERIFIED |
 | RQ-2 | major | watcher accepted a reference-only sighting as proof of payment (grief: suppress a real invoice) | FIXED_UNVERIFIED |
+
+## Process incident, recorded because it nearly cost work
+
+A review agent was told to restore anything it tampered with, and ran `git checkout` against the
+live working tree while the implementer was editing the same files — twice — destroying
+uncommitted work and deleting a new test file. A second audit agent then misattributed those edits
+to rogue subagents and reported the repo as contaminated. Nothing was lost (the work was redone
+and committed as 4b3868c), and the audit agent corrected its own account unprompted once shown the
+commit trailer.
+
+Two changes as a result: reviewers now copy the repo into a scratch directory before tampering and
+are forbidden from mutating the real tree at all, and implementation commits land before judges are
+dispatched rather than during. Judging a tree that moves under you invalidates the verdict anyway.
 
 ## Accepted limitations
 
