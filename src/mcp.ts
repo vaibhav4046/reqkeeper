@@ -17,7 +17,7 @@
  * An agent calling it before a human has decided gets `AWAITING_APPROVAL` and no send.
  */
 
-import { findPaymentByReference, type PaymentExpectation } from "./chain.ts";
+import { currentBlock, findPaymentByReference, type PaymentExpectation } from "./chain.ts";
 import { assertReferenceMatches, fetchInvoice } from "./request.ts";
 import { obligationId } from "./identity.ts";
 import type { ExecutionProvider } from "./provider.ts";
@@ -529,6 +529,10 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
           store: ctx.store,
           provider: ctx.provider,
           policy: buildPolicy(facts),
+          // Read before the dry run so the recovery path can tell a leak that has not been
+          // mined yet from one that never happened. Without it the observer can never
+          // conclude and the obligation waits for a human -- safe, but never recovered.
+          currentBlock: () => currentBlock(ctx.rpcUrl),
           sourceSaysPaid: async (_requestId: string, txHash: string) => {
             // Not just "the reference appears somewhere": it must be OUR transaction for
             // OUR amount. A boolean over the reference alone accepts another payment's

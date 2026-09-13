@@ -24,7 +24,7 @@
 
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { encodeCall } from "../src/abi.ts";
-import { DEFAULT_LOOKBACK, findPaymentByReference, type PaymentExpectation } from "../src/chain.ts";
+import { currentBlock, DEFAULT_LOOKBACK, findPaymentByReference, type PaymentExpectation } from "../src/chain.ts";
 import { obligationId } from "../src/identity.ts";
 import { KeeperHubProvider } from "../src/keeperhub.ts";
 import { KeeperHubMcpProvider } from "../src/keeperhub-mcp.ts";
@@ -246,6 +246,9 @@ const outcome = await settleObligation(
     // different transaction's log as proof that THIS obligation settled, which is the
     // exact defect the SettleDeps contract documents at src/settle.ts:55-58. This is
     // the live-money path, so it is the last place that shortcut belongs.
+    // See settle.ts: the head before the dry run is what lets a later scan distinguish a
+    // leaked send still in the mempool from a send that never happened.
+    currentBlock: () => currentBlock(RPC),
     sourceSaysPaid: async (_requestId: string, txHash: string) => {
       const seen = await scanForThisInvoice();
       return (

@@ -59,10 +59,35 @@ export interface PaymentSighting extends Partial<PaymentLogFields> {
      */
     readonly corroborated?: boolean;
     /**
-     * Set when a log carried this reference but disagreed about the payment itself. This is
-     * EVIDENCE_CONFLICT, not "unpaid" and certainly not "paid".
+     * Set when a log carried this reference but disagreed about the payment itself.
+     *
+     * NOT automatically EVIDENCE_CONFLICT, which is what this comment used to say. The
+     * ERC20FeeProxy is permissionless and payment references derive from data anchored openly on
+     * Sepolia, so anyone can emit a log carrying this reference that pays somebody else. Treating
+     * every such log as an integrity incident would move the obligation to a human-only terminal
+     * state, which means one junk log could permanently suppress any invoice -- exactly the grief
+     * `src/watch.ts` refuses for the same reason.
+     *
+     * For the dominant case, a third party's log, the invoice genuinely IS unpaid and paying it
+     * once is correct. The case that deserves escalation is narrower: a log whose token and payee
+     * match this invoice but whose amount or fee does not, because that is our own money moving
+     * under this reference in a shape we did not plan. `amountOrFeeConflict` below is that test,
+     * and it is what the worker branches on.
      */
     readonly conflicts?: readonly string[];
+    /** The same disagreements as `conflicts`, classified, for callers that must branch on them. */
+    readonly conflictKinds?: readonly ConflictKind[];
+    /**
+     * The highest block this scan covered.
+     *
+     * `eth_getLogs` does not see the mempool. A dry run that leaked (#1959) and is still pending is
+     * invisible to a scan that honestly covered its whole window and honestly reports
+     * `truncated: false` -- so "I looked everywhere and found nothing" is not the same statement as
+     * "nothing was broadcast". The difference is AGE: absence only becomes evidence once enough
+     * chain has passed since the send could have happened. A caller that knows when the send could
+     * have happened compares it against this.
+     */
+    readonly scannedTo?: number;
 }
 /** What a log has to say before it counts as paying THIS obligation. */
 export interface PaymentExpectation {
@@ -81,12 +106,30 @@ export interface PaymentExpectation {
  * rather than a bare false, because "which field" is the difference between an attack, a
  * misconfiguration and a rounding bug.
  */
+export type ConflictKind = "emitter" | "token" | "to" | "amount" | "fee" | "feeAddress";
 export declare function matchPaymentLog(log: PaymentLogFields & {
     readonly emitter?: string;
 }, expect: PaymentExpectation): {
     ok: boolean;
     conflicts: string[];
+    kinds: ConflictKind[];
 };
+/**
+ * Is this a log that paid OUR payee in OUR token under our reference, but for the wrong amount or
+ * fee?
+ *
+ * The distinction decides whether an obligation is released or escalated, and getting it wrong is
+ * costly in both directions. Escalate on every conflicting log and anyone who can read a public
+ * payment reference can wedge any invoice for ever with one junk log. Release on every conflicting
+ * log and a dry run that leaked (#1959) with different fields gets paid a second time, out of our
+ * own funds.
+ *
+ * Nobody else has a reason to pay our payee, in our token, under our reference. That shape is our
+ * money moving in a plan we did not make, and it is the one that belongs in front of a human.
+ */
+export declare function amountOrFeeConflict(sighting: {
+    readonly conflictKinds?: readonly ConflictKind[];
+}): boolean;
 /**
  * The five non-indexed words: tokenAddress, to, amount, feeAmount, feeAddress.
  *

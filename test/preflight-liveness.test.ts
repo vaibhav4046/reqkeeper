@@ -36,6 +36,8 @@ const FEE_ADDR = "0xAaAa000000000000000000000000000000000001";
 const PROXY = "0x399F5EE127ce7432E4921a61b8CF52b0af52cbfE";
 const REFERENCE = "0x0056a1b2c3d4e5f6";
 const ANCHOR_BLOCK = 11_690_278;
+const PREFLIGHT_HEAD = 11_691_000;
+const AGED_CEILING = PREFLIGHT_HEAD + 10;
 
 const policy: Policy = {
   version: 1,
@@ -76,7 +78,7 @@ const steps = [
 async function wedge(store: Store, requestId: string, anchorBlock: number | undefined) {
   const provider = new FixtureProvider("RATE_LIMITED");
   const outcome = await settleObligation(
-    { store, provider, policy, sourceSaysPaid: async () => true },
+    { store, provider, policy, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD },
     {
       namespace: NAMESPACE,
       requestId,
@@ -101,7 +103,14 @@ function scanner(anchorSeenBy: { value?: number }) {
   return async (_reference: string, _expect?: unknown, anchorBlock?: number): Promise<PaymentSighting> => {
     anchorSeenBy.value = anchorBlock;
     const floor = anchorBlock ?? 11_392_278;
-    return { found: false, corroborated: true, scannedBlocks: 300_000, truncated: floor > (anchorBlock ?? 0) };
+    return {
+      found: false,
+      corroborated: true,
+      scannedBlocks: 300_000,
+      truncated: floor > (anchorBlock ?? 0),
+      // Read after the chain moved past the preflight, which is what makes absence evidence.
+      scannedTo: AGED_CEILING,
+    };
   };
 }
 
@@ -167,7 +176,7 @@ describe("an obligation wedged by a failed dry run can actually be recovered", (
         sourceSaysPaid: async () => true,
         sightPayment: async (_r: string, _e?: unknown, anchorBlock?: number) => {
           seen.value = anchorBlock;
-          return { found: false, corroborated: true, scannedBlocks: 300_000, truncated: true };
+          return { found: false, corroborated: true, scannedBlocks: 300_000, truncated: true, scannedTo: AGED_CEILING };
         },
       },
       { now: 1_000_000, maxPasses: 3, lookaheadMs: 120_000 },

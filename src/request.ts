@@ -344,7 +344,13 @@ export function toInvoiceFacts(
  */
 function storageAnchor(body: unknown, index: number): { anchor?: { blockNumber: number; transactionHash: string } } {
   const metas = asArray(dig(body, "meta", "storageMeta"));
-  const eth = dig(metas[index], "ethereum") ?? metas.map((m) => dig(m, "ethereum")).find(Boolean);
+  // This array is aligned with `result.transactions`, so the create's anchor is the entry at the
+  // create's index and nowhere else. There used to be a `.find(Boolean)` fallback to the first
+  // entry carrying an ethereum block, which on a channel with later actions (an amount increase,
+  // a cancel) silently returned a LATER block. The anchor is used as the floor below which no
+  // payment for this invoice can exist, so too-high is the unsafe direction: it asserts coverage
+  // of a window the scan never reached. An absent anchor is handled everywhere; a wrong one is not.
+  const eth = dig(metas[index], "ethereum");
   const blockNumber = dig(eth, "blockNumber");
   const transactionHash = asString(dig(eth, "transactionHash"));
   if (typeof blockNumber !== "number" || !transactionHash) return {};

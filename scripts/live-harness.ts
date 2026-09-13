@@ -23,7 +23,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { encodeCall } from "../src/abi.ts";
-import { DEFAULT_RPC, findPaymentByReference } from "../src/chain.ts";
+import { currentBlock, DEFAULT_RPC, findPaymentByReference } from "../src/chain.ts";
 import { obligationId } from "../src/identity.ts";
 import { KeeperHubProvider } from "../src/keeperhub.ts";
 import {
@@ -216,6 +216,7 @@ for (const inv of payable) {
     store,
     provider,
     policy: buildPolicy(facts),
+    currentBlock: () => currentBlock(DEFAULT_RPC),
     sourceSaysPaid: async (_requestId: string, txHash: string) => {
             // Not just "the reference appears somewhere": it must be OUR transaction for
             // OUR amount. A boolean over the reference alone accepts another payment's

@@ -198,6 +198,13 @@ function migrate(db: DatabaseSync): void {
   }
 
   const columns = db.prepare("PRAGMA table_info(obligations)").all() as Array<{ name: string }>;
+  if (!columns.some((c) => c.name === "preflight_block")) {
+    // The chain head as the dry run was about to be made. A log scan cannot see the mempool, so
+    // "no payment anywhere" only means "nothing was broadcast" once the chain has moved past the
+    // moment a broadcast could have happened. Rows written before this column existed carry NULL,
+    // which reads as "unknown" and keeps the observer inconclusive -- the fail-safe direction.
+    db.exec("ALTER TABLE obligations ADD COLUMN preflight_block INTEGER");
+  }
   if (!columns.some((c) => c.name === "payment_reference")) {
     // The debt's real identity. A request id is free text supplied by the caller, so two
     // spellings of one invoice used to mint two obligations and pay it twice. The reference
@@ -592,8 +599,19 @@ export class Store {
    * look, and it is committed before the risky call, which is the same discipline `openAttempt`
    * applies one step later.
    */
-  beginPreflight(obligationId: string, planHash: string, now = Date.now()): void {
+  beginPreflight(obligationId: string, planHash: string, now = Date.now(), preflightBlock?: number): void {
     this.tx(() => {
+      // The chain head as the risky call was about to be made. `eth_getLogs` cannot see the
+      // mempool, so a scan that covers every block and finds nothing is NOT evidence that
+      // nothing was broadcast -- a transaction sent a moment ago is simply not in a block yet.
+      // Absence becomes evidence only once enough chain has passed since the send could have
+      // happened, and this is the block that "since" is measured from. Stored here because it
+      // has to be captured before the call, in the same transaction as the state and the job.
+      if (preflightBlock !== undefined) {
+        this.#db
+          .prepare("UPDATE obligations SET preflight_block = ? WHERE obligation_id = ?")
+          .run(preflightBlock, obligationId);
+      }
       this.#setStateInTx(obligationId, "PAYMENT_PREFLIGHT", now);
       this.#db
         .prepare(
@@ -663,16 +681,26 @@ export class Store {
         expectation: PaymentExpectation | null;
         /** The invoice's anchor block, when it was known at import. See SourceFacts.anchorBlock. */
         anchorBlock: number | null;
+        /** The chain head as the dry run was about to run. See beginPreflight. */
+        preflightBlock: number | null;
       }
     | undefined {
     const row = this.#db
       .prepare(
         `SELECT obligation_id AS obligationId, request_id AS requestId, state,
-                payment_reference AS paymentReference, source_facts_json AS factsJson
+                payment_reference AS paymentReference, source_facts_json AS factsJson,
+                preflight_block AS preflightBlock
            FROM obligations WHERE obligation_id = ?`,
       )
       .get(obligationId) as
-      | { obligationId: string; requestId: string; state: State; paymentReference: string | null; factsJson: string }
+      | {
+          obligationId: string;
+          requestId: string;
+          state: State;
+          paymentReference: string | null;
+          factsJson: string;
+          preflightBlock: number | null;
+        }
       | undefined;
     if (!row) return undefined;
     let invoiceBaseUnits: string | null = null;
@@ -711,6 +739,7 @@ export class Store {
       invoiceBaseUnits,
       expectation,
       anchorBlock,
+      preflightBlock: typeof row.preflightBlock === "number" ? row.preflightBlock : null,
     };
   }
 

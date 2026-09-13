@@ -80,7 +80,7 @@ function stepsFor(amount: string) {
 
 function propose(store: Store, provider: FixtureProvider, requestId: string, amount: string, now: number) {
   return settleObligation(
-    { store, provider, policy, sourceSaysPaid: async () => true },
+    { store, provider, policy, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD },
     {
       namespace: NAMESPACE,
       requestId,
@@ -146,7 +146,31 @@ class LeakyTimeoutProvider extends FixtureProvider {
   }
 }
 
-const unpaid: PaymentSighting = { found: false, corroborated: true, scannedBlocks: 450_000 };
+// `truncated: false` because that is what a conclusive read returns, and the worker now
+// requires it explicitly. This fixture omitted the flag and so pinned the lenient reading:
+// it asserted that an obligation is released on a scan that never said whether it covered
+// the window. That is the reading the whole file exists to argue against.
+// The head when the dry run ran, and a scan ceiling well past it. A scan cannot see the
+// mempool, so the observer may only call absence conclusive once the chain has moved on from
+// the moment a broadcast could have happened. These fixtures model a read taken later.
+const PREFLIGHT_HEAD = 11_000_000;
+const AGED_CEILING = PREFLIGHT_HEAD + 10;
+const unpaid: PaymentSighting = {
+  found: false,
+  corroborated: true,
+  scannedBlocks: 450_000,
+  truncated: false,
+  scannedTo: AGED_CEILING,
+};
+
+/** Covered the window, but read it before the chain could have mined a leak. */
+const unpaidButTooSoon: PaymentSighting = {
+  found: false,
+  corroborated: true,
+  scannedBlocks: 450_000,
+  truncated: false,
+  scannedTo: PREFLIGHT_HEAD,
+};
 const paid: PaymentSighting = {
   found: true,
   txHash: `0x${"ab".repeat(32)}`,

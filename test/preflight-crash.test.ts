@@ -107,7 +107,9 @@ function killedInsideSimulate(requestId: string) {
   });
   for (const s of ["VALIDATING", "AWAITING_APPROVAL", "APPROVED"] as const) store.setState(oid, s, 1);
   assert.deepEqual(store.reserveObligation(oid, PLAN_HASH), { ok: true });
-  store.beginPreflight(oid, PLAN_HASH, 1);
+  // With the head the dry run was about to run at. A scan cannot see the mempool, so the
+  // observer may only conclude once the chain has moved past this block.
+  store.beginPreflight(oid, PLAN_HASH, 1, PREFLIGHT_HEAD);
 
   // The shape the probe reports, asserted rather than assumed.
   assert.equal(store.obligationForRecovery(oid)?.state, "PAYMENT_PREFLIGHT");
@@ -116,7 +118,16 @@ function killedInsideSimulate(requestId: string) {
   return { store, oid };
 }
 
-const unpaid: PaymentSighting = { found: false, scannedBlocks: 450_000, truncated: false };
+const PREFLIGHT_HEAD = 11_000_000;
+const AGED_CEILING = PREFLIGHT_HEAD + 10;
+
+const unpaid: PaymentSighting = {
+  found: false,
+  scannedBlocks: 450_000,
+  truncated: false,
+  // Read after the chain moved past the preflight: only then is absence evidence.
+  scannedTo: AGED_CEILING,
+};
 const paid: PaymentSighting = {
   found: true,
   txHash: LEAKED_TX,
@@ -159,7 +170,7 @@ describe("a simulation that never came back is resolved by looking, not by assum
 
     const provider = new FixtureProvider("NONE");
     const outcome = await settleObligation(
-      { store, provider, policy, sourceSaysPaid: async () => true },
+      { store, provider, policy, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD },
       {
         namespace: NAMESPACE,
         requestId: "01req-sim-crash-then-pay",
@@ -197,7 +208,7 @@ describe("a simulation that never came back is resolved by looking, not by assum
 
     const provider = new FixtureProvider("NONE");
     const outcome = await settleObligation(
-      { store, provider, policy, sourceSaysPaid: async () => true },
+      { store, provider, policy, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD },
       {
         namespace: NAMESPACE,
         requestId: "01req-sim-crash-leaked-retry",
@@ -249,7 +260,7 @@ describe("the observation does not linger on a settlement that went fine", () =>
     const requestId = "01req-sim-clean";
 
     const outcome = await settleObligation(
-      { store, provider, policy, sourceSaysPaid: async () => true },
+      { store, provider, policy, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD },
       {
         namespace: NAMESPACE,
         requestId,

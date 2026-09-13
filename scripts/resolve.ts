@@ -16,7 +16,7 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { DEFAULT_RPC, findPaymentByReference, rpcCall, type PaymentExpectation } from "../src/chain.ts";
+import { DEFAULT_RPC, findPaymentByReference, readReceipt, rpcCall, type PaymentExpectation } from "../src/chain.ts";
 import { obligationId } from "../src/identity.ts";
 import { NAMESPACE } from "../src/plan.ts";
 import { Store } from "../src/store.ts";
@@ -53,17 +53,19 @@ if (!existsSync(dbPath)) {
  * `verified` is only true when the node returned a receipt with a status we understand;
  * anything else stays unverified, which keeps the obligation short of SETTLED rather than
  * letting a transport hiccup look like confirmation.
+ *
+ * This was a private copy that returned `{hash, verified, receiptStatus, gasUsed}` and nothing
+ * else -- no `blockNumber`, no `confirmations`, no `to`, no `logs`. The worker's depth gate reads
+ * `confirmations`, so in `npm run resolve` it could never fire: the resolver would move an
+ * obligation to SETTLED, which is terminal, on a receipt one block deep. `sourceSaysPaid` below
+ * reads `eth_getLogs`, which sees a log at one confirmation too, so nothing else imposed depth
+ * either.
+ *
+ * `src/chain.ts` says of its reader: "One reader, shared with the MCP transport and with every
+ * script. There were four private copies of this and each one had to learn separately..." This
+ * was the copy that consolidation missed, and it was the last one left in a path that can settle.
  */
-async function receipt(hash: string): Promise<Receipt> {
-  const r = (await rpcCall(rpcUrl, "eth_getTransactionReceipt", [hash])) as
-    | { status?: string; gasUsed?: string }
-    | null;
-  if (!r) return { hash, verified: false, receiptStatus: "not_found", gasUsed: "0" };
-  const gasUsed = r.gasUsed ? BigInt(r.gasUsed).toString() : "0";
-  if (r.status === "0x1") return { hash, verified: true, receiptStatus: "success", gasUsed };
-  if (r.status === "0x0") return { hash, verified: true, receiptStatus: "reverted", gasUsed };
-  return { hash, verified: false, receiptStatus: "not_found", gasUsed };
-}
+const receipt = (hash: string): Promise<Receipt> => readReceipt(rpcUrl, hash);
 
 const store = new Store(dbPath);
 

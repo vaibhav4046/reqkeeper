@@ -170,7 +170,9 @@ function wedgedInsideSimulate(requestId: string) {
   });
   for (const s of ["VALIDATING", "AWAITING_APPROVAL", "APPROVED"] as const) store.setState(oid, s, 1);
   assert.deepEqual(store.reserveObligation(oid, PLAN_HASH), { ok: true });
-  store.beginPreflight(oid, PLAN_HASH, 1);
+  // The head as the dry run ran. The stubbed chain is at HEAD, so by the time the observer
+  // looks the chain has moved well past this and absence can mean something.
+  store.beginPreflight(oid, PLAN_HASH, 1, HEAD - 100);
   assert.equal(store.obligationForRecovery(oid)?.state, "PAYMENT_PREFLIGHT");
   assert.equal(store.sentAttemptFor(oid), undefined, "nothing was ever dispatched");
   return { store, oid };

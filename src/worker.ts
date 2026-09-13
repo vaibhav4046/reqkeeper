@@ -17,6 +17,7 @@
 
 import { isTerminal, type State } from "./machine.ts";
 import type { ExecutionProvider } from "./provider.ts";
+import { amountOrFeeConflict } from "./chain.ts";
 import type { PaymentExpectation, PaymentSighting } from "./chain.ts";
 import type { Fence, Job, Store } from "./store.ts";
 
@@ -241,7 +242,54 @@ async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Reso
     // for this obligation could be — which is the window down to the invoice's anchor block, not
     // down to genesis. A scan that stopped short is "I could not tell", and "I could not tell"
     // must never become "go ahead", so the obligation waits here rather than being released.
-    if (sighting.truncated === true) return { done: false, reason: "SCAN_TRUNCATED", advanced };
+    // Only an EXPLICIT `truncated: false` releases. This read `=== true` and released on
+    // anything else, including a reader that simply did not say -- while the already-paid
+    // gate in src/mcp.ts requires the explicit false. Two sites, two opposite readings of the
+    // same absent flag, and this is the site that releases an obligation. No production
+    // reader can currently omit it (`findPaymentByReference` has one negative exit and always
+    // sets it), so this is hardening rather than a live hole -- but the next implementation
+    // of `sightPayment` should not be able to reintroduce the whole class by forgetting a
+    // field.
+    if (sighting.truncated !== false) return { done: false, reason: "SCAN_TRUNCATED", advanced };
+
+    // Covered the window is not the same as looked recently enough.
+    //
+    // `eth_getLogs` cannot see the mempool. A transaction the dry run leaked (#1959) is invisible
+    // to a scan that covered every block in range and is being entirely honest when it reports
+    // `truncated: false` -- it simply is not in a block yet. An adversarial pass drove exactly
+    // that: a real scan, a real worker, a real settle, a fixture node whose only behaviour was a
+    // node's, and the losing timing is the ORDINARY one. OBSERVE_PREFLIGHT comes due 30s after
+    // the preflight and Sepolia takes ~12s a block, so the observer routinely looks before the
+    // leak can have been mined. Two physical sends.
+    //
+    // So the question is not "did I cover the window" but "has enough chain passed since the send
+    // could have happened". `preflightBlock` is the head as the dry run was about to run, and the
+    // scan's own ceiling says how far past it this read reached. A NULL preflight block -- rows
+    // written before the column existed, or a head that could not be read -- is unknown, and
+    // unknown waits.
+    const preflightBlock = obligation.preflightBlock;
+    const scannedTo = sighting.scannedTo;
+    if (preflightBlock === null || scannedTo === undefined || scannedTo < preflightBlock + minConfirmations()) {
+      return { done: false, reason: "SEND_WINDOW_TOO_RECENT", advanced };
+    }
+
+    // A conflicting log usually means a stranger paid somebody else under our public reference,
+    // and the invoice is genuinely unpaid: release, and let it be proposed once. Escalating on
+    // every conflict would let one junk log wedge any invoice for ever.
+    //
+    // The exception is a log that matches this invoice's token AND payee but disagrees about the
+    // amount or the fee. Nobody else has a reason to pay our payee, in our token, under our
+    // reference: that shape is our own money moving in a plan we did not make -- the #1959 leak
+    // executing with different fields -- and releasing on it is a double spend of our funds.
+    if (amountOrFeeConflict(sighting)) {
+      move("EVIDENCE_CONFLICT");
+      store.audit(job.obligationId, "worker", "PAYMENT_FIELDS_DISAGREE", {
+        conflicts: sighting.conflicts ?? null,
+        txHash: sighting.txHash ?? null,
+        reason: "a log paying this invoice's token and payee disagreed about amount or fee",
+      });
+      return { done: true, advanced };
+    }
 
     // Nothing carrying this reference paid this invoice, across the full window. The simulation
     // did not execute, so the debt simply stands unattempted and may be proposed again.

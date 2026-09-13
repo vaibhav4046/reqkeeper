@@ -542,7 +542,15 @@ const NO_INVOICE = {
 };
 
 const mcpToCheck = (mcp?.rows ?? []).filter((r) => r.transport === "mcp");
-const restToCheck = (live?.rows ?? []).filter((r) => r.tx_hash && r.payment_reference);
+// Every row the artifact calls settled, whether or not it states a hash. Filtering on
+// `r.tx_hash && r.payment_reference` counted only the rows that could be checked, so deleting a
+// hash from a settled row removed it from the denominator and the run still reported 21 ok: the
+// artifact claimed 38 settlements, the sweep corroborated 37, and nothing compared the two.
+// A row that claims a payment and does not say which transaction is not a row to skip. It is a
+// row that cannot be corroborated, which is the thing this check exists to notice.
+const restSettled = (live?.rows ?? []).filter((r) => r.physical_sends > 0 || r.tx_hash);
+const restToCheck = restSettled.filter((r) => r.tx_hash && r.payment_reference);
+const restUncheckable = restSettled.filter((r) => !(r.tx_hash && r.payment_reference));
 const raceRef = liveRace?.invoice?.reference ?? null;
 const raceTx = (liveRace?.waves.flatMap((w) => w.workers) ?? []).map((w) => w.txHash).find(Boolean) ?? null;
 
@@ -568,6 +576,18 @@ const verdicts = await corroborate([
     expect: invoiceExpectation(r.payment_reference, (r as { request_id?: string }).request_id),
     unstated: NO_INVOICE,
   })),
+  // Carried INTO the sweep as failures rather than dropped from it, so the denominator is the
+  // number of settlements claimed and not the number that happened to be checkable.
+  ...restUncheckable.map((r) => ({
+    label: `rest:${r.case_id}`,
+    reference: r.payment_reference ?? null,
+    txHash: r.tx_hash ?? null,
+    expect: null,
+    unstated: {
+      status: "FAIL" as Status,
+      detail: `the row claims a settlement but names no ${r.tx_hash ? "payment reference" : "transaction"}, so nothing can corroborate it`,
+    },
+  })),
   ...(raceRef && raceTx
     ? [
         {
@@ -591,10 +611,13 @@ if (raceRef && raceTx) {
   if (v) record("race.live.onchain", "that live payment is on chain, exactly once", v.status, v.detail);
 }
 
-if (restToCheck.length === 0) {
-  record("chain.reference", "every recorded payment is on chain, in the transaction its row names", "BLOCKED", "no recorded row carries both a hash and a reference");
+if (restSettled.length === 0) {
+  record("chain.reference", "every recorded payment is on chain, in the transaction its row names", "BLOCKED", "the artifact records no settlement");
 } else {
-  const results = restToCheck.map((r) => ({ id: r.case_id, ...(verdicts.get(`rest:${r.case_id}`) ?? { status: "BLOCKED" as Status, detail: "not checked" }) }));
+  // Over every row the artifact CALLS settled. Mapping over the checkable subset was the same
+  // denominator bug one layer up: a row stripped of its hash left the numerator and the
+  // denominator together, so 37 of 38 corroborated still reported as everything checking out.
+  const results = restSettled.map((r) => ({ id: r.case_id, ...(verdicts.get(`rest:${r.case_id}`) ?? { status: "BLOCKED" as Status, detail: "not checked" }) }));
   const failed = results.filter((r) => r.status === "FAIL");
   const blocked = results.filter((r) => r.status === "BLOCKED");
   const passed = results.filter((r) => r.status === "ok");

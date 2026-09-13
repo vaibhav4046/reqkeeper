@@ -117,36 +117,58 @@ export async function rpcCall(rpcUrl, method, params, timeoutMs = 30_000) {
     return result;
 }
 const sameAddress = (a, b) => a.toLowerCase() === b.toLowerCase();
-/**
- * Does this log actually pay this obligation?
- *
- * Emitter, token, payee, amount and fee — not the reference alone. A log that matches the
- * reference but not the fields is somebody else's transaction, and reporting it as settlement
- * is how an obligation ends up citing a payment it never made. Returns the disagreements
- * rather than a bare false, because "which field" is the difference between an attack, a
- * misconfiguration and a rounding bug.
- */
 export function matchPaymentLog(log, expect) {
     const conflicts = [];
+    // The same disagreements, classified. Callers that have to BRANCH on which field disagreed get
+    // this; the strings stay for the human who has to read the audit row. Parsing the strings was
+    // the alternative, and a sentence is not an interface.
+    const kinds = [];
     if (log.emitter !== undefined && !sameAddress(log.emitter, ERC20_FEE_PROXY)) {
         conflicts.push(`emitted by ${log.emitter}, not the ERC20FeeProxy ${ERC20_FEE_PROXY}`);
+        kinds.push("emitter");
     }
     if (!sameAddress(log.tokenAddress, expect.tokenAddress)) {
         conflicts.push(`pays in token ${log.tokenAddress}, the invoice is in ${expect.tokenAddress}`);
+        kinds.push("token");
     }
     if (!sameAddress(log.to, expect.to)) {
         conflicts.push(`pays ${log.to}, the invoice is owed to ${expect.to}`);
+        kinds.push("to");
     }
     if (log.amount !== expect.amount) {
         conflicts.push(`moves ${log.amount}, the invoice is ${expect.amount}`);
+        kinds.push("amount");
     }
     if (expect.feeAmount !== undefined && log.feeAmount !== expect.feeAmount) {
         conflicts.push(`pays a fee of ${log.feeAmount}, the plan fee is ${expect.feeAmount}`);
+        kinds.push("fee");
     }
     if (expect.feeAddress !== undefined && !sameAddress(log.feeAddress, expect.feeAddress)) {
         conflicts.push(`sends the fee to ${log.feeAddress}, not ${expect.feeAddress}`);
+        kinds.push("feeAddress");
     }
-    return { ok: conflicts.length === 0, conflicts };
+    return { ok: conflicts.length === 0, conflicts, kinds };
+}
+/**
+ * Is this a log that paid OUR payee in OUR token under our reference, but for the wrong amount or
+ * fee?
+ *
+ * The distinction decides whether an obligation is released or escalated, and getting it wrong is
+ * costly in both directions. Escalate on every conflicting log and anyone who can read a public
+ * payment reference can wedge any invoice for ever with one junk log. Release on every conflicting
+ * log and a dry run that leaked (#1959) with different fields gets paid a second time, out of our
+ * own funds.
+ *
+ * Nobody else has a reason to pay our payee, in our token, under our reference. That shape is our
+ * money moving in a plan we did not make, and it is the one that belongs in front of a human.
+ */
+export function amountOrFeeConflict(sighting) {
+    const kinds = sighting.conflictKinds;
+    if (!kinds || kinds.length === 0)
+        return false;
+    const wrongCounterparty = kinds.includes("token") || kinds.includes("to") || kinds.includes("emitter");
+    const wrongValue = kinds.includes("amount") || kinds.includes("fee") || kinds.includes("feeAddress");
+    return wrongValue && !wrongCounterparty;
 }
 /**
  * The five non-indexed words: tokenAddress, to, amount, feeAmount, feeAddress.
@@ -194,7 +216,10 @@ export async function findPaymentByReference(reference, opts = {}) {
     const requested = opts.fromBlock !== undefined
         ? Math.max(0, opts.fromBlock)
         : Math.max(0, head - (opts.lookbackBlocks ?? DEFAULT_LOOKBACK));
-    const anchorFloor = opts.anchorBlock === undefined ? undefined : Math.max(0, opts.anchorBlock);
+    // An anchor above the head is not an anchor. It cannot be a real create block, and honouring
+    // it would let a wrong number assert coverage of a window that does not exist yet.
+    const claimedAnchor = opts.anchorBlock === undefined ? undefined : Math.max(0, opts.anchorBlock);
+    const anchorFloor = claimedAnchor !== undefined && claimedAnchor <= head ? claimedAnchor : undefined;
     const floor = anchorFloor === undefined ? requested : Math.min(requested, anchorFloor);
     /**
      * Genesis is not the bar. Requiring `floor === 0` made every real scan inconclusive, which
@@ -205,7 +230,18 @@ export async function findPaymentByReference(reference, opts = {}) {
      * given this function no floor to prove coverage against, so it stays inconclusive: "I could
      * not tell" must never quietly become "go ahead", which is the whole point of the flag.
      */
-    const truncated = floor > (anchorFloor ?? 0);
+    // Measured, not asserted. The previous form was `floor > (anchorFloor ?? 0)` with
+    // `floor = min(requested, anchorFloor)`, which is unsatisfiable: supplying ANY anchor made
+    // `truncated` false unconditionally, so the flag stopped being a statement about what was
+    // scanned and became a restatement of what the caller claimed. An anchor above the true create
+    // block -- which `storageAnchor` could produce from a multi-action channel with no forgery
+    // involved -- then asserted coverage of a window the scan never reached, and an invoice paid
+    // before that window read as unpaid at the one gate that guards against paying it twice.
+    //
+    // The question is only ever: did the scan reach the floor below which no payment for this
+    // obligation can exist? With an anchor that floor is the anchor. Without one there is no such
+    // floor short of genesis, and the answer stays inconclusive.
+    const truncated = anchorFloor === undefined ? floor > 0 : floor > anchorFloor;
     const first = await scanForReference(reference, rpcUrl, head, floor, opts.expect);
     if (first.found) {
         return { ...first, corroborated: await corroborate(reference, first, rpcUrl, opts.expect) };
@@ -242,6 +278,7 @@ async function scanForReference(reference, rpcUrl, head, floor, expect) {
     const topics = [EVENT_TOPIC, referenceTopic(reference)];
     let to = head;
     const conflicts = [];
+    const conflictKinds = [];
     while (to >= floor) {
         const from = Math.max(floor, to - MAX_RANGE + 1);
         const logs = (await rpcCall(rpcUrl, "eth_getLogs", [
@@ -273,6 +310,7 @@ async function scanForReference(reference, rpcUrl, head, floor, expect) {
             // Carries our reference, pays something else. Do not settle on it, and do not
             // pretend it was never there: the caller has to hear about it.
             conflicts.push(`${log.transactionHash}: ${verdict.conflicts.join("; ")}`);
+            conflictKinds.push(...verdict.kinds);
         }
         if (from === floor)
             break;
@@ -283,7 +321,13 @@ async function scanForReference(reference, rpcUrl, head, floor, expect) {
     return {
         found: false,
         scannedBlocks: head - floor + 1,
+        // The CEILING, not just the depth. A scan's floor says how far back it looked; its ceiling
+        // says how recently. `eth_getLogs` cannot see the mempool, so a transaction broadcast a
+        // moment ago is absent from a scan that covered everything and is being honest about it.
+        // Only the ceiling can tell a caller whether enough chain has passed for that to matter.
+        scannedTo: head,
         ...(conflicts.length > 0 ? { conflicts } : {}),
+        ...(conflictKinds.length > 0 ? { conflictKinds } : {}),
     };
 }
 /**

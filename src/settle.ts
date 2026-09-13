@@ -59,6 +59,16 @@ export interface SettleDeps {
    */
   readonly sourceSaysPaid: (requestId: string, txHash: string) => Promise<boolean>;
   /**
+   * The current chain head, read immediately before the dry run.
+   *
+   * Recorded so the recovery path can tell absence from not-yet-mined: a scan cannot see the
+   * mempool, so "no log anywhere" only means "nothing was broadcast" once the chain has moved on
+   * past the moment the broadcast could have happened. Optional, and its absence is fail-safe in
+   * the expensive direction: without it the observer can never conclude, so the obligation waits
+   * for a human instead of being released.
+   */
+  readonly currentBlock?: () => Promise<number>;
+  /**
    * How many DISTINCT humans must approve before anything is dispatched.
    *
    * One is the honest default for a single operator. A workspace that wants two pairs of eyes
@@ -604,7 +614,19 @@ async function settleOrRefuse(deps: SettleDeps, input: SettleInput): Promise<Set
   const stepIndex = input.steps.length - 1;
   const body = { chainId: policy.chainId, ...input.steps[stepIndex] };
   // State and the observation that will come looking, committed together. See store.beginPreflight.
-  store.beginPreflight(input.obligationId, planHash, input.now);
+  // Read before the call, never after: a head read afterwards could already be past the block
+  // the leak landed in, which would let the observer call it absent.
+  let preflightBlock: number | undefined;
+  if (deps.currentBlock) {
+    try {
+      preflightBlock = await deps.currentBlock();
+    } catch {
+      // A head we could not read is not a head of zero. Left undefined, which keeps the
+      // observer inconclusive rather than letting it release on an unbounded claim.
+      preflightBlock = undefined;
+    }
+  }
+  store.beginPreflight(input.obligationId, planHash, input.now, preflightBlock);
   // --- 6b. the dry run, as a disposition rather than a pair of booleans ----
   //
   // Four duplicate-payment findings in three adversarial rounds all had the same shape: a caller
