@@ -118,7 +118,7 @@ dependencies. `typecheck` and `build` call `tsc`, so those two want `npm install
 ```bash
 npm install           # only for typecheck and build; everything above runs without it
 
-npm test              # 604 tests, 117 suites
+npm test              # 609 tests, 118 suites
 npm run typecheck     # tsc --noEmit
 npm run build         # console + api; the tree must stay clean afterwards
 npm run gate-a        # Request <-> KeeperHub <-> Sepolia end to end
@@ -137,7 +137,9 @@ npm run verify:signatures
                       #   bound to the transaction that stored it. Public gateway, public RPC.
 ```
 
-**When something is stuck, the recovery document is [`docs/RUNBOOK.md`](docs/RUNBOOK.md)** — the
+**When something is stuck, start with `npm run resolve -- --status`** — every obligation, its
+state, and one sentence on what to do next. Then
+[`docs/RUNBOOK.md`](docs/RUNBOOK.md) — the
 failure-mode table, the operator escape, and what each state means. It exists because a reviewer
 followed this README verbatim and could not reproduce a settlement.
 

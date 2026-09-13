@@ -1403,6 +1403,47 @@ export class Store {
     ).map((r) => r.kind);
   }
 
+  /**
+   * Every obligation, newest first, with what is owed on it.
+   *
+   * There was no way to ask this. An operator whose payment was stuck could learn the state of an
+   * obligation only by reading `.data/live.sqlite` with a SQLite client by hand -- the RUNBOOK
+   * named nine states it never showed you how to observe, and `npm run resolve` printed only the
+   * transitions it had just made. A recovery document whose first step is "open the database" is
+   * not a recovery document.
+   */
+  listObligations(limit = 50): Array<{
+    obligationId: string;
+    requestId: string;
+    state: State;
+    paymentReference: string | null;
+    updatedAt: number;
+    jobsDue: number;
+    sentAttempts: number;
+    txHash: string | null;
+  }> {
+    const rows = this.#db
+      .prepare(
+        `SELECT o.obligation_id AS oid, o.request_id AS rid, o.state AS state,
+                o.payment_reference AS ref, o.updated_at AS updated,
+                (SELECT COUNT(*) FROM jobs j WHERE j.obligation_id = o.obligation_id AND j.status != 'done') AS jobs,
+                (SELECT COUNT(*) FROM attempts a WHERE a.obligation_id = o.obligation_id AND a.first_send_at IS NOT NULL) AS sent,
+                (SELECT a.tx_hash FROM attempts a WHERE a.obligation_id = o.obligation_id AND a.tx_hash IS NOT NULL LIMIT 1) AS tx
+         FROM obligations o ORDER BY o.updated_at DESC LIMIT ?`,
+      )
+      .all(limit) as Array<Record<string, unknown>>;
+    return rows.map((r) => ({
+      obligationId: String(r.oid),
+      requestId: String(r.rid),
+      state: String(r.state) as State,
+      paymentReference: r.ref === null || r.ref === undefined ? null : String(r.ref),
+      updatedAt: Number(r.updated ?? 0),
+      jobsDue: Number(r.jobs ?? 0),
+      sentAttempts: Number(r.sent ?? 0),
+      txHash: r.tx === null || r.tx === undefined ? null : String(r.tx),
+    }));
+  }
+
   pendingJobCount(): number {
     return Number(
       (this.#db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE status = 'pending'").get() as { n: number }).n,

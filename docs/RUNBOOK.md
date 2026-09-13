@@ -469,6 +469,22 @@ excluding a leak against the wrong account's nonce would be worse than not exclu
 which is why an unreadable or unconfigured nonce refuses rather than assuming. If KeeperHub moves
 to a relayer fleet, this needs the set of accounts, not one.
 
+## What state is my obligation in
+
+```bash
+npm run resolve -- --status                 # everything, newest first
+npm run resolve -- --status <obligationId>  # one, by obligation id or request id (a prefix works)
+```
+
+Read-only: it moves nothing and sends nothing. For each obligation it prints the state, the
+payment reference, how many attempts have claimed a send, the transaction if there is one, how
+much work the outbox still owes it, and **one sentence saying what to do next** — which is the
+thing every section below assumes you already know.
+
+This is where a stuck payment starts. There used to be no way to ask: the only route to an
+obligation's state was opening `.data/live.sqlite` with a SQLite client, and the obligation id the
+commands below take had no documented source. `--status` is that source.
+
 ## Failure modes, and what each one means
 
 | What you see | What it means |

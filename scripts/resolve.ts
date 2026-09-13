@@ -155,6 +155,82 @@ if (!payer) {
   console.log("        by hand with --release-preflight <obligationId> --operator <who>.");
 }
 
+// ---- what is actually open ---------------------------------------------------
+//
+//   npm run resolve -- --status
+//   npm run resolve -- --status <obligationId or requestId>
+//
+// There was no way to ask this, and the RUNBOOK names states it never showed an operator how to
+// observe. Without it the first step of every recovery was "open .data/live.sqlite with a SQLite
+// client", which is not a recovery procedure. Read-only: it moves nothing and sends nothing.
+if (args.has("status")) {
+  const wanted = args.get("status");
+  const rows = store.listObligations(200);
+  const matching =
+    wanted && wanted !== "true"
+      ? rows.filter((r) => r.obligationId.startsWith(wanted) || r.requestId.startsWith(wanted))
+      : rows;
+
+  if (matching.length === 0) {
+    console.log(rows.length === 0 ? "\n  no obligations in this database yet.\n" : `\n  nothing matches ${wanted}.\n`);
+    store.close();
+    process.exit(0);
+  }
+
+  console.log("");
+  for (const r of matching) {
+    console.log(`  ${r.obligationId}`);
+    console.log(`    request      : ${r.requestId}`);
+    console.log(`    state        : ${r.state}`);
+    console.log(`    reference    : ${r.paymentReference ?? "-"}`);
+    console.log(`    sent attempts: ${r.sentAttempts}${r.txHash ? ` (${r.txHash})` : ""}`);
+    console.log(`    work owed    : ${r.jobsDue} job(s)`);
+    console.log(`    what to do   : ${nextStep(r.state, r.jobsDue)}`);
+    console.log("");
+  }
+  store.close();
+  process.exit(0);
+}
+
+/** The one sentence an operator in this state needs. Every state the machine has, or a fallback. */
+function nextStep(state: string, jobsDue: number): string {
+  switch (state) {
+    case "AWAITING_APPROVAL":
+      return "a human has to approve or reject this plan: npm run approve -- --requestId … (see docs/RUNBOOK.md)";
+    case "APPROVED":
+    case "OBLIGATION_RESERVED":
+      return "approved and not yet dispatched. npm run resolve drains it.";
+    case "PAYMENT_PREFLIGHT":
+      return "the dry run never came back. npm run resolve first; if it stays here, --release-preflight (docs/RUNBOOK.md).";
+    case "PAYMENT_EXECUTING":
+    case "CHAIN_PENDING":
+    case "RECONCILING":
+    case "RECONCILIATION_PENDING":
+      return "money has moved and the outcome is not confirmed. npm run resolve, and never re-propose.";
+    case "EXECUTION_OUTCOME_UNKNOWN":
+      return "a send happened with no answer. npm run resolve reads the chain for it. Do not retry the send.";
+    case "EVIDENCE_CONFLICT":
+      return "an integrity incident: the chain and this system disagree. A human has to reconcile it before anything else.";
+    case "SETTLED":
+      return "paid and closed. Nothing to do.";
+    case "SOURCE_ALREADY_PAID":
+      return "the invoice was already paid elsewhere. Nothing is owed.";
+    case "PREFLIGHT_UNAVAILABLE":
+    case "PLAN_EXPIRED":
+    case "PLAN_CHANGED":
+      return "replannable: propose it again when you want it paid.";
+    case "POLICY_DENIED":
+    case "REVIEW_REJECTED":
+    case "CALLDATA_MISMATCH":
+    case "SIMULATION_BLOCKED":
+    case "EXECUTION_REVERTED":
+    case "CANCELLED_BEFORE_PAYMENT":
+      return "refused, and terminal. Nothing was sent; fix what it refused on and propose again.";
+    default:
+      return jobsDue > 0 ? "npm run resolve has work queued for it." : "no work queued; see docs/RUNBOOK.md.";
+  }
+}
+
 // ---- the operator's way out --------------------------------------------------
 //
 // An obligation whose dry run never came back waits until a spent nonce proves the leak can
