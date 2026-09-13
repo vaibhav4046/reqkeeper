@@ -42,7 +42,11 @@ describe("a refusal artifact's summary matches its own rows", () => {
         artifact.totals.refusedBeforeAnyProviderWrite,
         refusedInRows.length,
         `${file}: the summary says ${artifact.totals.refusedBeforeAnyProviderWrite}, the rows say ${refusedInRows.length}` +
-          ` (${refusedInRows.map((r) => r.case_id).join(", ")})`,
+          ` (${refusedInRows.map((r) => r.case_id).join(", ")}).` +
+          " If this is docs/refusals.json and it says 18, the generator put it back: scripts/harness.ts:326" +
+          " drops `expected === \"AWAITING_APPROVAL\"` from the refusal universe, so C12 (0 sends, flag true)" +
+          " falls out of both totals. docs/refusals-live.json keeps its identical row (L081) in both. Fix the" +
+          " filter, not this file — a hand-edited artifact is overwritten by the next `npm run harness`.",
       );
     });
   }

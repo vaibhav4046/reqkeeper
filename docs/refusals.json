@@ -6,8 +6,8 @@
     "cases": 26,
     "passed": 26,
     "failed": 0,
-    "refusalCases": 24,
-    "refusedBeforeAnyProviderWrite": 18
+    "refusalCases": 25,
+    "refusedBeforeAnyProviderWrite": 19
   },
   "rows": [
     {

@@ -1183,7 +1183,7 @@
         : '<span class="mut">docs/evidence/mcp-settlements.json absent at build time</span>',
     ],
     ["npm run verify:onchain", "reads the settlement transaction back off the chain", none],
-    ["npm run verify:seam", "the KeeperHub REST seam against the real API", none],
+    ["npm run verify:seam", "the KeeperHub REST seam: recorded probe, local codec and gate checks", none],
     ["npm run probe:mcp", "the KeeperHub MCP handshake and tool list", none],
   ];
   // A command that is not wired in package.json yet must not be printed as if it ran.

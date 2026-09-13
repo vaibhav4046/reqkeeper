@@ -323,7 +323,15 @@ for (const [label, advanceMs, want] of [
 }
 
 // ---- report ---------------------------------------------------------------
-const refusalRows = rows.filter((r) => r.expected !== "SETTLED" && r.expected !== "AWAITING_APPROVAL");
+// What counts as a refusal: anything that did not settle. `live-harness.ts:421` has always said
+// exactly that, and this line additionally dropped AWAITING_APPROVAL — so the two harnesses
+// counted different universes and the fixture artifact reported 24/18 where its own rows gave
+// 25/19. "No human decision yet" IS a refusal to proceed, taken before any provider write, and
+// the live artifact counts its twin of that row (L081) without hesitation.
+//
+// The disagreement mattered beyond the number: regenerating the artifact silently reverted a
+// correction made to the file, so the fix and the generator fought each other across runs.
+const refusalRows = rows.filter((r) => r.expected !== "SETTLED");
 const cleanRefusals = refusalRows.filter((r) => r.refused_before_provider_write);
 const passed = rows.filter((r) => r.pass).length;
 
