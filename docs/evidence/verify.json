@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-09-13T04:31:07.865Z",
+  "generatedAt": "2026-09-13T04:46:20.089Z",
   "chainId": 11155111,
   "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
   "credentialsUsed": "none",
   "totals": {
-    "checks": 22,
-    "ok": 22,
+    "checks": 23,
+    "ok": 23,
     "failed": 0,
     "blocked": 0
   },
@@ -38,7 +38,7 @@
       "id": "artifacts.totals",
       "claim": "every artifact's summary matches its own rows",
       "status": "ok",
-      "detail": "15 summary number(s) recomputed from rows and agreeing, over 7 artifact(s) carrying a summary (8 .json scanned under docs/); 27 summary number(s) name no row field and were NOT recomputed: docs/evidence/crash.json:settledAfterRecovery · docs/evidence/crash.json:heldOpenForAHuman · docs/evidence/crash.json:maxBroadcastsForOneObligation · docs/evidence/mcp-settlements.json:settled · +23 more"
+      "detail": "17 summary number(s) recomputed from rows and agreeing, over 8 artifact(s) carrying a summary (9 .json scanned under docs/); 27 summary number(s) name no row field and were NOT recomputed: docs/evidence/crash.json:settledAfterRecovery · docs/evidence/crash.json:heldOpenForAHuman · docs/evidence/crash.json:maxBroadcastsForOneObligation · docs/evidence/mcp-settlements.json:settled · +23 more"
     },
     {
       "id": "race.live",
@@ -141,6 +141,12 @@
       "claim": "every recorded payment is on chain, in the transaction its row names",
       "status": "ok",
       "detail": "38/38 recorded payments matched emitter, token, payee, amount and fee in the transaction the row names (payee, amount and fee joined from docs/live-invoices.json; token is FAU from src/plan.ts, the only token this deployment settles in)"
+    },
+    {
+      "id": "chain.completeness",
+      "claim": "no payment on chain is missing from the evidence",
+      "status": "ok",
+      "detail": "46 invoice reference(s) asked of 4 endpoint(s) over 11665964..11693666, from the earliest invoice's own storage anchor; 44 payment(s) found across their union and every one is accounted for by an evidence file"
     }
   ]
 }

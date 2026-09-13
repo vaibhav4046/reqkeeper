@@ -44,6 +44,16 @@ const DEFAULT_RPC_FALLBACKS = [
 
 const rpcFallbacks = (): readonly string[] => (RPC_FALLBACKS.length > 0 ? RPC_FALLBACKS : DEFAULT_RPC_FALLBACKS);
 
+/**
+ * The endpoints a negative has to be put to before it counts, exported so that anything drawing a
+ * conclusion from silence uses the same set this module does.
+ *
+ * A verification script that asks one endpoint and believes an empty `eth_getLogs` reproduces the
+ * exact defect this module was built around — measured against this project's own payment, which
+ * publicnode returns zero logs for and two other endpoints return in full.
+ */
+export const negativeCorroborationEndpoints = (): readonly string[] => rpcFallbacks();
+
 /** Methods where a null result may mean "pruned" rather than "absent". */
 const NULLABLE_IS_UNKNOWN = new Set([
   "eth_getTransactionReceipt",

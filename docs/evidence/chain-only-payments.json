@@ -1,0 +1,42 @@
+{
+  "generatedAt": "2026-09-13T04:44:09.162Z",
+  "chainId": 11155111,
+  "mode": "CHAIN_ONLY",
+  "note": "Payments this deployment made that NO run artifact records. Found by verify:all's completeness sweep, which asks the chain about every invoice reference this deployment owes rather than starting from the rows. They are real: broadcast by this deployment's own relayer, paying the invoice's exact payee and amount in FAU through the fee proxy. The runs that made them predate the evidence pipeline and their artifacts were never kept, so there is nothing to restore - this file records the gap instead of hiding it. Nothing here is typed: every field is decoded from the fee-proxy log named by txHash. Reproduce any row with eth_getTransactionReceipt on its hash and read the 0x399f5ee1... log.",
+  "totals": {
+    "rows": 2,
+    "matchesInvoice": 2
+  },
+  "rows": [
+    {
+      "paymentReference": "0xfaac1220a314c4a9",
+      "requestId": "01ee24955c76fd84d9ed61ed4ce540b5b38a8726b59dbcdb0179a03145ee590e24",
+      "txHash": "0x8ad0ce96c07fdd7139f6b6821e07983b29112d6a2ad71ddc510d58f8b64a7fc9",
+      "block": 11665974,
+      "broadcastBy": "0x809d8252aa4f9b8f7d9be7213855b289fe7d0444",
+      "token": "0x370de27fdb7d1ff1e1baa7d11c5820a324cf623c",
+      "to": "0xc43d766cb7c48b9b198db87441b97c09e81717a1",
+      "amount": "1000000000000000000",
+      "feeAmount": "0",
+      "feeAddress": "0x0000000000000000000000000000000000000000",
+      "matchesInvoice": true,
+      "explorer": "https://sepolia.etherscan.io/tx/0x8ad0ce96c07fdd7139f6b6821e07983b29112d6a2ad71ddc510d58f8b64a7fc9",
+      "mode": "CHAIN_ONLY"
+    },
+    {
+      "paymentReference": "0xd2a39f9e7e8e6a7b",
+      "requestId": "01b590902494aadfecb5f0ade8ec96898b795414dab3639a01c876f3f3b85ca55e",
+      "txHash": "0x08af92929ea5e289ce1d3a4316af32903271488ffe55cd145a0136e4cf894ff7",
+      "block": 11665976,
+      "broadcastBy": "0x809d8252aa4f9b8f7d9be7213855b289fe7d0444",
+      "token": "0x370de27fdb7d1ff1e1baa7d11c5820a324cf623c",
+      "to": "0xc43d766cb7c48b9b198db87441b97c09e81717a1",
+      "amount": "1000000000000000000",
+      "feeAmount": "0",
+      "feeAddress": "0x0000000000000000000000000000000000000000",
+      "matchesInvoice": true,
+      "explorer": "https://sepolia.etherscan.io/tx/0x08af92929ea5e289ce1d3a4316af32903271488ffe55cd145a0136e4cf894ff7",
+      "mode": "CHAIN_ONLY"
+    }
+  ]
+}

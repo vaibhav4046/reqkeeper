@@ -28,6 +28,8 @@ import {
   assertChainId,
   currentBlock,
   decodePaymentLogFields,
+  findPaymentByReference,
+  negativeCorroborationEndpoints,
   matchPaymentLog,
   readReceipt,
   referenceTopic,
@@ -497,6 +499,9 @@ interface InvoiceRow {
   payee?: string;
   paymentAddress?: string;
   paymentReference: string;
+  /** The block the invoice was written at, from the public Request gateway. The floor that
+   *  turns "no payment on chain" from "I could not tell" into an answer. */
+  anchorBlock?: number;
   /** What the invoice owes. The rows in `docs/refusals-live.json` carry none of this. */
   amountBaseUnits?: string;
   feeAmount?: string;
@@ -858,6 +863,142 @@ if (restSettled.length === 0) {
         ? `${blocked.length}/${results.length} row(s) could not be corroborated — ${summarise(blocked)}`
         : `${passed.length}/${results.length} recorded payments matched emitter, token, payee, amount and fee in the transaction the row names ` +
           `(payee, amount and fee joined from docs/live-invoices.json; token is FAU from src/plan.ts, the only token this deployment settles in)`,
+  );
+}
+
+// ---- the denominator the payer chose, not the one the artifact did ---------
+//
+// Every check above starts from the rows: it takes what the evidence CLAIMS and asks the chain
+// whether the claim holds. That direction cannot see a row that is not there. An adversarial pass
+// made exactly that point — erase a real payment end to end, consistently, and `verify:all` exits
+// 0, because the denominator is whatever the artifact chose to mention.
+//
+// This runs the other way. The invoice set is the denominator: for every invoice this deployment
+// knows, ask the chain whether it was paid, and require the evidence to account for any payment
+// the chain shows. The invoice list is not derived from the evidence — it is the set of debts,
+// each one anchored at the block its invoice was written at, and the anchor is what makes a
+// negative conclusive rather than "I could not tell".
+//
+// It is not a proof of completeness over all payments ever made by the payer: only KeeperHub can
+// enumerate those. It is a proof over every debt this deployment has a record of owing, which is
+// the set an erased row would have to hide inside.
+
+const invoiceDoc = readJson<{ rows?: InvoiceRow[]; invoices?: InvoiceRow[] }>("docs/live-invoices.json");
+// The file names its array `invoices`. Reading only `rows` made this check BLOCKED on an empty
+// universe while looking exactly like a check that ran -- a denominator of zero passes anything.
+const invoiceUniverse: InvoiceRow[] = invoiceDoc?.invoices ?? invoiceDoc?.rows ?? [];
+
+const recordedHashes = new Set<string>(
+  [
+    ...(live?.rows ?? []).map((r) => r.tx_hash),
+    ...(mcp?.rows ?? []).map((r) => r.txHash),
+    ...(liveRace?.waves.flatMap((w) => w.workers) ?? []).map((w) => w.txHash),
+    // Payments this deployment made that no RUN artifact records, kept in their own file rather
+    // than folded into one that claims to be a harness output. The first completeness sweep found
+    // two of them: real, broadcast by this deployment's relayer, paying their invoice exactly, and
+    // made before the evidence pipeline existed. Recording the gap is the honest option; the
+    // alternative was a permanently red check that people learn to ignore.
+    ...(readJson<{ rows?: Array<{ txHash?: string }> }>("docs/evidence/chain-only-payments.json")?.rows ?? []).map(
+      (r) => r.txHash,
+    ),
+  ]
+    .filter((h): h is string => typeof h === "string" && h.length > 0)
+    .map((h) => h.toLowerCase()),
+);
+
+if (invoiceUniverse.length === 0) {
+  record("chain.completeness", "no payment on chain is missing from the evidence", "BLOCKED", "docs/live-invoices.json lists no invoices");
+} else {
+  // ONE query for all of them, not one per invoice.
+  //
+  // `eth_getLogs` takes an array in a topic position, which reads as OR, so every reference this
+  // deployment owes can be asked in a single scan of the range. The first attempt here ran 46
+  // separate anchor-bounded scans and was rate-limited off a public endpoint halfway through —
+  // and, worse, the throw killed the whole command rather than being recorded. A verification
+  // tool that dies on a flaky endpoint teaches people to stop running it.
+  //
+  // The floor is the earliest anchor across the invoices: no payment for any of them can predate
+  // the invoice it pays, so nothing below it is missed.
+  const anchored = invoiceUniverse.filter((i) => typeof i.anchorBlock === "number");
+  const unanchored = invoiceUniverse.length - anchored.length;
+  const byTopic = new Map(anchored.map((i) => [referenceTopic(i.paymentReference).toLowerCase(), i]));
+  const floor = Math.min(...anchored.map((i) => i.anchorBlock as number));
+
+  const unrecorded: string[] = [];
+  let head: number | undefined;
+  let found = 0;
+  let failure: string | undefined;
+  let complete = false;
+
+  /** One OR-scan of the whole range on one endpoint. Throws rather than returning a short answer. */
+  const sweep = async (endpoint: string, to: number): Promise<Map<string, string>> => {
+    const hits = new Map<string, string>();
+    const CHUNK = 40_000; // under the 50k range cap public endpoints impose
+    for (let from = floor; from <= to; from += CHUNK) {
+      const upper = Math.min(from + CHUNK - 1, to);
+      const logs = (await rpcCall(endpoint, "eth_getLogs", [
+        {
+          address: ERC20_FEE_PROXY,
+          topics: [EVENT_TOPIC, [...byTopic.keys()]],
+          fromBlock: `0x${from.toString(16)}`,
+          toBlock: `0x${upper.toString(16)}`,
+        },
+      ])) as Array<{ topics?: string[]; transactionHash?: string }>;
+      for (const log of logs ?? []) {
+        const topic = (log.topics?.[1] ?? "").toLowerCase();
+        if (byTopic.has(topic)) hits.set(`${topic}:${(log.transactionHash ?? "").toLowerCase()}`, topic);
+      }
+    }
+    return hits;
+  };
+
+  try {
+    head = await currentBlock(RPC);
+    // The UNION across endpoints, not one endpoint's answer.
+    //
+    // The first version of this check asked publicnode alone and believed an empty result. It
+    // reported `ok` over 46 references while finding 4 of the 38 payments the evidence itself
+    // records — a green tick produced by a silent negative, which is the failure this whole file
+    // exists to make impossible. src/chain.ts has re-scanned negatives across endpoints since the
+    // day that behaviour was measured; this now uses the same set.
+    const all = new Map<string, string>();
+    let anyCompleted = false;
+    const errors: string[] = [];
+    for (const endpoint of [RPC, ...negativeCorroborationEndpoints()]) {
+      try {
+        for (const [k, v] of await sweep(endpoint, head)) all.set(k, v);
+        anyCompleted = true;
+      } catch (e) {
+        errors.push(`${new URL(endpoint).host}: ${String(e).slice(0, 60)}`);
+      }
+    }
+    complete = anyCompleted;
+    if (!anyCompleted) failure = errors.join(" · ");
+    for (const [key, topic] of all) {
+      found++;
+      const hash = key.slice(topic.length + 1);
+      if (hash && recordedHashes.has(hash)) continue;
+      const inv = byTopic.get(topic);
+      unrecorded.push(`${inv?.paymentReference ?? topic} paid in ${hash.slice(0, 14) || "an unnamed tx"}… with no row citing it`);
+    }
+  } catch (e) {
+    // Unread is not "nothing there". A throw here is BLOCKED, never ok and never FAIL.
+    failure = String(e).slice(0, 140);
+  }
+
+  const summarise = (xs: string[]) => xs.slice(0, 3).join(" · ") + (xs.length > 3 ? ` · +${xs.length - 3} more` : "");
+  record(
+    "chain.completeness",
+    "no payment on chain is missing from the evidence",
+    unrecorded.length > 0 ? "FAIL" : !complete || unanchored > 0 ? "BLOCKED" : "ok",
+    unrecorded.length > 0
+      ? `${unrecorded.length} payment(s) on chain that no evidence row records — ${summarise(unrecorded)}`
+      : !complete
+        ? `no endpoint completed the scan of ${floor}..${head ?? "?"} — ${failure ?? "unknown"}`
+        : unanchored > 0
+          ? `${unanchored} invoice(s) carry no storage anchor, so the floor below them is unknown`
+          : `${anchored.length} invoice reference(s) asked of ${1 + negativeCorroborationEndpoints().length} endpoint(s) over ${floor}..${head}, ` +
+            `from the earliest invoice's own storage anchor; ${found} payment(s) found across their union and every one is accounted for by an evidence file`,
   );
 }
 

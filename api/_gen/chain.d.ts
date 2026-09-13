@@ -5,6 +5,15 @@
 import type { PayerReading } from "./exclusion.ts";
 export declare const DEFAULT_RPC: string;
 /**
+ * The endpoints a negative has to be put to before it counts, exported so that anything drawing a
+ * conclusion from silence uses the same set this module does.
+ *
+ * A verification script that asks one endpoint and believes an empty `eth_getLogs` reproduces the
+ * exact defect this module was built around — measured against this project's own payment, which
+ * publicnode returns zero logs for and two other endpoints return in full.
+ */
+export declare const negativeCorroborationEndpoints: () => readonly string[];
+/**
  * `TransferWithReferenceAndFee`'s `paymentReference` is an INDEXED bytes parameter, so the
  * topic is the keccak hash of the reference bytes, not the bytes themselves. Getting this
  * wrong returns zero logs and looks exactly like "not paid yet".
