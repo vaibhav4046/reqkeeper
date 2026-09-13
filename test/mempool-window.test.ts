@@ -92,7 +92,7 @@ class LeakyProvider extends FixtureProvider {
 
 function settle(store: Store, provider: FixtureProvider, requestId: string, now: number) {
   return settleObligation(
-    { store, provider, policy, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD },
+    { store, provider, policy, approvalAuthority: "caller" as const, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD },
     {
       namespace: NAMESPACE,
       requestId,
@@ -191,6 +191,8 @@ describe("absence is only evidence once the chain has moved past the send", () =
         store,
         provider,
         policy,
+        // This test stands in for the human, and says so.
+        approvalAuthority: "caller" as const,
         sourceSaysPaid: async () => true,
         currentBlock: async () => PREFLIGHT_HEAD,
         payerNonce: async () => 42,
@@ -235,7 +237,7 @@ describe("absence is only evidence once the chain has moved past the send", () =
     const requestId = "01req-mempool-no-head";
 
     await settleObligation(
-      { store, provider, policy, sourceSaysPaid: async () => true },
+      { store, provider, policy, approvalAuthority: "caller" as const, sourceSaysPaid: async () => true },
       {
         namespace: NAMESPACE,
         requestId,

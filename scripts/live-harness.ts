@@ -441,6 +441,12 @@ const out = {
     "rather than asserted. Settled rows carry the real transaction hash; refusal rows carry " +
     "the request id they refused.",
   chainId: SEPOLIA,
+  totalsFrom: {
+    asSpecified: { count: true, where: { field: "actual", equalsField: "expected" } },
+    payments: { count: true, where: [{ field: "expected", equals: "SETTLED" }, { field: "actual", equals: "SETTLED" }] },
+    refusalRows: { count: true, where: { field: "expected", notEquals: "SETTLED" } },
+    refusedBeforeAnyProviderWrite: { count: true, where: [{ field: "expected", notEquals: "SETTLED" }, { field: "refused_before_provider_write", equals: true }] },
+  },
   totals: {
     rows: rows.length,
     asSpecified,

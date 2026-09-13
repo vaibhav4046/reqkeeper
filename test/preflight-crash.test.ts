@@ -182,7 +182,7 @@ describe("a simulation that never came back is resolved by looking, not by assum
 
     const provider = new FixtureProvider("NONE");
     const outcome = await settleObligation(
-      { store, provider, policy, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD,
+      { store, provider, policy, approvalAuthority: "caller" as const, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD,
       payerNonce: async () => PREFLIGHT_NONCE },
       {
         namespace: NAMESPACE,
@@ -221,7 +221,7 @@ describe("a simulation that never came back is resolved by looking, not by assum
 
     const provider = new FixtureProvider("NONE");
     const outcome = await settleObligation(
-      { store, provider, policy, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD,
+      { store, provider, policy, approvalAuthority: "caller" as const, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD,
       payerNonce: async () => PREFLIGHT_NONCE },
       {
         namespace: NAMESPACE,
@@ -274,7 +274,7 @@ describe("the observation does not linger on a settlement that went fine", () =>
     const requestId = "01req-sim-clean";
 
     const outcome = await settleObligation(
-      { store, provider, policy, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD,
+      { store, provider, policy, approvalAuthority: "caller" as const, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD,
       payerNonce: async () => PREFLIGHT_NONCE },
       {
         namespace: NAMESPACE,

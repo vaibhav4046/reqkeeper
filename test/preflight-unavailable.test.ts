@@ -90,7 +90,7 @@ function stepsFor(amount: string) {
 
 function propose(store: Store, provider: FixtureProvider, requestId: string, amount: string, now: number) {
   return settleObligation(
-    { store, provider, policy, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD,
+    { store, provider, policy, approvalAuthority: "caller" as const, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD,
       payerNonce: async () => PREFLIGHT_NONCE },
     {
       namespace: NAMESPACE,

@@ -121,7 +121,7 @@ async function run(
   cfg.pre?.(store, oid);
 
   const outcome = await settleObligation(
-    { store, provider, policy, sourceSaysPaid: async () => true },
+    { store, provider, policy, approvalAuthority: "caller" as const, sourceSaysPaid: async () => true },
     {
       namespace: NS,
       requestId,
@@ -217,7 +217,7 @@ await run("provider rate limits the preflight", "EXECUTION_OUTCOME_UNKNOWN", () 
   const provider = new FixtureProvider("NONE");
   const requestId = "req-replay";
   const oid = obligationId(NS, requestId);
-  const deps = { store, provider, policy, sourceSaysPaid: async () => true };
+  const deps = { store, provider, policy, approvalAuthority: "caller" as const, sourceSaysPaid: async () => true };
   const input = { namespace: NS, requestId, paymentReference: REFERENCE, obligationId: oid, facts: facts(), steps: stepsFor(facts()), approval: APPROVED, now: 1_000_000 };
 
   const first = await settleObligation(deps, input);
@@ -253,7 +253,7 @@ await run("provider rate limits the preflight", "EXECUTION_OUTCOME_UNKNOWN", () 
   const provider = new FixtureProvider("NONE");
   const requestId = "req-inttl";
   const oid = obligationId(NS, requestId);
-  const deps = { store, provider, policy, sourceSaysPaid: async () => true };
+  const deps = { store, provider, policy, approvalAuthority: "caller" as const, sourceSaysPaid: async () => true };
   const input = { namespace: NS, requestId, paymentReference: REFERENCE, obligationId: oid, facts: facts(), steps: stepsFor(facts()), approval: APPROVED, now: 2_000_000 };
 
   await settleObligation(deps, input);
@@ -296,7 +296,7 @@ for (const [label, advanceMs, want] of [
   const requestId = `req-unconfirmed-${advanceMs}`;
   const oid = obligationId(NS, requestId);
   // The chain never confirms, so the first call stops short of SETTLED.
-  const deps = { store, provider, policy, sourceSaysPaid: async () => false };
+  const deps = { store, provider, policy, approvalAuthority: "caller" as const, sourceSaysPaid: async () => false };
   const input = { namespace: NS, requestId, paymentReference: REFERENCE, obligationId: oid, facts: facts(), steps: stepsFor(facts()), approval: APPROVED, now: 3_000_000 };
 
   await settleObligation(deps, input);
@@ -376,6 +376,10 @@ const body = {
     "Deterministic fault injection against an in-memory provider that counts physical sends. " +
     "These rows prove the refusal logic, not the live integration. Live rows require Gate A " +
     "and are tagged LIVE_TESTNET when present.",
+  totalsFrom: {
+    failed: { count: true, where: { field: "pass", equals: false } },
+    refusalCases: { count: true, where: { field: "expected", notEquals: "SETTLED" } },
+  },
   totals: {
     cases: rows.length,
     passed,

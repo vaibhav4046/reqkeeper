@@ -146,7 +146,7 @@ describe("more than one pair of eyes, when a workspace wants it", () => {
       steps,
       now: 1_000_000,
     };
-    const deps = { store, provider, policy, sourceSaysPaid: async () => true, quorum };
+    const deps = { store, provider, policy, approvalAuthority: "caller" as const, sourceSaysPaid: async () => true, quorum };
 
     // First pass with no approval, to persist the plan the humans will sign.
     const proposal = await settleObligation(deps, input);

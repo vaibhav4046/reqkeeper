@@ -107,7 +107,7 @@ function honestScan(ceiling: number) {
 
 function settle(store: Store, provider: FixtureProvider, requestId: string, now: number) {
   return settleObligation(
-    { store, provider, policy, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD },
+    { store, provider, policy, approvalAuthority: "caller" as const, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD },
     {
       namespace: NAMESPACE,
       requestId,

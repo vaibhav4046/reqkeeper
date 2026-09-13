@@ -96,7 +96,7 @@ function providerWithReceipt(over: Partial<Receipt>) {
 async function settleWith(provider: FixtureProvider, requestId: string) {
   const store = new Store();
   const outcome = await settleObligation(
-    { store, provider, policy, sourceSaysPaid: async () => true },
+    { store, provider, policy, approvalAuthority: "caller" as const, sourceSaysPaid: async () => true },
     {
       namespace: NAMESPACE,
       requestId,
@@ -203,7 +203,7 @@ describe("a receipt one block deep is not a settlement", () => {
     const requestId = "01req-shallow";
 
     const outcome = await settleObligation(
-      { store, provider, policy, sourceSaysPaid: async () => true },
+      { store, provider, policy, approvalAuthority: "caller" as const, sourceSaysPaid: async () => true },
       {
         namespace: NAMESPACE,
         requestId,

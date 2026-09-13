@@ -77,7 +77,7 @@ const steps = [
 
 function settle(store: Store, provider: FixtureProvider, now: number, approver = "human:owner") {
   return settleObligation(
-    { store, provider, policy, sourceSaysPaid: async () => true },
+    { store, provider, policy, approvalAuthority: "caller" as const, sourceSaysPaid: async () => true },
     {
       namespace: NAMESPACE,
       requestId: REQUEST_ID,
@@ -156,7 +156,7 @@ describe("an expired plan is re-proposable, and a stale decision is not spendabl
     const A_DAY_LATER = DECIDED_AT + 86_400_000;
 
     const outcome = await settleObligation(
-      { store, provider, policy, sourceSaysPaid: async () => true },
+      { store, provider, policy, approvalAuthority: "caller" as const, sourceSaysPaid: async () => true },
       {
         namespace: NAMESPACE,
         requestId: REQUEST_ID,

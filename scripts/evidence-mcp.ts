@@ -215,6 +215,12 @@ writeFileSync(
         "Each row's payment reference is derived from the invoice Request itself serves, and each " +
         "was confirmed by counting ERC20FeeProxy events for that reference from the invoice's own " +
         "anchor block — one event, one send, one transaction.",
+      // Stated here rather than in the checker, so `verify:all` can recompute them from the rows
+      // without a per-artifact checklist living inside the verifier.
+      totalsFrom: {
+        settled: { count: true, where: { field: "finalState", equals: "SETTLED" } },
+        withExecutionId: { count: true, where: { field: "keeperhubExecutionId", present: true } },
+      },
       totals: {
         rows: rows.length,
         settled: rows.filter((r) => r.finalState === "SETTLED").length,

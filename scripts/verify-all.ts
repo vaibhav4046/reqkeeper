@@ -37,6 +37,7 @@ import {
   type PaymentExpectation,
 } from "../src/chain.ts";
 import { derivePaymentReference } from "../src/request.ts";
+import { evaluateSpec, type TotalSpec } from "../src/totals.ts";
 import { ERC20_FEE_PROXY, FAU } from "../src/plan.ts";
 
 const RPC = process.env.SEPOLIA_RPC ?? "https://ethereum-sepolia-rpc.publicnode.com";
@@ -130,6 +131,20 @@ const jsonFilesUnder = (dir: string): string[] => {
   return out.sort();
 };
 
+/**
+ * How an artifact says a total is derived, when its name does not already say it.
+ *
+ * Name-matching covers the easy half: a key that names a row field, an array, or the row count.
+ * It cannot cover `settledAfterRecovery` or `maxBroadcastsForOneObligation`, and those were
+ * reported as "not recomputed" and left alone — 27 of 42 numbers in this repository, including
+ * every figure the crash matrix and the race publish.
+ *
+ * Listing them in this file would put the checklist back in the checker, which is the arrangement
+ * that let `docs/refusals.json` disagree with its own rows for weeks. So the artifact carries the
+ * derivation instead: a generator that adds a total must either name it after a row field or say
+ * in `totalsFrom` how to compute it, and a total with neither is still reported. Coverage becomes
+ * a property of the format rather than a property of whoever last edited the checker.
+ */
 /** `null` means "this file claims no totals", which is nothing to check rather than a pass. */
 function auditArtifact(file: string): ArtifactAudit | null {
   const doc = readJson<unknown>(file);
@@ -198,7 +213,11 @@ function auditArtifact(file: string): ArtifactAudit | null {
   let recomputed = 0;
   for (const [key, stated] of Object.entries(summary)) {
     if (typeof stated !== "number") continue;
-    const got = derive(key);
+    // Name first, then the artifact's own statement of how it is derived. A key that has neither
+    // is reported by name: a check that quietly stops checking is the failure this file exists
+    // to catch, and that applies to this check too.
+    const spec = isRecord(doc.totalsFrom) && isRecord(doc.totalsFrom[key]) ? (doc.totalsFrom[key] as TotalSpec) : undefined;
+    const got = derive(key) ?? (spec ? evaluateSpec(spec, doc, rows) : null);
     if (!got) {
       underivable.push(key);
       continue;
@@ -1013,6 +1032,13 @@ const artifact = {
   chainId: 11155111,
   rpc: RPC,
   credentialsUsed: "none",
+  // This artifact states how its own totals are derived, on the same terms it demands of every
+  // other artifact under docs/. A verifier exempt from its own rule is a rule with a hole in it.
+  totalsFrom: {
+    ok: { count: true, where: { field: "status", equals: "ok" } },
+    failed: { count: true, where: { field: "status", equals: "FAIL" } },
+    blocked: { count: true, where: { field: "status", equals: "BLOCKED" } },
+  },
   totals: { checks: checks.length, ok: passed.length, failed: failed.length, blocked: blocked.length },
   checks,
 };

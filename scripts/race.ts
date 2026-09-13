@@ -315,6 +315,29 @@ const artifact = {
     "deduplicated ones separately, so the result cannot be KeeperHub's cache taking the credit.",
   workers: WORKERS,
   invoice: { requestId, reference, payee, anchorBlock: liveAnchorBlock },
+  // Derivations for the totals whose names do not point at a row field. The nested shape is the
+  // reason: a race counts inside `waves[].counters` and `waves[].workers`, so a checker matching
+  // summary keys against row fields can see none of it. Only the numbers that ARE a function of
+  // the rows are declared -- `duplicates` is arithmetic over a total, and in live mode
+  // `postsReachingTheProvider` and `dedupedByKey` are the -1 sentinel, so neither is claimed here.
+  totalsFrom: {
+    // First wave only, and that is the point of the metric: the second wave exists to show that
+    // nothing happens in it, so folding it in would count the proof as part of the claim.
+    settled: {
+      from: "waves[0].workers",
+      count: true,
+      where: [{ field: "state", equals: "SETTLED" }, { field: "refusal", equals: null }],
+    },
+    distinctTransactions: { from: "waves[0].workers", distinct: "txHash" },
+    ...(LIVE
+      ? {}
+      : {
+          broadcasts: { from: "waves", sum: "counters.broadcasts" },
+          postsReachingTheProvider: { from: "waves", sum: "counters.posts" },
+          dedupedByKey: { from: "waves", sum: "counters.dedupedByKey" },
+          secondWaveBroadcasts: { from: "waves", sum: "counters.broadcasts", where: { field: "label", equals: "second wave" } },
+        }),
+  },
   totals: {
     broadcasts: totalBroadcasts,
     // Live, these are not measurable from here: the calls go to KeeperHub, not to a counter we

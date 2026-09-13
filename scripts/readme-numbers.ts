@@ -129,6 +129,11 @@ const claims: Array<{ file: string; what: string; re: RegExp; expected: number }
   { file: "README.md", what: "MCP settlements", re: /\*\*(\d+) through KeeperHub's own MCP/, expected: facts.mcpSettlements },
   { file: "README.md", what: "references re-derived", re: /\*\*(\d+) of \d+\*\* recorded payment references/, expected: facts.derivations },
   { file: "docs/SUBMISSION.md", what: "unit tests", re: /(\d+) unit tests/, expected: facts.tests },
+  // STATUS.md is what README calls "every open finding", and a reviewer found its gate line
+  // claiming 429 tests when the suite had long since moved. A document cited as the honest one is
+  // the worst place for a number nothing checks.
+  { file: "hackathon/audit/STATUS.md", what: "unit tests", re: /(\d+) pass \/ 0 fail/, expected: facts.tests },
+  { file: "hackathon/audit/STATUS.md", what: "test suites", re: /0 fail \/ (\d+) suites/, expected: facts.suites },
   { file: "docs/SUBMISSION.md", what: "settlements", re: /\*\*(\d+) real payments on Sepolia/, expected: facts.settlements },
   { file: "docs/SUBMISSION.md", what: "replays refused", re: /(\d+) replays refused/, expected: facts.replays },
   { file: "docs/SUBMISSION.md", what: "sends by those replays", re: /(\d+) sends by those replays/, expected: facts.replaySends },

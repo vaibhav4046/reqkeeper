@@ -95,7 +95,7 @@ describe("a refusal thrown after the send must not say nothing was sent", () => 
     provider.bind(store);
 
     const outcome = await settleObligation(
-      { store, provider, policy, sourceSaysPaid: async () => true },
+      { store, provider, policy, approvalAuthority: "caller" as const, sourceSaysPaid: async () => true },
       {
         namespace: NAMESPACE,
         requestId: "01req-lost-race",

@@ -69,7 +69,7 @@ describe("the obligation id has to derive from the invoice it claims to be", () 
     const provider = new FixtureProvider("NONE");
 
     const outcome = await settleObligation(
-      { store, provider, policy, sourceSaysPaid: async () => true },
+      { store, provider, policy, approvalAuthority: "caller" as const, sourceSaysPaid: async () => true },
       {
         namespace: NAMESPACE,
         requestId: "01req-identity-a",
@@ -95,7 +95,7 @@ describe("the obligation id has to derive from the invoice it claims to be", () 
     const requestId = "01req-identity-ok";
 
     const outcome = await settleObligation(
-      { store, provider, policy, sourceSaysPaid: async () => true },
+      { store, provider, policy, approvalAuthority: "caller" as const, sourceSaysPaid: async () => true },
       {
         namespace: NAMESPACE,
         requestId,

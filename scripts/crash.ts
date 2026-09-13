@@ -293,6 +293,11 @@ const artifact = {
     "KeeperHub fixture, so the count survives the kill. End states differ by checkpoint and " +
     "that is the result, not a defect; `duplicate` is the cell that must be false on every row.",
   checkpoints: CHECKPOINTS,
+  totalsFrom: {
+    settledAfterRecovery: { count: true, where: { field: "finalState", equals: "SETTLED" } },
+    heldOpenForAHuman: { count: true, where: { field: "finalState", notEquals: "SETTLED" } },
+    maxBroadcastsForOneObligation: { max: "totalBroadcasts" },
+  },
   totals,
   rows,
   executions: fx.executions,

@@ -88,7 +88,7 @@ const steps = [
 async function wedge(store: Store, requestId: string, anchorBlock: number | undefined) {
   const provider = new FixtureProvider("RATE_LIMITED");
   const outcome = await settleObligation(
-    { store, provider, policy, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD,
+    { store, provider, policy, approvalAuthority: "caller" as const, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD,
       payerNonce: async () => PREFLIGHT_NONCE },
     {
       namespace: NAMESPACE,

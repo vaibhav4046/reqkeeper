@@ -92,6 +92,15 @@ export interface SettleDeps {
    */
   readonly payerNonce?: () => Promise<number>;
   /**
+   * Where the authority to spend is read from. Defaults to `"store"`.
+   *
+   * `"caller"` lets `input.approval` BE the authority, which is what a harness standing in for a
+   * human needs and what no production path may have. It is recorded in the audit trail as
+   * APPROVAL_ASSERTED_BY_CALLER so a decision nobody made is never indistinguishable from one
+   * somebody did.
+   */
+  readonly approvalAuthority?: "store" | "caller";
+  /**
    * How many DISTINCT humans must approve before anything is dispatched.
    *
    * One is the honest default for a single operator. A workspace that wants two pairs of eyes
@@ -597,26 +606,55 @@ async function settleOrRefuse(deps: SettleDeps, input: SettleInput): Promise<Set
     });
   }
 
-  if (!input.approval) {
+  // Where the authority to spend comes from.
+  //
+  // This used to take `input.approval` as the authority itself and write it straight into the
+  // record: whatever the caller asserted became a human decision for whatever plan THIS call had
+  // just derived. Nothing checked that the decision had been given for this plan. An adversarial
+  // pass drove it with one genuine "yes" for 1 FAU and settled 5 FAU to an attacker's payee,
+  // leaving a HUMAN_APPROVED row naming a sentence the human never saw — and because the replayed
+  // `decidedAt` was milliseconds old, the approval-age gate passed too.
+  //
+  // An authority its own consumer can assert is not an authority. So the default is `"store"`:
+  // the decision is READ, keyed by the plan hash it was given for, and a plan nobody approved has
+  // no approval no matter what the caller passes. The agent surface cannot write approvals —
+  // `src/mcp.ts` has no tool that records one — so on that path this is structural.
+  //
+  // `"caller"` exists for harnesses and scripts that legitimately stand in for the human, and it
+  // says so in the audit trail rather than being indistinguishable from a real decision. It is
+  // opt-in, and nothing in `src/` selects it.
+  const humanDecision: { approver: string; decision: string; reason?: string; decidedAt?: number } | undefined =
+    (deps.approvalAuthority ?? "store") === "caller"
+      ? input.approval
+      : store.getApproval(planHash);
+
+  if (!humanDecision) {
     return out({
       state: "AWAITING_APPROVAL",
-      detail: "waiting for a human decision",
+      detail:
+        input.approval && (deps.approvalAuthority ?? "store") === "store"
+          ? "a decision was supplied but none is recorded for this plan; approve this plan hash, " +
+            "then dispatch it — an approval given for another plan does not carry over"
+          : "waiting for a human decision",
       providerWriteIssued: false,
       planHash,
       restatement,
     });
   }
-  store.recordApproval({
-    planHash,
-    obligationId: input.obligationId,
-    approver: input.approval.approver,
-    decision: input.approval.decision,
-    restatement,
-    reason: input.approval.reason,
-    // A replayed decision keeps the moment the human made it. See SettleInput.approval.
-    now: input.approval.decidedAt ?? input.now,
-  });
-  if (input.approval.decision === "REJECTED") {
+  if ((deps.approvalAuthority ?? "store") === "caller") {
+    store.recordApproval({
+      planHash,
+      obligationId: input.obligationId,
+      approver: humanDecision.approver,
+      decision: humanDecision.decision as "APPROVED" | "REJECTED",
+      restatement,
+      reason: humanDecision.reason,
+      // A replayed decision keeps the moment the human made it. See SettleInput.approval.
+      now: humanDecision.decidedAt ?? input.now,
+    });
+    store.audit(input.obligationId, humanDecision.approver, "APPROVAL_ASSERTED_BY_CALLER", { planHash });
+  }
+  if (humanDecision.decision === "REJECTED") {
     store.setState(input.obligationId, "REVIEW_REJECTED", input.now);
     // A rejected plan must not hold the invoice hostage. Releasing lets a corrected plan be
     // proposed; without it one bad proposal bricks the debt forever.
@@ -624,7 +662,7 @@ async function settleOrRefuse(deps: SettleDeps, input: SettleInput): Promise<Set
     return out({
       state: "REVIEW_REJECTED",
       refusal: "REVIEW_REJECTED",
-      detail: input.approval.reason ?? "rejected by reviewer",
+      detail: humanDecision.reason ?? "rejected by reviewer",
       providerWriteIssued: false,
       planHash,
     });

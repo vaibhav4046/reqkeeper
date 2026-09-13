@@ -71,7 +71,7 @@ async function paidButUnreconciled(requestId: string) {
   const provider = new FixtureProvider("NONE");
   const oid = obligationId(NS, requestId);
   const outcome = await settleObligation(
-    { store, provider, policy, sourceSaysPaid: async () => false },
+    { store, provider, policy, approvalAuthority: "caller" as const, sourceSaysPaid: async () => false },
     {
       namespace: NS,
       requestId,
@@ -125,7 +125,7 @@ describe("the outbox actually drains", () => {
     const oid = obligationId(NS, requestId);
 
     const first = await settleObligation(
-      { store, provider, policy, sourceSaysPaid: async () => true },
+      { store, provider, policy, approvalAuthority: "caller" as const, sourceSaysPaid: async () => true },
       {
         namespace: NS,
         requestId,
@@ -158,7 +158,7 @@ describe("the outbox actually drains", () => {
     const oid = obligationId(NS, requestId);
 
     await settleObligation(
-      { store, provider, policy, sourceSaysPaid: async () => false },
+      { store, provider, policy, approvalAuthority: "caller" as const, sourceSaysPaid: async () => false },
       {
         namespace: NS,
         requestId,

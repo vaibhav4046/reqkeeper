@@ -1,12 +1,14 @@
 # Audit status — what was fixed, what still breaks
 
-Every row is the state on 2026-09-12, re-checked against the working tree rather than inherited
-from the audit that raised it. FIXED rows name the evidence. The submission form asks "what
+Every row was re-checked against the working tree rather than inherited from the audit that raised
+it. The gate line below is checked on every `npm run verify:all`, so it cannot drift from the
+suite the way it did once before; the prose rows carry no such guarantee and are dated by the
+commit that last touched this file. FIXED rows name the evidence. The submission form asks "what
 still breaks or is unfinished?" and the last section is the source for that answer.
 
 Reproduce any probe with `node --experimental-strip-types hackathon/audit/probes/<probe>.ts`.
 
-Gates: `npm test` 429 pass / 0 fail / 86 suites · `npm run typecheck` clean · `npm run build`
+Gates: `npm test` 483 pass / 0 fail / 99 suites · `npm run typecheck` clean · `npm run build`
 clean, and reproducible from a bare clone: the page is a function of the committed evidence and
 reads no environment at all, so `git diff --exit-code web api/_gen` passes on a machine that has
 never had a `.env` · `npm run gate-a` 10 ok / 0 failed / 2 blocked here, 9 ok / 0 failed / 3
@@ -243,9 +245,12 @@ Nothing here is a duplicate-payment path. Each was checked for that specifically
     lines verbatim, and records in the artifact that it happened and why. `verify:all` then counts
     the payment from the chain independently rather than believing the artifact.
 
-11. **Not built, and out of scope for this pass:** `scripts/mcp-e2e.ts` (piping JSON-RPC through the
-   stdio server as a test rather than by hand), and a live `--live` mode for the race. The race,
-   the crash matrix, `verify:all` and a generated `docs/TRUTH.md` all now exist and run.
+11. **Built since this row was written:** `scripts/mcp-e2e.ts` pipes JSON-RPC through the stdio
+   server as a test (`npm run mcp:e2e`, 17 checks, in CI), and the race has a `--live` mode that
+   produced `docs/evidence/race-live.json`. The race, the crash matrix, `verify:all` and a
+   generated `docs/TRUTH.md` all exist and run. This row is kept rather than deleted because a
+   reviewer quoted it back as a false claim in a file the README calls the list of open findings,
+   and the useful record is that it went stale, not that it was once true.
 
 ---
 

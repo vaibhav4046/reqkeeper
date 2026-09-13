@@ -62,7 +62,7 @@ const approveStep = {
 function bench() {
   const store = new Store();
   const provider = new FixtureProvider("NONE");
-  const deps = { store, provider, policy, sourceSaysPaid: async () => true };
+  const deps = { store, provider, policy, approvalAuthority: "caller" as const, sourceSaysPaid: async () => true };
   // The calldata always carries the canonical reference; only the value handed to settle
   // varies, which is exactly the shape of the attack.
   const settle = (requestId: string, reference: string, steps = [payStep(REFERENCE)]) =>

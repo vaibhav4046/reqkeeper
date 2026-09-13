@@ -287,7 +287,16 @@ const outcome = await settleObligation(
     obligationId: oid,
     facts,
     steps,
-    approval: { approver: "owner@reqkeeper.local", decision: "APPROVED" },
+    // No approval literal here, and that is the point.
+    //
+    // This line used to read `approval: { approver: "owner@reqkeeper.local", decision: "APPROVED" }`
+    // — a hardcoded yes on the one path that moves real money. Every settlement this repository
+    // records was dispatched with a human approval that no human gave; `recordApproval` minted the
+    // row at send time from that literal. An adversarial pass found it and it is the worst kind of
+    // gap, because the audit trail looked complete.
+    //
+    // `settleObligation` now reads the decision from the store, keyed by the plan hash it was
+    // given for, so this script stops at AWAITING_APPROVAL until somebody approves THIS plan.
     // Milliseconds. planTtlSeconds is multiplied by 1000 downstream, so passing seconds here
     // would stretch a one-hour approval into roughly 41 days.
     now: Date.now(),
@@ -298,6 +307,15 @@ const outcome = await settleObligation(
 console.log("\n--- settle() outcome ---");
 console.log(`state            : ${outcome.state}`);
 console.log(`refusal          : ${outcome.refusal ?? "(none)"}`);
+
+if (outcome.state === "AWAITING_APPROVAL") {
+  console.log("");
+  console.log("Nothing was sent: no human has approved this plan.");
+  console.log(`  npm run approve -- --plan ${outcome.planHash ?? "<planHash>"} --approver you@example.com`);
+  console.log("");
+  console.log("The sentence to read before approving:");
+  console.log(`  ${outcome.restatement ?? "(none)"}`);
+}
 console.log(`detail           : ${outcome.detail}`);
 console.log(`providerWrite    : ${outcome.providerWriteIssued}`);
 console.log(`txHash           : ${outcome.txHash ?? "(none)"}`);
