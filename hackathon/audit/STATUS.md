@@ -274,3 +274,36 @@ path ever re-broadcast. `EXECUTION_OUTCOME_UNKNOWN` never decayed into a fresh p
 reservation never came back after a dispatch, every illegal transition was refused, case-variant
 references never minted a second debt, and no free-text field reaches a decision — there is no
 `memo`, `description` or note anywhere in `InvoiceFacts`.
+
+## Round 12 (2026-09-13) — four independent panels on 689532d; fixes landed after
+
+Scores on 689532d, before any of the fixes below: KeeperHub 7.5, Request 6, security 7.0,
+product 6.5. Every reproduced finding was fixed on HEAD with a regression test; the panels have
+NOT re-scored the fixed tree.
+
+Fixed: REST status read before the body parse (HTML 429/409 bodies); SSE frames parsed by request
+id; MCP handshake status-branched; MCP `isError` carries rate-limit and idempotency semantics;
+`ecdsa-ethereum` recovers over the normalised JSON text (Request's actual preimage — the previous
+guess made a wallet-signed cancel recover to a stranger); per-step delta arithmetic with Request's
+ignore-on-negative rule and timestamp ordering; pending actions not applied; create selected by hash
+not position; later-action `extensionsData` refused rather than dropped; `paymentNetworkName`
+optional; request-state preconditions on cancel/accept; the worker consults `reviewedConflicts`;
+`EVIDENCE_CONFLICT` has two doors (`--release-preflight` when nothing was sent, `--reconcile` against
+the chain); a lagging fallback is no longer a corroborating negative; the anchor is bound to the
+create's signed timestamp; a chain receipt with no depth is not "deep enough"; `verify_payment` is
+never `paid: true` over its own conflicts; `approve.ts` reads flag values; the transport that
+carried each attempt is persisted; phone nav is one strip in source order; README quickstart is the
+three-command flow; REDTEAM trace restored.
+
+Still open (not enough budget this session):
+- `EXECUTION_OUTCOME_UNKNOWN` has no operator exit even with a consumed nonce (security #4).
+- A 429 on the dry run still consumes the attempt instead of retrying after Retry-After (KeeperHub #6).
+- `observe()` path (`execute/{id}` vs `execute/{id}/status`) unverified against the live API; nothing
+  in the automated loop calls it (KeeperHub #7).
+- The idempotency key is sent on both surfaces and never shown to be honoured by the platform (#9).
+- `refusal_codes` tables miss eight codes emitted from policy.ts/settle.ts (security #8).
+- `docs/ARCHITECTURE.md` line-number tables are stale; the console tags two FIXTURE panels
+  RECORDED and prints `44 tools` with no artifact behind it (product MEDIUM-2/3/4).
+- The 46 live invoices are one generator's shape: no live `ecdsa-ethereum`, `addFee`, pending, or
+  reduce-then-increase channel exists in the evidence.
+- Owner-gated: a credentialed live run so REST rows carry execution ids; rotate the ElevenLabs key.
