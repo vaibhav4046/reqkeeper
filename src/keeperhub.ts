@@ -176,6 +176,9 @@ export class KeeperHubProvider implements ExecutionProvider {
       // gate reads "would not revert" from what is actually a failure to simulate at all.
       // Unknown must mean unsafe here, because the next step spends money.
       wouldRevert: res.wouldRevert === true || res.success === false || res.error !== undefined,
+      // A verdict, as opposed to a silence. Only an explicit `wouldRevert` from a reply that did
+      // not also carry an error is the provider saying it simulated and the payment reverts.
+      simulated: res.wouldRevert !== undefined && res.error === undefined,
       gasEstimate: res.gasEstimate ?? "0",
       // Passed through deliberately. A hash here means the dry run executed, and settle.ts
       // treats that as a real send rather than a simulation.

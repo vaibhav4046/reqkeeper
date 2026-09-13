@@ -102,6 +102,28 @@ class HardRefusalProvider extends FixtureProvider {
 }
 
 /**
+ * The dry run executes and then answers `{"success": false}` with no revert verdict. Both
+ * transports map that to `wouldRevert: true, simulated: false` -- fail-closed for the dispatch
+ * decision, because an unreadable answer must never authorise a send. The bug this pins is what
+ * happened next: settle read `wouldRevert` alone as "the provider simulated and said no", ended
+ * the chain observation, released the reservation into SIMULATION_BLOCKED (replannable), and the
+ * agent was told "The payment would revert. A retry repeats the revert." The retry paid.
+ */
+class LeakySilentFailureProvider extends FixtureProvider {
+  override async simulate(): Promise<SimulateResult> {
+    this.sendCounts.set("leaked-simulate", (this.sendCounts.get("leaked-simulate") ?? 0) + 1);
+    return { status: "simulated", wouldRevert: true, simulated: false, gasEstimate: "21000" };
+  }
+}
+
+/** A provider that really did simulate, and the payment really does revert. */
+class HonestRevertProvider extends FixtureProvider {
+  override async simulate(): Promise<SimulateResult> {
+    return { status: "simulated", wouldRevert: true, simulated: true, gasEstimate: "21000" };
+  }
+}
+
+/**
  * The same leak, reported as a DEFINITE failure. Both transports raise non-retryable for any
  * 4xx -- a 409, or a 4xx whose body is not JSON at all, which is what an edge or WAF HTML page
  * looks like. None of those can tell a plan the provider rejected from a plan it executed
@@ -250,6 +272,48 @@ describe("a retryable preflight failure, with nothing ever dispatched", () => {
     const healthy = new FixtureProvider("NONE");
     const corrected = await propose(store, healthy, requestId, "40", 2_000);
     assert.notEqual(corrected.refusal, "OBLIGATION_RESERVED");
+    assert.equal(corrected.state, "SETTLED");
+    assert.equal(healthy.totalSends(), 1);
+    store.close();
+  });
+
+  test("a failed simulate with no verdict is not a verdict, and never pays twice", async () => {
+    // The red-team repro, driven through the same shape the real transports produce.
+    const store = new Store();
+    const provider = new LeakySilentFailureProvider();
+    const requestId = "01req-silent-simulate-failure";
+
+    const first = await propose(store, provider, requestId, "50", 1_000);
+    assert.equal(first.refusal, "EXECUTION_OUTCOME_UNKNOWN");
+    assert.notEqual(first.state, "SIMULATION_BLOCKED");
+    assert.equal(provider.totalSends(), 1, "the dry run moved money; that is the premise");
+    assert.ok(store.pendingJobKinds().includes("OBSERVE_PREFLIGHT"));
+
+    const second = await propose(store, provider, requestId, "50", 2_000);
+    assert.notEqual(second.state, "SETTLED");
+    assert.equal(provider.totalSends(), 1, "TWO SENDS HERE IS THE DUPLICATE PAYMENT");
+
+    await drain(store, paid);
+    assert.equal(store.getObligation(obligationId(NAMESPACE, requestId))?.state, "EVIDENCE_CONFLICT");
+    assert.equal(provider.totalSends(), 1);
+    store.close();
+  });
+
+  test("a real revert verdict still blocks the plan and hands the reservation back", async () => {
+    // The control. Splitting the flag must not turn a genuine revert into a wedge: a provider
+    // that actually simulated and says the payment reverts is conclusive, and re-planning from
+    // there is both safe and the point.
+    const store = new Store();
+    const provider = new HonestRevertProvider();
+    const requestId = "01req-honest-revert";
+
+    const first = await propose(store, provider, requestId, "50", 1_000);
+    assert.equal(first.state, "SIMULATION_BLOCKED");
+    assert.equal(first.refusal, "SIMULATION_BLOCKED");
+    assert.equal(provider.totalSends(), 0);
+
+    const healthy = new FixtureProvider("NONE");
+    const corrected = await propose(store, healthy, requestId, "40", 2_000);
     assert.equal(corrected.state, "SETTLED");
     assert.equal(healthy.totalSends(), 1);
     store.close();

@@ -29,7 +29,24 @@ export type Fault =
 
 export interface SimulateResult {
   readonly status: "simulated";
+  /**
+   * Fail-closed: true whenever it is not safe to dispatch, which includes a provider reply that
+   * said nothing at all. Never read this as a verdict on the payment -- see `simulated`.
+   */
   readonly wouldRevert: boolean;
+  /**
+   * Whether the provider actually ran a dry run and reported its outcome. False means the reply
+   * was a failure to simulate, not a simulation that failed.
+   *
+   * These were one boolean until an adversarial pass showed what that costs. `wouldRevert` is
+   * set by both transports from `success === false || error !== undefined` -- deliberately, so
+   * an unreadable answer can never authorise a send -- and settle.ts then treated it as
+   * conclusive, ending the chain observation and releasing the reservation into
+   * SIMULATION_BLOCKED, which is replannable. A dry run that had already executed (#1959) and
+   * then returned `{"success":false}` therefore got paid a second time, while the agent was told
+   * "The payment would revert. A retry repeats the revert."
+   */
+  readonly simulated: boolean;
   readonly gasEstimate: string;
   /** Must always be absent. A hash from a dry run means it really executed (#1959). */
   readonly transactionHash?: string;
@@ -139,6 +156,7 @@ export class FixtureProvider implements ExecutionProvider {
       return {
         status: "simulated",
         wouldRevert: false,
+        simulated: true,
         gasEstimate: "21000",
         transactionHash: `0x${"5i".repeat(32).slice(0, 64)}`,
       };
@@ -146,7 +164,7 @@ export class FixtureProvider implements ExecutionProvider {
     if (this.#fault === "RATE_LIMITED") {
       throw new ProviderError("rate_limited", "429 from provider", true);
     }
-    return { status: "simulated", wouldRevert: false, gasEstimate: "21000" };
+    return { status: "simulated", wouldRevert: false, simulated: true, gasEstimate: "21000" };
   }
 
   async execute(body: unknown, idempotencyKey: string): Promise<ExecuteResult> {

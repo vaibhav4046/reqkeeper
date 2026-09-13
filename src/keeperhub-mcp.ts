@@ -263,6 +263,11 @@ export class KeeperHubMcpProvider implements ExecutionProvider {
       // same shape was observed there; the MCP transport is the surface that carries the live
       // settlements, and it did not.
       wouldRevert: payload.wouldRevert === true || payload.success === false || payload.error !== undefined,
+      // A verdict, as opposed to a silence. Only an explicit `wouldRevert` from a payload that
+      // did not also carry an error is this transport saying it simulated and the payment
+      // reverts. settle.ts releases the reservation on a verdict and holds it on a silence,
+      // and conflating the two here is what paid an invoice twice.
+      simulated: payload.wouldRevert !== undefined && payload.error === undefined,
       gasEstimate: payload.gasEstimate ?? "0",
       // Passed through deliberately: a hash from a dry run means it really executed, and
       // settle.ts treats that as a real send.

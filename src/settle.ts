@@ -621,11 +621,34 @@ async function settleOrRefuse(deps: SettleDeps, input: SettleInput): Promise<Set
         planHash,
       });
     }
-    if (sim.wouldRevert) {
+    if (sim.wouldRevert && sim.simulated) {
+      // A verdict: the provider ran the dry run and the payment reverts. Nothing executed, so the
+      // observation ends and the reservation goes back for a corrected plan.
       store.setState(input.obligationId, "SIMULATION_BLOCKED", input.now);
       store.endPreflight(planHash);
       store.releaseObligation(input.obligationId, planHash);
       return out({ state: "SIMULATION_BLOCKED", refusal: "SIMULATION_BLOCKED", detail: "payment would revert", providerWriteIssued: false, planHash });
+    }
+    if (sim.wouldRevert) {
+      // Not a verdict -- a reply that told us nothing, which both transports report through the
+      // same flag so that it can never authorise a send. It must not authorise a RELEASE either:
+      // a dry run that executed and then answered `{"success":false}` is indistinguishable from
+      // one that never ran, and releasing here is how the second payment gets made. Same
+      // treatment as a throw: hold the reservation, leave OBSERVE_PREFLIGHT queued, say so.
+      store.audit(input.obligationId, "system", "PREFLIGHT_OUTCOME_UNKNOWN", {
+        reason: "the provider reported a failed simulate without a revert verdict",
+      });
+      return out({
+        state: "PAYMENT_PREFLIGHT",
+        refusal: "EXECUTION_OUTCOME_UNKNOWN",
+        detail:
+          "the dry run did not come back with a verdict, only a failure. Whether it executed is " +
+          "not known here, and a dry run that executed can still have moved money. The " +
+          "reservation is held and an observation is queued: run the resolver (npm run resolve, " +
+          "or the MCP resolve_pending tool) to settle the question from the chain.",
+        providerWriteIssued: false,
+        planHash,
+      });
     }
   } catch (e) {
     const code = e instanceof ProviderError ? e.code : "simulate_failed";
