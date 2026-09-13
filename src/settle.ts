@@ -131,7 +131,11 @@ export function calldataDisagreesWithFacts(
   steps: ReadonlyArray<{ kind: string; to: string; data: string; value: string }>,
   facts: SourceFacts,
   totalDebitBaseUnits: string,
-  paymentReference?: string,
+  // Required, not optional. `SettleInput.paymentReference` always has one, so the only thing the
+  // optional spelling bought was a branch where the debt's own identity went unchecked — a plan
+  // could carry any reference at all and this would pass it. Nothing exercised that branch and
+  // nothing should be able to.
+  paymentReference: string,
 ): string | null {
   const eq = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
@@ -161,7 +165,7 @@ export function calldataDisagreesWithFacts(
       if (amount !== facts.invoiceBaseUnits) return `step ${i} moves ${amount}, the invoice is ${facts.invoiceBaseUnits}`;
       if (fee !== facts.feeBaseUnits) return `step ${i} pays a fee of ${fee}, the invoice fee is ${facts.feeBaseUnits}`;
       if (!eq(feeRecipient, facts.feeRecipient)) return `step ${i} sends the fee to ${feeRecipient}, not ${facts.feeRecipient}`;
-      if (paymentReference !== undefined && !eq(reference, paymentReference)) {
+      if (!eq(reference, paymentReference)) {
         return `step ${i} carries reference ${reference}, this debt is ${paymentReference}`;
       }
       continue;

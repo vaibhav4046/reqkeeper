@@ -499,7 +499,14 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
       // zero gas. Refusing to propose because the chain could not be read is recoverable in a
       // way that paying an invoice twice is not, and it matches what request.ts already does one
       // layer up: a gateway that did not answer is not an invoice that does not exist.
-      let paidCheck: "PAID" | "NOT_PAID" | "UNKNOWN" = "NOT_PAID";
+      // Four values, and the initial one is not a claim.
+      //
+      // This started at "NOT_PAID", which is the answer that lets a proposal through — so the one
+      // branch that skips the check entirely (an attempt already sent, where a later gate decides)
+      // shared a value with "the chain says this is unpaid". They are different facts, and a
+      // default that means "go ahead" is the wrong thing to fall back to in a file whose every
+      // other tri-state exists because absence must not read as permission.
+      let paidCheck: "PAID" | "NOT_PAID" | "UNKNOWN" | "NOT_APPLICABLE" = "NOT_APPLICABLE";
       if (!ctx.store.sentAttemptFor(oid)) {
         try {
           // Every field, not the reference and not the amount alone. Nothing has been
