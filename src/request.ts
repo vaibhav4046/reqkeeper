@@ -20,7 +20,8 @@
  * requestId/salt/paymentAddress.
  */
 
-import { keccak256Hex } from "./keccak.ts";
+import { keccak256, keccak256Hex } from "./keccak.ts";
+import { recoverAddress } from "./secp256k1.ts";
 
 /** Sepolia. Mainnet ids are refused in code; this repository is testnet-only by policy. */
 export const SEPOLIA_CHAIN_ID = 11155111;
@@ -42,7 +43,13 @@ export type RequestErrorCode =
   | "FACT_MISMATCH"
   | "INVOICE_CANCELLED"
   /** The served create does not hash to the channel id it was served under. */
-  | "REQUEST_ID_MISMATCH";
+  | "REQUEST_ID_MISMATCH"
+  /** An action carries no signature this reader can check. */
+  | "ACTION_UNSIGNED"
+  /** An action's signature recovers to nobody, or to a party the invoice does not name. */
+  | "ACTION_SIGNATURE_INVALID"
+  /** An action was signed by a real party of this invoice, in a role Request does not allow it. */
+  | "ACTION_ROLE_VIOLATION";
 
 export class RequestError extends Error {
   // See MoneyError: Node's strip-only TypeScript mode rejects constructor parameter
@@ -283,9 +290,25 @@ export async function fetchInvoice(
   // invoice" into "these bytes are the only ones that hash to the id I asked for".
   //
   // It binds the CREATE, which is where the payee, the payment address, the amount, the token and
-  // the salt live — everything the payment reference derives from. Later actions on the channel
-  // are still unauthenticated; `amountChangedBy` carries that into the sentence a human approves.
+  // the salt live — everything the payment reference derives from. Later actions are bound by
+  // their own signatures, immediately below.
   assertChannelIdBindsCreate(id, create.signed);
+
+  // And every action is checked against the signature it carries.
+  //
+  // The id binding above covers the CREATE and nothing else. Everything after it -- a cancel, an
+  // amount increase -- was taken on the gateway's word, and an increase is the action that costs
+  // money: it raises what this system is about to pay, on bytes nobody authenticated. Recovering
+  // the signer turns each action from "the gateway says" into "this address said", and the role
+  // rules below decide whether that address was allowed to say it.
+  //
+  // The create's own payee and payer are the authority for those rules, and they are safe to
+  // read here for exactly one reason: the line above has already proved the create hashes to the
+  // id that was asked for, so they cannot have been substituted.
+  assertActionsAreSigned(id, actions, {
+    payee: asString(dig(create.data, "parameters", "payee", "value")),
+    payer: asString(dig(create.data, "parameters", "payer", "value")),
+  });
 
   const everyAction = actions.map((a) => ({
     index: a.index,
@@ -390,9 +413,11 @@ export async function fetchInvoice(
     );
   }
   const invoiceBaseUnits = amount.toString();
-  // Carried so the sentence a human approves can name it. These actions are not authenticated —
-  // nothing here recovers an ECDSA signer — so an amount that moved after the invoice was raised
-  // is the one figure on that screen with nothing behind it but the gateway's word.
+  // Carried so the sentence a human approves can name it. The action is authenticated now --
+  // `assertActionsAreSigned` has recovered a signer and checked it against Request's role rules,
+  // so an increase really was signed by the payer -- but "signed by the right party" is not
+  // "expected by the human who is about to approve it". An amount that moved after the invoice
+  // was raised belongs on that screen.
   const amountChangedBy =
     changingActions > 0 ? { actions: changingActions, fromBaseUnits: raisedAt.toString() } : undefined;
   const feeBaseUnits = assertBaseUnits("feeAmount", asString(dig(ep, "feeAmount")));
@@ -484,6 +509,107 @@ function normalizeForHash(value: unknown): unknown {
     return out;
   }
   return value;
+}
+
+/**
+ * Who is allowed to say what, on a Request channel.
+ *
+ * Request's action set is not symmetric, and the asymmetry is the whole point: only the party who
+ * OWES more can agree to owe more. Enforcing that is what makes a recovered signer useful rather
+ * than decorative -- without it, a payee could sign an increase and this system would pay it.
+ *
+ * `create` and `cancel` are open to both parties because Request allows both; `accept` and
+ * `increaseExpectedAmount` are the payer's, `reduceExpectedAmount` is the payee's.
+ */
+const SIGNER_ROLES: Readonly<Record<string, ReadonlyArray<"payee" | "payer">>> = {
+  cancel: ["payee", "payer"],
+  accept: ["payer"],
+  increaseExpectedAmount: ["payer"],
+  reduceExpectedAmount: ["payee"],
+};
+
+/**
+ * Every action on the channel recovers to a party the create names, in a role Request allows it.
+ *
+ * The digest is the one Request signs: keccak256 over the action's `data`, keys deep-sorted and
+ * the whole JSON lowercased -- the same normalisation the channel id uses, over `data` instead of
+ * the envelope. That was not assumed: `scripts/verify-signatures.ts` recovers every action of
+ * every invoice this deployment knows and checks the address against the create's own parties.
+ *
+ * Refusals here are deliberate in both directions. A signature that does not recover, a method
+ * this reader does not understand, a signer who is neither party, and a party acting outside its
+ * role all stop the settlement -- including the ones that would REDUCE what is paid, because an
+ * invoice whose history cannot be authenticated is not an invoice whose amount can be trusted in
+ * either direction.
+ */
+function assertActionsAreSigned(
+  id: string,
+  actions: ReadonlyArray<{ index: number; data: unknown; signed: unknown }>,
+  parties: { payee?: string; payer?: string },
+): void {
+  const payee = parties.payee?.toLowerCase();
+  const payer = parties.payer?.toLowerCase();
+
+  for (const action of actions) {
+    const name = asString(dig(action.data, "name")) ?? "unnamed";
+    // The create is authenticated by the channel id, which is a hash over the whole signed create
+    // -- a stronger binding than its signature, because it ties the bytes to the id the CALLER
+    // asked for rather than to a key the caller has never seen. Its signature is deliberately not
+    // role-checked on top of that: Request allows a delegate identity to sign on a party's
+    // behalf, so a rule saying "the create must be signed by the payee or the payer" would refuse
+    // legitimate invoices to re-prove something already proved. Every action AFTER the create has
+    // no such binding, and those are the ones that move the debt.
+    if (name === "create") continue;
+    const method = asString(dig(action.signed, "signature", "method"));
+    const value = asString(dig(action.signed, "signature", "value"));
+    if (method !== "ecdsa") {
+      throw new RequestError(
+        "ACTION_UNSIGNED",
+        `action ${action.index} (${name}) on invoice ${id} is signed with ${method ?? "no method"}, which this ` +
+          "reader cannot check. An action it cannot authenticate is not one it will act on.",
+      );
+    }
+    if (!value) {
+      throw new RequestError(
+        "ACTION_UNSIGNED",
+        `action ${action.index} (${name}) on invoice ${id} carries no signature value`,
+      );
+    }
+
+    const digest = keccak256(new TextEncoder().encode(JSON.stringify(normalizeForHash(action.data)).toLowerCase()));
+    const signer = recoverAddress(digest, value)?.toLowerCase() ?? null;
+    if (signer === null) {
+      throw new RequestError(
+        "ACTION_SIGNATURE_INVALID",
+        `action ${action.index} (${name}) on invoice ${id} carries a signature that recovers to no address; ` +
+          "the bytes have been altered or the signature is not over this action",
+      );
+    }
+
+    const role = signer === payee ? "payee" : signer === payer ? "payer" : null;
+    if (role === null) {
+      throw new RequestError(
+        "ACTION_SIGNATURE_INVALID",
+        `action ${action.index} (${name}) on invoice ${id} was signed by ${signer}, who is neither the payee ` +
+          `(${payee ?? "unnamed"}) nor the payer (${payer ?? "unnamed"}) this invoice names`,
+      );
+    }
+
+    const allowed = SIGNER_ROLES[name];
+    // A name this reader has never heard of is refused a few lines further down, by the check
+    // that exists to say so. Failing it HERE would refuse it for the wrong reason -- "Request
+    // only allows no party to take it" is not true of an action nobody here understands -- and a
+    // refusal that misstates its own cause sends the next reader looking in the wrong place.
+    if (!allowed) continue;
+    if (!allowed.includes(role)) {
+      throw new RequestError(
+        "ACTION_ROLE_VIOLATION",
+        `action ${action.index} on invoice ${id} is a ${name} signed by the ${role}, and Request only allows ` +
+          `${allowed.join(" or ")} to take it. An increase signed by the party being PAID ` +
+          "is somebody raising a debt against themselves' counterparty, which is not a thing this settles.",
+      );
+    }
+  }
 }
 
 function assertChannelIdBindsCreate(id: string, signedCreate: unknown): void {

@@ -23,9 +23,16 @@ import { describe, test, afterEach } from "node:test";
 
 import { keccak256Hex } from "../src/keccak.ts";
 import { RequestError, fetchInvoice } from "../src/request.ts";
+import { PAYEE_KEY, PAYER_KEY, addressOf, signAction } from "./signing.ts";
 
 const REQUEST_ID = "01ee24955c76fd84d9ed61ed4ce540b5b38a8726b59dbcdb0179a03145ee590e24";
 const PAYEE = "0xc43d766CB7c48B9B198db87441b97c09e81717A1";
+// The PARTIES, which are not the payment address. Request names a payee and a payer of record and
+// signs actions with their keys; the fee proxy pays `paymentAddress`, which stays the real one
+// above so every derived reference in these tests is unchanged. Keeping them separate is also the
+// honest shape: Request allows an invoice to be paid to an address neither party signs with.
+const PAYEE_OF_RECORD = addressOf(PAYEE_KEY);
+const PAYER_OF_RECORD = addressOf(PAYER_KEY);
 const FAU = "0x370DE27fdb7D1Ff1e1BaA7D11c5820a324Cf623C";
 const ONE = "1000000000000000000";
 
@@ -39,7 +46,8 @@ const CREATE: Action = {
   parameters: {
     currency: { type: "ERC20", value: FAU, network: "sepolia" },
     expectedAmount: ONE,
-    payee: { type: "ethereumAddress", value: PAYEE },
+    payee: { type: "ethereumAddress", value: PAYEE_OF_RECORD },
+    payer: { type: "ethereumAddress", value: PAYER_OF_RECORD },
     // Copied from the live gateway's own response for this request id, field for field: a stub
     // that does not match the real shape tests the stub.
     extensionsData: [
@@ -73,9 +81,9 @@ afterEach(() => {
  * under a borrowed id — which is the property under test in `a forged create is refused` below,
  * and the reason every other case here has to build a self-consistent channel.
  */
-function serve(actions: Action[]): string {
-  const transactions = actions.map((a) => ({
-    transaction: { data: JSON.stringify({ data: a, signature: SIGNATURE }) },
+function serve(actions: Action[], signWith?: Record<number, bigint>): string {
+  const transactions = actions.map((a, i) => ({
+    transaction: { data: JSON.stringify(signWith?.[i] === undefined ? signedBy(a) : signAction(a, signWith[i] as bigint)) },
     // The anchor the reader looks for. Only the create's matters, but every action carries one.
     blockNumber: 11_690_000,
     timestamp: 1_700_000_000,
@@ -87,10 +95,35 @@ function serve(actions: Action[]): string {
     })) as typeof fetch;
 
   const create = actions.find((a) => a.name === "create");
-  return create ? channelIdFor({ data: create, signature: SIGNATURE }) : REQUEST_ID;
+  return create ? channelIdFor(signedBy(create)) : REQUEST_ID;
 }
 
 const SIGNATURE = { method: "ecdsa", value: `0x${"ab".repeat(65)}` };
+
+/**
+ * The signature each action really carries, from the party Request allows to take it.
+ *
+ * Every action after the create is authenticated now: the signer is recovered and checked against
+ * the payee and payer the create names. A fixture carrying `0x1111…` on a cancel would prove only
+ * that garbage is rejected, so these are signed for real by an implementation written separately
+ * from the one that checks them (`test/signing.ts`).
+ *
+ * The create keeps the placeholder deliberately: it is bound by the channel id, which is a hash
+ * over its whole signed envelope, and its signature is not role-checked. Changing it here would
+ * change the id and nothing else.
+ */
+function signedBy(action: Action): unknown {
+  switch (action.name) {
+    case "create":
+      return { data: action, signature: SIGNATURE };
+    case "increaseExpectedAmount":
+    case "accept":
+      return signAction(action, PAYER_KEY);
+    default:
+      // cancel and reduceExpectedAmount: the payee may take both.
+      return signAction(action, PAYEE_KEY);
+  }
+}
 
 /** Request's normalisation before hashing: keys deep-sorted, then the whole string lowercased. */
 function channelIdFor(signedCreate: unknown): string {

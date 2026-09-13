@@ -275,9 +275,21 @@ if (!race) {
   // A worker that claims a transaction is claiming a payment, whether or not the counter agrees,
   // so the two have to agree with each other: one broadcast, one distinct hash, and no worker
   // asserting a settlement the counters do not account for.
-  const claimedSettlements = race.waves
-    .flatMap((w) => w.workers)
-    .filter((x) => x.txHash || x.providerWriteIssued === true).length;
+  // A CLAIM is a worker saying it paid, which is not the same as a worker reporting that somebody
+  // did. A loser that arrives after the winner's outcome is written answers ALREADY_SETTLED and
+  // hands back the winner's transaction hash -- correctly: telling the caller where the money
+  // went is the whole point of that refusal. Counting those as claims made this check fail on a
+  // benign interleaving, which is worse than not having it: a gate that cries wolf is a gate
+  // people learn to re-run until it is quiet.
+  //
+  // The forgery it exists to catch still fails it. Rows invented to look like settlements say
+  // SETTLED with no refusal, and each one is another claimant the counters cannot account for. A
+  // row that merely echoes the winner's hash under ALREADY_SETTLED asserts nothing untrue, and
+  // `hashes.size` below still refuses a row that echoes a DIFFERENT hash.
+  const everyWorker = race.waves.flatMap((w) => w.workers);
+  const claimedSettlements = everyWorker.filter(
+    (x) => x.providerWriteIssued === true || (x.state === "SETTLED" && !x.refusal),
+  ).length;
   const raceConsistent = broadcasts === 1 && hashes.size <= 1 && claimedSettlements === broadcasts;
   record(
     "race.exactly-once",

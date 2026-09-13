@@ -63,7 +63,13 @@ function testCount(): number {
   // The TAP reporter, for the same reason tools/web/build.mjs uses it: the default reporter
   // prints a human summary that changes shape between Node versions, and a count parsed out of
   // prose is a count that breaks quietly.
-  const out = execFileSync("node", ["--experimental-strip-types", "--test", "--test-reporter=tap"], {
+  // The same glob `npm test` uses, not node's default discovery.
+    //
+    // Default discovery treats EVERY file under `test/` as a test file, including a helper that
+    // exports functions and runs nothing -- and counts it. That put 550 in the documentation
+    // while the command the documentation tells a reader to run printed 549. A number that does
+    // not match what a reader sees is worse than no number: it is the first thing they check.
+    const out = execFileSync("node", ["--experimental-strip-types", "--test", "--test-reporter=tap", "test/*.test.ts"], {
     cwd: new URL("..", import.meta.url),
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"],
@@ -77,7 +83,13 @@ function testCount(): number {
 }
 
 function suiteCount(): number {
-  const out = execFileSync("node", ["--experimental-strip-types", "--test", "--test-reporter=tap"], {
+  // The same glob `npm test` uses, not node's default discovery.
+    //
+    // Default discovery treats EVERY file under `test/` as a test file, including a helper that
+    // exports functions and runs nothing -- and counts it. That put 550 in the documentation
+    // while the command the documentation tells a reader to run printed 549. A number that does
+    // not match what a reader sees is worse than no number: it is the first thing they check.
+    const out = execFileSync("node", ["--experimental-strip-types", "--test", "--test-reporter=tap", "test/*.test.ts"], {
     cwd: new URL("..", import.meta.url),
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"],

@@ -67,7 +67,13 @@ function scriptNames() {
  */
 function testCount() {
   try {
-    const out = execFileSync("node", ["--experimental-strip-types", "--test", "--test-reporter=tap"], {
+    // The same glob `npm test` uses, not node's default discovery.
+    //
+    // Default discovery treats EVERY file under `test/` as a test file, including a helper that
+    // exports functions and runs nothing -- and counts it. That put 550 in the documentation
+    // while the command the documentation tells a reader to run printed 549. A number that does
+    // not match what a reader sees is worse than no number: it is the first thing they check.
+    const out = execFileSync("node", ["--experimental-strip-types", "--test", "--test-reporter=tap", "test/*.test.ts"], {
       cwd: path(""),
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
