@@ -250,3 +250,51 @@ describe("a receipt one block deep is not a settlement", () => {
     assert.equal(outcome.state, "SETTLED");
   });
 });
+
+describe("a receipt the payment could not be read out of is not a receipt that agreed", () => {
+  /**
+   * `receiptDisagreesWithPayment` returned `string | null` and answered `null` -- the same value as
+   * "the receipt agrees" -- whenever the transport supplied no logs. Its own docblock said "a check
+   * that cannot run must not masquerade as a check that passed", while the code returned exactly
+   * the value that makes it masquerade.
+   *
+   * For a fixture that is right: there is no chain behind it. For a receipt an endpoint really
+   * answered it is this codebase's recurring defect -- an unknown spent as a pass -- in the last
+   * gate before an obligation is called SETTLED. A receipt says which kind it is now, and the two
+   * are read differently.
+   */
+  test("a chain receipt with no logs stops at EVIDENCE_CONFLICT rather than settling", async () => {
+    const { outcome } = await settleWith(
+      // `source: "chain"` and no `logs` key: an endpoint answered about our own transaction
+      // without the one field that says whether the payment happened.
+      providerWithReceipt({ source: "chain", logs: undefined, confirmations: 12 }),
+      "01req-receipt-no-logs",
+    );
+    assert.equal(outcome.state, "EVIDENCE_CONFLICT", JSON.stringify(outcome).slice(0, 300));
+    assert.match(String(outcome.detail), /no logs/i, String(outcome.detail));
+  });
+
+  test("a fixture receipt with no logs still settles, because there was no chain to read", async () => {
+    // The control. Reading both the same way in the other direction breaks every fixture path in
+    // this repository, which is why the weak answer was chosen in the first place.
+    const { outcome, sends } = await settleWith(
+      providerWithReceipt({ logs: undefined, confirmations: 12 }),
+      "01req-receipt-fixture-no-logs",
+    );
+    assert.equal(outcome.state, "SETTLED", JSON.stringify(outcome).slice(0, 300));
+    assert.equal(sends, 1);
+  });
+
+  test("a chain receipt whose only fee-proxy event cannot be decoded does not settle either", async () => {
+    const { outcome } = await settleWith(
+      providerWithReceipt({
+        source: "chain",
+        logs: [{ address: ERC20_FEE_PROXY, data: "0x1234", topics: [] }],
+        confirmations: 12,
+      }),
+      "01req-receipt-undecodable",
+    );
+    assert.equal(outcome.state, "EVIDENCE_CONFLICT", JSON.stringify(outcome).slice(0, 300));
+    assert.match(String(outcome.detail), /could not be decoded/i, String(outcome.detail));
+  });
+});

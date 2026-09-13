@@ -187,6 +187,10 @@ export function conflictVerdict(sighting) {
         return "UNKNOWN";
     if (logs.length === 0)
         return "NOT_OURS";
+    // A log under our reference that could not be decoded is not evidence either way, and ranks
+    // above both other answers: it could be this payment in a shape this reader has never seen.
+    if (logs.some((log) => log.kinds.includes("undecodable")))
+        return "UNKNOWN";
     // ANY single log being ours-and-wrong is the answer. The kinds used to arrive as one flat list
     // accumulated across the whole scan, and a set cannot say which kind came from which log -- so
     // one junk transfer to a stranger contributed `to`, `wrongCounterparty` went true, and a log
@@ -483,6 +487,11 @@ async function scanForReference(reference, rpcUrl, head, floor, expect) {
             const fields = decodePaymentLogFields(log.data);
             if (!fields) {
                 conflicts.push(`log in ${log.transactionHash} carries this reference but is not a payment event`);
+                // Structured, not only narrated. The sentence above went into `conflicts`, which nothing
+                // branches on, while `conflictingLogs` -- which everything branches on -- stayed empty and
+                // therefore said "we looked and there was nothing of ours". A log under our own reference
+                // that this reader cannot decode is the one thing it must not call absence.
+                conflictingLogs.push({ ...(log.transactionHash === undefined ? {} : { txHash: log.transactionHash }), kinds: ["undecodable"] });
                 continue;
             }
             const sighting = {
@@ -605,17 +614,17 @@ export async function readReceipt(rpcUrl, hash, timeoutMs = 30_000) {
         // refusal, and it propagates.
         if (/refusing to read chain/.test(e instanceof Error ? e.message : String(e)))
             throw e;
-        return { hash, verified: false, receiptStatus: "timeout", gasUsed: "0" };
+        return { hash, verified: false, receiptStatus: "timeout", gasUsed: "0", source: "chain" };
     }
     let r;
     try {
         r = (await rpcCall(rpcUrl, "eth_getTransactionReceipt", [hash], timeoutMs));
     }
     catch {
-        return { hash, verified: false, receiptStatus: "timeout", gasUsed: "0" };
+        return { hash, verified: false, receiptStatus: "timeout", gasUsed: "0", source: "chain" };
     }
     if (!r)
-        return { hash, verified: false, receiptStatus: "not_found", gasUsed: "0" };
+        return { hash, verified: false, receiptStatus: "not_found", gasUsed: "0", source: "chain" };
     const gasUsed = r.gasUsed ? BigInt(r.gasUsed).toString(10) : "0";
     const blockNumber = r.blockNumber === undefined ? undefined : Number(BigInt(r.blockNumber));
     let confirmations;
@@ -627,7 +636,9 @@ export async function readReceipt(rpcUrl, hash, timeoutMs = 30_000) {
             // Depth unknown is not depth zero. Left undefined so a caller can tell the difference.
         }
     }
-    const common = { hash, gasUsed, to: r.to, logs: r.logs, blockNumber, confirmations };
+    // `source: "chain"` says this really is a receipt an endpoint answered with, so a missing
+    // `logs` here is a gap in the answer rather than the absence of a chain. See `Receipt.source`.
+    const common = { hash, gasUsed, to: r.to, logs: r.logs, blockNumber, confirmations, source: "chain" };
     // Three outcomes, not two. Only 0x0 means the chain said no; a missing or malformed status
     // means this read did not answer, and EXECUTION_REVERTED is terminal.
     if (r.status === "0x1")

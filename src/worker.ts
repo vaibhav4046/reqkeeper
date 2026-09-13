@@ -180,12 +180,25 @@ async function findByReference(
   },
 ): Promise<string | undefined> {
   if (!deps.findPaidReference || !obligation.paymentReference) return undefined;
-  // The expectation is handed down so the chain read can match token, payee and fee as well
-  // as the reference. The amount check below stays regardless: a lookup that ignores the
-  // expectation must not silently become a reference-only match.
-  const seen = await deps.findPaidReference(obligation.paymentReference, obligation.expectation ?? undefined);
+  /**
+   * Both facts, or no answer.
+   *
+   * The expectation is handed down so the chain read matches token, payee and fee as well as the
+   * reference; the amount is compared here as a second, independent check. Each was skipped when
+   * its fact was missing -- `expectation ?? undefined` turned an unknown expectation into a
+   * reference-only lookup, and `invoiceBaseUnits !== null &&` turned an unknown amount into a
+   * match. References are PUBLIC: anyone can read one off Sepolia and emit a fee-proxy log
+   * carrying it for a dust amount, and this function's answer becomes the transaction hash an
+   * obligation cites as its payment.
+   *
+   * So an obligation whose facts this store does not hold gets no answer from here. It stays in
+   * the state it is in and waits for a human, which is recoverable; citing a stranger's
+   * transaction as our payment is not.
+   */
+  if (!obligation.expectation || obligation.invoiceBaseUnits === null) return undefined;
+  const seen = await deps.findPaidReference(obligation.paymentReference, obligation.expectation);
   if (!seen?.txHash) return undefined;
-  if (obligation.invoiceBaseUnits !== null && seen.amount !== obligation.invoiceBaseUnits) return undefined;
+  if (seen.amount !== obligation.invoiceBaseUnits) return undefined;
   return seen.txHash;
 }
 

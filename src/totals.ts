@@ -64,12 +64,21 @@ const at = (row: Record<string, unknown>, path: string): unknown =>
  * artifact said 1 — caught by this check on its first run, which is the argument for declaring
  * derivations in the artifact rather than trusting a name.
  */
-function arrayFor(doc: Record<string, unknown>, from: string | undefined, fallback: Array<Record<string, unknown>>) {
+function arrayFor(
+  doc: Record<string, unknown>,
+  from: string | undefined,
+  fallback: Array<Record<string, unknown>>,
+): Array<Record<string, unknown>> | null {
   if (!from) return fallback;
   const m = /^([A-Za-z0-9_]+)(?:\[(\d*)\]\.(.+))?$/.exec(from);
-  if (!m) return [];
+  // `null`, not `[]`. A `from` this reader cannot parse, or one naming something the artifact does
+  // not carry as an array, is "I cannot evaluate this spec" -- and an empty array is an answer:
+  // every aggregation over it succeeds and reports zero. A renamed array therefore agreed with any
+  // summary that happened to say 0 and reported itself recomputed, which is the exact defect the
+  // comment below this function was written about.
+  if (!m) return null;
   const base = doc[m[1]];
-  if (!Array.isArray(base)) return [];
+  if (!Array.isArray(base)) return null;
   const rows = base.filter(isRecord);
   if (!m[3]) return rows;
   const picked = m[2] === "" ? rows : rows.slice(Number(m[2]), Number(m[2]) + 1);
@@ -105,6 +114,7 @@ export function evaluateSpec(
 ): { value: number; how: string } | null {
   const preds = spec.where === undefined ? [] : Array.isArray(spec.where) ? spec.where : [spec.where];
   const all = arrayFor(doc, spec.from, fallback);
+  if (all === null) return null;
 
   // A field no row carries is "I cannot evaluate this", never a count of zero.
   //
@@ -140,17 +150,38 @@ export function evaluateSpec(
     return { value, how: text };
   };
   if (spec.count === true) return adjust(rows.length, `a count of ${scope}`);
-  const numbersAt = (path: string) =>
-    rows.map((r) => at(r, path)).filter((v): v is number => typeof v === "number");
-  if (spec.sum) return adjust(numbersAt(spec.sum).reduce((n, v) => n + v, 0), `the sum of ${spec.sum} over ${scope}`);
+  /**
+   * The rows an aggregation could actually read, and how many it could not.
+   *
+   * A row with no value for the field is not a zero -- but it is not always a defect either: a
+   * worker that refused has no transaction hash, and a total counting transactions should not
+   * become unevaluable because of it. What was wrong was doing that SILENTLY, so a sum over three
+   * of ten rows was published in the same words as a sum over ten. The gap is named in `how` now,
+   * which is the string `verify:all` prints beside the number.
+   *
+   * The rename case -- a field no row carries at all -- is refused outright above, where `named`
+   * requires at least one row to know the field.
+   */
+  const coverage = (path: string) => {
+    const values = rows.map((r) => at(r, path));
+    const missing = values.filter((v) => v === undefined || v === null || v === "").length;
+    return { values, missing, note: missing === 0 ? "" : ` (${rows.length - missing} of ${rows.length} rows carry ${path})` };
+  };
+  if (spec.sum) {
+    const { values, note } = coverage(spec.sum);
+    const nums = values.filter((v): v is number => typeof v === "number");
+    return adjust(nums.reduce((n, v) => n + v, 0), `the sum of ${spec.sum} over ${scope}${note}`);
+  }
   if (spec.max) {
-    const nums = numbersAt(spec.max);
+    const { values, note } = coverage(spec.max);
+    const nums = values.filter((v): v is number => typeof v === "number");
     if (nums.length === 0) return null;
-    return adjust(Math.max(...nums), `the largest ${spec.max} over ${scope}`);
+    return adjust(Math.max(...nums), `the largest ${spec.max} over ${scope}${note}`);
   }
   if (spec.distinct) {
-    const seen = new Set(rows.map((r) => at(r, spec.distinct as string)).filter((v) => v !== undefined && v !== null && v !== ""));
-    return adjust(seen.size, `distinct ${spec.distinct} over ${scope}`);
+    const { values, note } = coverage(spec.distinct);
+    const seen = new Set(values.filter((v) => v !== undefined && v !== null && v !== ""));
+    return adjust(seen.size, `distinct ${spec.distinct} over ${scope}${note}`);
   }
   return null;
 }

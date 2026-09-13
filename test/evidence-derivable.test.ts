@@ -142,3 +142,36 @@ describe("the evidence artifacts keep their derivations honest", () => {
     }
   });
 });
+
+describe("a spec that cannot be resolved says so rather than counting zero", () => {
+  /**
+   * `arrayFor` answered `[]` for a `from` it could not resolve -- a renamed array, a path this
+   * reader cannot parse -- and every aggregation over an empty array succeeds and reports zero.
+   * So a spec pointed at something the artifact no longer carries agreed with any summary that
+   * happened to state 0 and reported itself RECOMPUTED. That is the defect this whole file exists
+   * to catch, in the function that catches it.
+   */
+  test("a `from` naming an array the document does not carry cannot be evaluated", () => {
+    assert.equal(evaluateSpec({ from: "wavez[0].workers", count: true }, { waves: [] }, []), null);
+    assert.equal(evaluateSpec({ from: "notes", count: true }, { notes: "a string" }, []), null);
+  });
+
+  test("a `from` this reader cannot parse cannot be evaluated either", () => {
+    assert.equal(evaluateSpec({ from: "waves[0]workers", count: true }, { waves: [{}] }, []), null);
+  });
+
+  test("but a genuinely empty array is still an answer of zero", () => {
+    // The control: "we looked and there were none" is a real total, and refusing to evaluate it
+    // would make every clean run unverifiable.
+    const out = evaluateSpec({ from: "waves", count: true }, { waves: [] }, []);
+    assert.deepEqual(out?.value, 0);
+  });
+
+  test("a total over rows that do not all carry the field says how many did", () => {
+    // A sum over three of ten rows used to be published in the same words as a sum over ten.
+    const doc = { rows: [{ gas: 10 }, { gas: 20 }, {}] };
+    const out = evaluateSpec({ sum: "gas" }, doc, doc.rows);
+    assert.equal(out?.value, 30);
+    assert.match(String(out?.how), /2 of 3 rows carry gas/, String(out?.how));
+  });
+});

@@ -269,3 +269,88 @@ describe("a crash inside the send is recoverable, not permanent", () => {
     assert.equal(provider.totalSends(), 0);
   });
 });
+
+describe("an obligation whose facts this store does not hold cannot be identified on chain", () => {
+  /**
+   * `findByReference` answers the question "which transaction was our payment" for an attempt
+   * whose reply was lost, and its answer becomes the hash the obligation cites for ever. It
+   * compared the amount only `if (obligation.invoiceBaseUnits !== null)` and passed
+   * `expectation ?? undefined` to the chain read -- so an obligation whose facts the store could
+   * not parse got a REFERENCE-ONLY match, with both checks skipped for the same reason they were
+   * needed: nothing was known.
+   *
+   * Payment references are public. Anyone can read one off Sepolia and emit a fee-proxy log
+   * carrying it, for a dust amount, to themselves. That log would have been adopted as this
+   * obligation's payment.
+   */
+  async function recoverWith(sourceFactsJson: string) {
+    const store = new Store();
+    const requestId = `01req-facts-${sourceFactsJson.length}`;
+    const oid = obligationId(NS, requestId);
+    store.importObligation({
+      obligationId: oid,
+      namespace: NS,
+      requestId,
+      sourceFactsJson,
+      sourceFactsHash: "h",
+      paymentReference: REFERENCE,
+      now: 1,
+    });
+    const { attemptId } = store.openAttempt({
+      obligationId: oid,
+      planHash: "a".repeat(64),
+      stepIndex: 0,
+      idempotencyKey: "k".repeat(64),
+      endpoint: "/api/execute/contract-call",
+      bodyJson: "{}",
+      now: 1,
+    });
+    for (const state of ["VALIDATING", "AWAITING_APPROVAL", "APPROVED", "PAYMENT_PREFLIGHT", "PAYMENT_EXECUTING"] as const) {
+      store.setState(oid, state, 1);
+    }
+    store.markSent(attemptId, 1);
+    store.enqueue({ kind: "OBSERVE_EXECUTION", dedupeKey: `observe:${oid}`, obligationId: oid, dueAt: 1, now: 1 });
+
+    let asked = false;
+    await drainOnce(
+      {
+        store,
+        provider: {
+          receipt: async (hash: string) => ({ hash, verified: false, receiptStatus: "not_found" as const, gasUsed: "0" }),
+        },
+        sourceSaysPaid: async () => true,
+        // A stranger's log: this reference, a dust amount, somebody else's address.
+        findPaidReference: async () => {
+          asked = true;
+          return { txHash: `0x${"ee".repeat(32)}`, amount: "1" };
+        },
+      } as never,
+      { now: 2_000, lookaheadMs: 60_000 },
+    );
+    const citedTx = store.getAttempt(attemptId)?.txHash ?? null;
+    store.close();
+    return { asked, citedTx };
+  }
+
+  test("a store that cannot state the expectation asks the chain nothing at all", async () => {
+    const { asked, citedTx } = await recoverWith(JSON.stringify({ invoiceBaseUnits: "1000" }));
+    assert.equal(asked, false, "a reference-only lookup was issued for an obligation with no expectation");
+    assert.equal(citedTx, null, "a transaction was adopted for an obligation whose facts are unknown");
+  });
+
+  test("and one that can state them still refuses a log for the wrong amount", async () => {
+    // The control: the facts are all present, the lookup runs, and the stranger's dust transfer
+    // is rejected by the amount check rather than by the guard above.
+    const { asked, citedTx } = await recoverWith(
+      JSON.stringify({
+        invoiceBaseUnits: toBaseUnits("50", 18).toString(),
+        payee: PAYEE,
+        tokenAddress: FAU,
+        feeBaseUnits: "0",
+        feeRecipient: FEE_ADDR,
+      }),
+    );
+    assert.equal(asked, true, "the lookup must run when the store holds the facts");
+    assert.equal(citedTx, null);
+  });
+});

@@ -152,6 +152,18 @@ export interface Receipt {
    */
   readonly to?: string;
   readonly logs?: ReadonlyArray<{ address?: string; data?: string; topics?: string[] }>;
+  /**
+   * Where this receipt came from, stated rather than inferred.
+   *
+   * `logs` being absent means two different things. From a fixture it means "there is no chain
+   * here", and the payment check that reads logs cannot run and should not pretend to. From a
+   * real endpoint it means the receipt for OUR OWN transaction came back without the one field
+   * that says whether the payment happened -- an unknown at the last gate before an obligation is
+   * called SETTLED, and this codebase's recurring defect is exactly an unknown of that shape
+   * spent as a pass. Nothing on a receipt distinguished the two, so `settle.ts` treated both as
+   * agreement.
+   */
+  readonly source?: "chain" | "fixture";
   /** Height of the block the receipt is in, and how far behind head that is. */
   readonly blockNumber?: number;
   readonly confirmations?: number;

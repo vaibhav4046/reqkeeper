@@ -250,6 +250,50 @@ function toInvoiceFacts(a: Record<string, unknown>): InvoiceFacts {
   };
 }
 
+/**
+ * What a read-only caller must be told about a chain read, from the single verdict.
+ *
+ * Exhaustive on purpose: a new verdict reason is a compile error here rather than a caller quietly
+ * receiving the most confident sentence in the list.
+ */
+function caveatFor(
+  verdict: ReturnType<typeof verdictFor>,
+  corroboratedBy: string | null,
+): string | null {
+  switch (verdict.kind) {
+    case "PAID":
+      return corroboratedBy === null
+        ? "a log carries this reference, but nothing here corroborates that it pays this " +
+            "obligation: it was never imported, so there are no facts to match it against"
+        : null;
+    case "NOT_PAID":
+      return "the scan covered the window a payment for this obligation could be in, another " +
+        "endpoint agreed, and nothing in it pays this obligation";
+    case "CONFLICT_OURS":
+      return `a log pays this obligation's payee and token under its reference but disagrees: ${verdict.detail}`;
+    case "UNKNOWN":
+      switch (verdict.reason) {
+        case "TRUNCATED":
+          return "not seen in the scanned window; this is not proof the invoice is unpaid";
+        case "UNCORROBORATED":
+          return "one endpoint answered and no other confirmed it; this is not proof either way";
+        case "CONFLICTS_NOT_STATED":
+          return "the scan never said what conflicting logs it saw, so it has not concluded; this " +
+            "is a defect in the chain reader, not a fact about the invoice";
+        case "UNREADABLE":
+          return "the chain could not be read, so nothing here is evidence about this invoice";
+        default: {
+          const exhaustive: never = verdict.reason;
+          return exhaustive;
+        }
+      }
+    default: {
+      const exhaustive: never = verdict;
+      return exhaustive;
+    }
+  }
+}
+
 async function callTool(ctx: McpContext, name: string, args: Record<string, unknown>): Promise<unknown> {
   const findPayment = ctx.findPayment ?? findPaymentByReference;
   const receiptOf = ctx.readReceipt ?? readReceipt;
@@ -323,16 +367,15 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
         conflicts: conflicts.length > 0 ? conflicts : null,
         source: "ERC20FeeProxy event log, read directly from the chain",
         blocksScanned: sighting.scannedBlocks ?? null,
-        // Said out loud so a false is not mistaken for proof of non-payment: the scan is a
-        // bounded window, and a payment older than it would not be seen.
-        caveat: !sighting.found
-          ? sighting.truncated
-            ? "not seen in the scanned window; this is not proof the invoice is unpaid"
-            : "scanned to genesis; no payment matching this obligation was found"
-          : corroboratedBy === null
-            ? "a log carries this reference, but nothing here corroborates that it pays this " +
-              "obligation: it was never imported, so there are no facts to match it against"
-            : null,
+        // Said out loud so a false is not mistaken for proof of non-payment, and said from the
+        // ONE reading rather than recombined here.
+        //
+        // This branched on `truncated` alone, so a scan that never said whether it was truncated,
+        // one no second endpoint would corroborate, and one that never stated its conflicting logs
+        // all produced "scanned to genesis; no payment matching this obligation was found" -- the
+        // strongest sentence this surface can say, over three different kinds of not-knowing. It
+        // is also the sentence an agent reads before deciding to pay.
+        caveat: caveatFor(verdictFor(sighting), corroboratedBy),
       };
     }
 

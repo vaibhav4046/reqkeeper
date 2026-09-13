@@ -83,6 +83,27 @@ const MATRIX: ReadonlyArray<{ name: string; conclusive: boolean; sighting: Payme
     },
   },
   {
+    /**
+     * A log carrying our reference whose data this reader cannot parse.
+     *
+     * `scanForReference` narrated this in `conflicts` -- a list nothing branches on -- and pushed
+     * nothing into `conflictingLogs`, which everything branches on. So the structured answer was
+     * "we looked and saw nothing of ours", over a log that might be this very payment in a shape
+     * nobody here has seen. NOT_PAID is the answer that releases an obligation and lets a fresh
+     * proposal through.
+     */
+    name: "covered and corroborated, with a log under our reference nobody could decode",
+    conclusive: false,
+    sighting: {
+      found: false,
+      truncated: false,
+      conflicts: [`log in  carries this reference but is not a payment event`],
+      conflictingLogs: [{ txHash: TX, kinds: ["undecodable"] }],
+      negativeCorroborations: 2,
+      scannedTo: CEILING,
+    },
+  },
+  {
     name: "covered, but nobody else answered the negative",
     conclusive: false,
     sighting: { found: false, truncated: false, conflictingLogs: [], scannedTo: CEILING },

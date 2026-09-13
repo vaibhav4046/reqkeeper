@@ -452,27 +452,64 @@ function refusalForLostRace(
  * apart. Reconciliation catches that by scanning for the reference, but the receipt already
  * carries the answer and it costs nothing to insist on it.
  *
- * Returns null when the transport supplies no logs — a fixture has no chain behind it, and a
- * check that cannot run must not masquerade as a check that passed.
+ * Three answers, because "the check could not run" is not "the check passed".
+ *
+ * This returned `string | null` and answered `null` -- indistinguishable from "the receipt agrees"
+ * -- whenever the transport supplied no logs. The docblock even said so, in the words "a check
+ * that cannot run must not masquerade as a check that passed", while the code returned exactly the
+ * value that makes it masquerade. For a fixture that is correct and intended; for a receipt read
+ * off the chain it is the class this codebase keeps paying for, in the last gate before an
+ * obligation is called SETTLED. The caller decides, and it decides differently for a verified
+ * receipt than for a fixture's.
  */
+type ReceiptAgreement =
+  | { readonly kind: "AGREES" }
+  | { readonly kind: "DISAGREES"; readonly detail: string }
+  | { readonly kind: "CANNOT_CHECK"; readonly detail: string };
+
 function receiptDisagreesWithPayment(
   receipt: { logs?: ReadonlyArray<{ address?: string; data?: string; topics?: string[] }> },
   expect: PaymentExpectation,
-): string | null {
-  if (!receipt.logs) return null;
+): ReceiptAgreement {
+  if (!receipt.logs) {
+    return {
+      kind: "CANNOT_CHECK",
+      detail: "the transport supplied no logs with this receipt, so the payment could not be read out of it",
+    };
+  }
   const candidates = receipt.logs.filter((l) => l.address && sameAddress(l.address, ERC20_FEE_PROXY));
   if (candidates.length === 0) {
-    return "the receipt carries no ERC20FeeProxy event, so this transaction did not pay the invoice";
+    return {
+      kind: "DISAGREES",
+      detail: "the receipt carries no ERC20FeeProxy event, so this transaction did not pay the invoice",
+    };
   }
   const conflicts: string[] = [];
+  let undecodable = 0;
   for (const log of candidates) {
     const fields = log.data ? decodePaymentLogFields(log.data) : null;
-    if (!fields) continue;
+    if (!fields) {
+      // A fee-proxy event in OUR OWN transaction whose data this reader cannot parse. Counted,
+      // not skipped: if nothing else in the receipt pays the invoice, "I could not read the one
+      // event that might have" is a different answer from "it pays somebody else", and the
+      // operator who has to look at this needs to know which.
+      undecodable++;
+      continue;
+    }
     const verdict = matchPaymentLog({ ...fields, emitter: log.address }, expect);
-    if (verdict.ok) return null;
+    if (verdict.ok) return { kind: "AGREES" };
     conflicts.push(verdict.conflicts.join("; "));
   }
-  return `the receipt's own fee-proxy event does not pay this invoice: ${conflicts.join(" | ") || "unreadable event data"}`;
+  if (conflicts.length === 0 && undecodable > 0) {
+    return {
+      kind: "CANNOT_CHECK",
+      detail: `${undecodable} fee-proxy event(s) in this receipt could not be decoded, so whether this transaction paid the invoice is unread`,
+    };
+  }
+  return {
+    kind: "DISAGREES",
+    detail: `the receipt's own fee-proxy event does not pay this invoice: ${conflicts.join(" | ")}`,
+  };
 }
 
 const sameAddress = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
@@ -1133,14 +1170,19 @@ async function settleOrRefuse(
     feeAmount: input.facts.feeBaseUnits,
     feeAddress: input.facts.feeRecipient,
   };
-  const receiptDisagreement = receiptDisagreesWithPayment(receipt, paymentExpectation);
-  if (receiptDisagreement) {
+  const agreement = receiptDisagreesWithPayment(receipt, paymentExpectation);
+  // A check that could not run passes only where there was never a chain to check against. A
+  // VERIFIED receipt is one this system read from the chain, and a chain receipt that cannot be
+  // read for the payment is an unknown at the last gate before SETTLED -- so it goes to the state
+  // this system has for "true, not yet provable" rather than through it.
+  const unreadVerifiedReceipt = agreement.kind === "CANNOT_CHECK" && receipt.source === "chain";
+  if (agreement.kind === "DISAGREES" || unreadVerifiedReceipt) {
     store.setState(input.obligationId, "EVIDENCE_CONFLICT", input.now);
-    store.audit(input.obligationId, "system", "RECEIPT_DISAGREES", { txHash: receipt.hash, why: receiptDisagreement });
+    store.audit(input.obligationId, "system", "RECEIPT_DISAGREES", { txHash: receipt.hash, why: agreement.detail });
     return out({
       state: "EVIDENCE_CONFLICT",
       refusal: "EVIDENCE_CONFLICT",
-      detail: receiptDisagreement,
+      detail: agreement.detail,
       providerWriteIssued: true,
       txHash: receipt.hash,
       planHash,

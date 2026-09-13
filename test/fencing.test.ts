@@ -40,7 +40,16 @@ function sentButUnrecorded(requestId: string) {
     obligationId: oid,
     namespace: NAMESPACE,
     requestId,
-    sourceFactsJson: JSON.stringify({ invoiceBaseUnits: "1000" }),
+    // Every field the expectation needs, not just the amount. `findByReference` refuses to
+    // identify a transaction for an obligation whose facts this store does not hold: references
+    // are public, and a reference-only match accepts a stranger's dust transfer carrying one.
+    sourceFactsJson: JSON.stringify({
+      invoiceBaseUnits: "1000",
+      payee: "0xc43d766CB7c48B9B198db87441b97c09e81717A1",
+      tokenAddress: "0x370DE27fdb7D1Ff1e1BaA7D11c5820a324Cf623C",
+      feeBaseUnits: "0",
+      feeRecipient: "0x0000000000000000000000000000000000000000",
+    }),
     sourceFactsHash: "h",
     paymentReference: `0xbb${requestId.length.toString(16).padStart(2, "0")}`,
     now: 1,

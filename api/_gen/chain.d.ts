@@ -138,7 +138,16 @@ export interface PaymentExpectation {
  * rather than a bare false, because "which field" is the difference between an attack, a
  * misconfiguration and a rounding bug.
  */
-export type ConflictKind = "emitter" | "token" | "to" | "amount" | "fee" | "feeAddress";
+/**
+ * `undecodable` is not a disagreement -- it is the absence of one.
+ *
+ * A log carrying this invoice's reference whose data this reader cannot parse might be the
+ * payment, in a shape nobody here has seen. It was recorded as a sentence in `conflicts` and
+ * NOTHING structured, so `conflictVerdict` saw an empty list, answered NOT_OURS, and `verdictFor`
+ * turned that into NOT_PAID -- the answer that releases an obligation and lets a fresh proposal
+ * through, over a log nobody could read. The class again: "I cannot tell" spent as "no".
+ */
+export type ConflictKind = "emitter" | "token" | "to" | "amount" | "fee" | "feeAddress" | "undecodable";
 /**
  * One log that carried this reference and did not pay this invoice.
  *
@@ -364,4 +373,5 @@ export declare function readReceipt(rpcUrl: string, hash: string, timeoutMs?: nu
     }>;
     blockNumber?: number;
     confirmations?: number;
+    source?: "chain" | "fixture";
 }>;
