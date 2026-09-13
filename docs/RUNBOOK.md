@@ -320,6 +320,14 @@ and compares. If they disagree, something proposed a payment other than the one 
 shown, and nothing is recorded. `npm run watch` prints a ready-to-run approve command for every
 invoice waiting on one.
 
+It reads the invoice from Request while it does that, so **this command needs the gateway**. Three
+facts in the plan hash are not typeable — the anchor block, an amount changed by later signed
+channel actions, and a payment address that is not the party of record — and a door that guessed
+them recomputed a hash nothing had proposed. It fetches them instead, checks every flag you typed
+against what Request holds, and refuses the approval outright if the gateway will not answer
+(`REQUEST_GATEWAY_URL` overrides the endpoint). An anchored invoice was unapprovable before this;
+`test/approve-door.test.ts` runs the whole path.
+
 `KEEPERHUB_TRANSPORT=mcp npm run settle:live` dispatches through KeeperHub's own MCP server
 instead of its REST API. Nothing else changes. An unrecognised value is refused rather than
 silently defaulted, so a typo cannot put the wrong transport in the evidence.

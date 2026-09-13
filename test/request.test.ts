@@ -30,6 +30,7 @@ import {
   toInvoiceFacts,
   type InvoiceFactsFromRequest,
 } from "../src/request.ts";
+import { PAYER_KEY, addressOf, signAction } from "./signing.ts";
 
 /** The real invoice: requestId, salt, payment address and the reference they derive. */
 const REQUEST_ID = "0108b3f7d7d7d3c1fd21d37ba996b21d019c59cbaaa75c5cb5801fc3d9a371c142";
@@ -61,15 +62,14 @@ const WITH_ANCHOR = { readReceipt: anchorReceipt(11665964, "QmFixtureCid") };
 
 /** The `create` action exactly as the gateway serves it, before it is stringified. */
 function createAction() {
-  return {
-    data: {
+  const data = {
       name: "create",
       version: "2.0.3",
       parameters: {
         currency: { type: "ERC20", value: FAU, network: "sepolia" },
         expectedAmount: ONE_FAU,
         payee: { type: "ethereumAddress", value: PAYMENT_ADDRESS },
-        payer: { type: "ethereumAddress", value: "0x027D54A692e0e80173141777BdB847c1726FA1F3" },
+        payer: { type: "ethereumAddress", value: addressOf(PAYER_KEY) },
         timestamp: 1788932300,
         extensionsData: [
           {
@@ -86,9 +86,11 @@ function createAction() {
           },
         ],
       },
-    },
-    signature: { method: "ecdsa", value: `0x${"11".repeat(65)}` },
   };
+  // Signed for real, by the payer of record. The create is authenticated like every other action
+  // now, and `signDigest` is deterministic, so signing the same bytes twice gives one envelope and
+  // one channel id.
+  return signAction(data, PAYER_KEY) as { data: any; signature: { method: string; value: string } };
 }
 
 /**
@@ -97,6 +99,12 @@ function createAction() {
  * future reader to get wrong.
  */
 function gatewayBody(action: unknown = createAction()) {
+  // Re-signed over whatever bytes this body is about to serve. Tests here build a variant by
+  // mutating the create (a wrong network, a missing salt) and every mutation changes the digest,
+  // so a signature made before the mutation authenticates nothing -- the reader would refuse for
+  // the signature rather than for the field under test, and the test would pass for the wrong
+  // reason or fail for one. `signDigest` is deterministic, so this is a pure function of the bytes.
+  const served = signAction((action as { data?: unknown })?.data ?? action, PAYER_KEY);
   return {
     meta: {
       transactionsStorageLocation: ["QmFixtureCid"],
@@ -117,7 +125,7 @@ function gatewayBody(action: unknown = createAction()) {
     },
     result: {
       transactions: [
-        { state: "confirmed", timestamp: 1788932316, transaction: { data: JSON.stringify(action) } },
+        { state: "confirmed", timestamp: 1788932316, transaction: { data: JSON.stringify(served) } },
       ],
     },
   };

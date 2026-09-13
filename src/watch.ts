@@ -56,6 +56,8 @@ export interface WatchInvoice {
   readonly feeAddress?: string;
   /** The token this invoice is denominated in, as Request states it. FAU when unstated. */
   readonly tokenAddress?: string;
+  /** The payment address is not the party of record. Carried to the sentence a human reads. */
+  readonly payeeDiffersFromRecord?: boolean;
   /**
    * Where Request anchored this invoice on Sepolia, when the caller knows it.
    *
@@ -186,6 +188,7 @@ function factsFor(inv: WatchInvoice): InvoiceFacts {
     feeAddress: inv.feeAddress ?? `0x${"0".repeat(40)}`,
     maxTotalDebitBaseUnits: (BigInt(inv.amountBaseUnits) + BigInt(fee)).toString(),
     ...(inv.tokenAddress === undefined ? {} : { tokenAddress: inv.tokenAddress }),
+    ...(inv.payeeDiffersFromRecord ? { payeeDiffersFromRecord: true } : {}),
     ...(inv.anchorBlock === undefined ? {} : { anchorBlock: inv.anchorBlock }),
   };
 }
@@ -295,6 +298,9 @@ export async function watchPass(
         feeAddress: read.feeRecipient,
         tokenAddress: read.tokenAddress,
         ...(read.anchor === undefined ? {} : { anchorBlock: read.anchor.blockNumber }),
+        // Carried to the approval sentence. `src/request.ts` computes this and says it reaches
+        // the human; both production callers dropped it, so the control existed only in prose.
+        ...(read.payeeDiffersFromRecord ? { payeeDiffersFromRecord: true } : {}),
       };
     } catch (e) {
       rows.push({

@@ -27,6 +27,7 @@ import { join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
 import { keccak256Hex } from "../src/keccak.ts";
 import { derivePaymentReference } from "../src/request.ts";
+import { PAYER_KEY, addressOf, signAction } from "./signing.ts";
 
 import { EXPECTED_CHAIN_ID } from "../src/chain.ts";
 import { ERC20_FEE_PROXY } from "../src/plan.ts";
@@ -47,14 +48,16 @@ const SOMEBODY_ELSES_REFERENCE = "0xfaac1220a314c4a9";
  * module scope for exactly that: the constants below are derived from it rather than typed.
  */
 const CREATE_ACTION = (() => {
-  const action = {
-    data: {
+  // Signed by the payer of record, because the create is authenticated like every other action
+  // now: Request refuses a create signed by neither party, and so does this reader.
+  const data = {
       name: "create",
       version: "2.0.3",
       parameters: {
         currency: { type: "ERC20", value: FAU, network: "sepolia" },
         expectedAmount: ONE_FAU,
         payee: { type: "ethereumAddress", value: PAYMENT_ADDRESS },
+        payer: { type: "ethereumAddress", value: addressOf(PAYER_KEY) },
         timestamp: 1788932300,
         extensionsData: [
           {
@@ -71,9 +74,8 @@ const CREATE_ACTION = (() => {
           },
         ],
       },
-    },
   };
-  return action;
+  return signAction(data, PAYER_KEY);
 })();
 
 /** `01` + keccak256 over the normalised signed create: keys deep-sorted, whole string lowercased. */

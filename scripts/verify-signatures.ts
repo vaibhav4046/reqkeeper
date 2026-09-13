@@ -18,8 +18,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 
 import { keccak256 } from "../src/keccak.ts";
-import { fetchInvoice } from "../src/request.ts";
-import { recoverAddress } from "../src/secp256k1.ts";
+import { fetchInvoice, recoverActionSigner } from "../src/request.ts";
 
 const GATEWAY = process.env.REQUEST_GATEWAY_URL ?? "https://sepolia.gateway.request.network";
 
@@ -100,7 +99,17 @@ for (const invoice of invoices.invoices) {
   parsed.forEach((action, index) => {
     const method = action.signature?.method ?? "none";
     const value = action.signature?.value ?? "";
-    const signer = method === "ecdsa" && value ? recoverAddress(digestOf(action.data), value)?.toLowerCase() ?? null : null;
+    // The reader's own recovery, imported rather than reimplemented: this evidence is only worth
+    // anything if it measures the function that guards the money. A second copy here is how the
+    // evidence and the guard drift apart -- and it would have, the moment `ecdsa-ethereum` was
+    // added to one of them.
+    const signer =
+      (method === "ecdsa" || method === "ecdsa-ethereum") && value
+        ? recoverActionSigner(method, digestOf(action.data), value, {
+            ...(payee === null ? {} : { payee }),
+            ...(payer === null ? {} : { payer }),
+          })
+        : null;
     const role = signer !== null && signer === payee ? "payee" : signer !== null && signer === payer ? "payer" : null;
     rows.push({
       requestId: invoice.requestId,

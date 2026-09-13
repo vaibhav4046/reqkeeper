@@ -28,6 +28,7 @@ import { afterEach, describe, test } from "node:test";
 
 import { keccak256Hex } from "../src/keccak.ts";
 import { RequestError, fetchInvoice } from "../src/request.ts";
+import { PAYER_KEY, addressOf, signAction } from "./signing.ts";
 
 const FAU = "0x370DE27fdb7D1Ff1e1BaA7D11c5820a324Cf623C";
 const PAYEE = "0xc43d766CB7c48B9B198db87441b97c09e81717A1";
@@ -43,7 +44,7 @@ const CREATE = {
     currency: { type: "ERC20", value: FAU, network: "sepolia" },
     expectedAmount: "1000000000000000000",
     payee: { type: "ethereumAddress", value: PAYEE },
-    payer: { type: "ethereumAddress", value: "0x027D54A692e0e80173141777BdB847c1726FA1F3" },
+    payer: { type: "ethereumAddress", value: addressOf(PAYER_KEY) },
     timestamp: 1788932300,
     extensionsData: [
       {
@@ -61,7 +62,8 @@ const CREATE = {
     ],
   },
 };
-const SIGNED_CREATE = { data: CREATE, signature: { method: "ecdsa", value: `0x${"ab".repeat(65)}` } };
+/** Signed by the payer of record: the create is authenticated like every other action now. */
+const SIGNED_CREATE = signAction(CREATE, PAYER_KEY);
 
 const realFetch = globalThis.fetch;
 afterEach(() => {

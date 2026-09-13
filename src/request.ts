@@ -21,7 +21,7 @@
  */
 
 import { keccak256, keccak256Hex } from "./keccak.ts";
-import { recoverAddress } from "./secp256k1.ts";
+import { personalSignDigest, recoverAddress } from "./secp256k1.ts";
 
 /** Sepolia. Mainnet ids are refused in code; this repository is testnet-only by policy. */
 export const SEPOLIA_CHAIN_ID = 11155111;
@@ -708,6 +708,44 @@ const SIGNER_ROLES: Readonly<Record<string, ReadonlyArray<"payee" | "payer">>> =
 };
 
 /**
+ * The address that signed one action, under whichever of Request's two ECDSA methods it used.
+ *
+ * `ecdsa` recovers over the action digest itself. `ecdsa-ethereum` is `personal_sign`, so the
+ * signature is over the EIP-191 prefix and the digest — and clients differ on what they hand the
+ * wallet: some pass the 32 raw bytes, some the `0x…` text of the same digest. Both are tried, and
+ * a candidate only wins by recovering to a party this invoice names. That is what makes trying
+ * two encodings safe rather than lax: a wrong guess recovers to a stranger and is refused by the
+ * role check below exactly as it was before, so the worst case of this function is the behaviour
+ * it replaced. It cannot manufacture an authorisation, only recognise one of two spellings of the
+ * same one.
+ */
+export function recoverActionSigner(
+  method: string,
+  digest: Uint8Array,
+  value: string,
+  parties: { payee?: string; payer?: string },
+): string | null {
+  const named = new Set([parties.payee, parties.payer].filter((p): p is string => p !== undefined));
+  const candidates: Uint8Array[] =
+    method === "ecdsa"
+      ? [digest]
+      : [
+          personalSignDigest(digest),
+          personalSignDigest(new TextEncoder().encode(`0x${Buffer.from(digest).toString("hex")}`)),
+        ];
+  let first: string | null = null;
+  for (const candidate of candidates) {
+    const recovered = recoverAddress(candidate, value)?.toLowerCase() ?? null;
+    if (recovered === null) continue;
+    if (first === null) first = recovered;
+    // A party's own signature settles which encoding this client used; anything else is reported
+    // as-is so the refusal can name the address it actually saw.
+    if (named.has(recovered)) return recovered;
+  }
+  return first;
+}
+
+/**
  * Every action on the channel recovers to a party the create names, in a role Request allows it.
  *
  * The digest is the one Request signs: keccak256 over the action's `data`, keys deep-sorted and
@@ -743,17 +781,28 @@ function assertActionsAreSigned(
 
   for (const action of actions) {
     const name = asString(dig(action.data, "name")) ?? "unnamed";
-    // The create is authenticated by the channel id, which is a hash over the whole signed create
-    // -- a stronger binding than its signature, because it ties the bytes to the id the CALLER
-    // asked for rather than to a key the caller has never seen. Its signature is deliberately not
-    // role-checked on top of that: Request allows a delegate identity to sign on a party's
-    // behalf, so a rule saying "the create must be signed by the payee or the payer" would refuse
-    // legitimate invoices to re-prove something already proved. Every action AFTER the create has
-    // no such binding, and those are the ones that move the debt.
-    if (name === "create") continue;
+    // The create is checked like every other action, including its role.
+    //
+    // It used to be skipped here, on the argument that the channel id already binds its bytes and
+    // that Request permits a delegate to sign on a party's behalf, so a role rule would refuse
+    // legitimate invoices. The first half is true and the second is not: Request's own
+    // `CreateAction` refuses a create whose signer is neither the payee nor the payer, so an
+    // invoice this reader accepted on that argument is one Request's clients reject. And the id
+    // binding proves the BYTES, not the authorship -- anyone can compose a create naming any two
+    // parties and serve it under its own hash. Every role check below is anchored to the payee
+    // and payer THAT create names, so an unauthenticated create makes the party set itself
+    // attacker-chosen and the checks on later actions decorative.
+    //
+    // Refusing nothing real: all 46 actions this deployment knows recover to the payee
+    // (`docs/evidence/signatures.json`), creates included.
     const method = asString(dig(action.signed, "signature", "method"));
     const value = asString(dig(action.signed, "signature", "value"));
-    if (method !== "ecdsa") {
+    // Both of Request's ECDSA methods. `ecdsa` signs the digest directly; `ecdsa-ethereum` is what
+    // a browser wallet produces, the same digest under the EIP-191 personal_sign prefix. Refusing
+    // the second meant refusing every invoice created from a wallet that cannot sign raw digests
+    // -- a whole class of real invoices called forgeries, which is the same failure as accepting
+    // one, pointed the other way.
+    if (method !== "ecdsa" && method !== "ecdsa-ethereum") {
       throw new RequestError(
         "ACTION_UNSIGNED",
         `action ${action.index} (${name}) on invoice ${id} is signed with ${method ?? "no method"}, which this ` +
@@ -768,7 +817,7 @@ function assertActionsAreSigned(
     }
 
     const digest = keccak256(new TextEncoder().encode(JSON.stringify(normalizeForHash(action.data)).toLowerCase()));
-    const signer = recoverAddress(digest, value)?.toLowerCase() ?? null;
+    const signer = recoverActionSigner(method, digest, value, { payee, payer });
     if (signer === null) {
       throw new RequestError(
         "ACTION_SIGNATURE_INVALID",

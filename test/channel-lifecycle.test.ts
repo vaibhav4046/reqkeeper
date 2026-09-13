@@ -82,8 +82,12 @@ afterEach(() => {
  * and the reason every other case here has to build a self-consistent channel.
  */
 function serve(actions: Action[], signWith?: Record<number, bigint>): string {
-  const transactions = actions.map((a, i) => ({
-    transaction: { data: JSON.stringify(signWith?.[i] === undefined ? signedBy(a) : signAction(a, signWith[i] as bigint)) },
+  // Signed ONCE per action. `signDigest` picks a random k, so signing the create twice -- once for
+  // the served bytes, once for the id derived from them -- produces two different envelopes and an
+  // id the served create does not hash to.
+  const envelopes = actions.map((a, i) => (signWith?.[i] === undefined ? signedBy(a) : signAction(a, signWith[i] as bigint)));
+  const transactions = envelopes.map((envelope) => ({
+    transaction: { data: JSON.stringify(envelope) },
     // The anchor the reader looks for. Only the create's matters, but every action carries one.
     blockNumber: 11_690_000,
     timestamp: 1_700_000_000,
@@ -94,11 +98,10 @@ function serve(actions: Action[], signWith?: Record<number, bigint>): string {
       headers: { "content-type": "application/json" },
     })) as typeof fetch;
 
-  const create = actions.find((a) => a.name === "create");
-  return create ? channelIdFor(signedBy(create)) : REQUEST_ID;
+  const createAt = actions.findIndex((a) => a.name === "create");
+  return createAt >= 0 ? channelIdFor(envelopes[createAt]) : REQUEST_ID;
 }
 
-const SIGNATURE = { method: "ecdsa", value: `0x${"ab".repeat(65)}` };
 
 /**
  * The signature each action really carries, from the party Request allows to take it.
@@ -108,14 +111,14 @@ const SIGNATURE = { method: "ecdsa", value: `0x${"ab".repeat(65)}` };
  * that garbage is rejected, so these are signed for real by an implementation written separately
  * from the one that checks them (`test/signing.ts`).
  *
- * The create keeps the placeholder deliberately: it is bound by the channel id, which is a hash
- * over its whole signed envelope, and its signature is not role-checked. Changing it here would
- * change the id and nothing else.
+ * The create is signed too. It used to keep a placeholder, on the argument that the channel id
+ * binds its bytes and Request permits a delegate signer -- but Request's own CreateAction refuses
+ * a create signed by neither party, and the id binding proves the bytes rather than the authorship.
  */
 function signedBy(action: Action): unknown {
   switch (action.name) {
     case "create":
-      return { data: action, signature: SIGNATURE };
+      return signAction(action, PAYEE_KEY);
     case "increaseExpectedAmount":
     case "accept":
       return signAction(action, PAYER_KEY);

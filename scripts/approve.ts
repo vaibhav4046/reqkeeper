@@ -20,6 +20,7 @@ import { obligationId, sourceFactsHash } from "../src/identity.ts";
 import { checkPolicy } from "../src/policy.ts";
 import { buildPolicy, buildSourceFacts, buildSteps, NAMESPACE, type InvoiceFacts } from "../src/plan.ts";
 import { toHuman } from "../src/money.ts";
+import { fetchInvoice } from "../src/request.ts";
 import { derivePlan, restate } from "../src/settle.ts";
 import { Store } from "../src/store.ts";
 
@@ -76,7 +77,7 @@ function need(flag: string): string {
   return v;
 }
 
-const facts: InvoiceFacts = {
+const typed: InvoiceFacts = {
   requestId: need("requestId"),
   paymentReference: need("reference"),
   payee: need("payee"),
@@ -84,6 +85,72 @@ const facts: InvoiceFacts = {
   maxTotalDebitBaseUnits: need("max"),
   feeAmount: args.get("fee") ?? "0",
   feeAddress: args.get("feeAddress") ?? `0x${"0".repeat(40)}`,
+};
+
+/**
+ * The facts about the invoice that no operator can type, read from Request at the door.
+ *
+ * A plan hash covers every source fact, and three of them come from Request rather than from a
+ * flag: the anchor block, an amount changed by later signed channel actions, and a payment
+ * address that is not the party of record. This door recomputed the hash from the flags ALONE,
+ * so the hash it produced for any invoice Request had confirmed -- which is every invoice worth
+ * paying -- did not equal the one the proposal reserved, and the operator was told "no such plan
+ * locally" for a plan that was sitting in the table. The human approval step could not be
+ * completed at all for an anchored invoice; that is measured, not inferred (see
+ * `test/approve-door.test.ts`).
+ *
+ * Reading Request here is not the same as trusting the proposer. The whole point of this tool is
+ * that it does not believe the agent's summary; Request's gateway is the source the agent had to
+ * agree with in the first place, and every flag typed below is still checked against it. A
+ * gateway that will not answer refuses the approval rather than falling back to the flags: an
+ * approval recorded against a hash nothing proposed authorises nothing, which is the failure this
+ * block exists to end.
+ */
+let invoice;
+try {
+  invoice = await fetchInvoice(typed.requestId);
+} catch (e) {
+  console.error(
+    `\nREFUSED: the invoice could not be read from Request (${(e as Error).message}).\n\n` +
+      "This tool recomputes the plan hash from the invoice as Request holds it -- including the\n" +
+      "anchor block and any signed amendments, which you cannot type. Without that read the hash\n" +
+      "would not match the plan the proposal reserved and the approval would authorise nothing.\n" +
+      "Run this again when the gateway answers. Nothing recorded.\n",
+  );
+  process.exit(1);
+}
+
+// Typed against held. A flag that disagrees with Request is the case this tool was written for.
+const eq = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+const disagreements: string[] = [];
+if (!eq(typed.paymentReference, invoice.paymentReference)) {
+  disagreements.push(`reference ${typed.paymentReference}, Request derives ${invoice.paymentReference}`);
+}
+if (!eq(typed.payee, invoice.payee)) {
+  disagreements.push(`payee ${typed.payee}, the invoice is payable to ${invoice.payee}`);
+}
+if (typed.amountBaseUnits !== invoice.invoiceBaseUnits) {
+  disagreements.push(`amount ${typed.amountBaseUnits}, the invoice is ${invoice.invoiceBaseUnits}`);
+}
+if (typed.feeAmount !== invoice.feeBaseUnits) {
+  disagreements.push(`fee ${typed.feeAmount}, the invoice fee is ${invoice.feeBaseUnits}`);
+}
+if (!eq(typed.feeAddress, invoice.feeRecipient)) {
+  disagreements.push(`fee recipient ${typed.feeAddress}, the invoice names ${invoice.feeRecipient}`);
+}
+if (disagreements.length > 0) {
+  console.error(
+    `\nREFUSED: what you typed is not the invoice Request holds: ${disagreements.join("; ")}.\n\n` +
+      "Nothing recorded.\n",
+  );
+  process.exit(1);
+}
+
+const facts: InvoiceFacts = {
+  ...typed,
+  ...(invoice.anchor === undefined ? {} : { anchorBlock: invoice.anchor.blockNumber }),
+  ...(invoice.amountChangedBy === undefined ? {} : { amountChangedBy: invoice.amountChangedBy }),
+  ...(invoice.payeeDiffersFromRecord ? { payeeDiffersFromRecord: true } : {}),
 };
 
 const reject = args.has("reject");
@@ -175,6 +242,19 @@ console.log(`  calldata    : ${steps[0].data}`);
 // of a paragraph. It is the one figure on this screen the approver cannot check against what the
 // creditor first showed them, and a person skimming a confirmation prompt reads the shape of it
 // before the words: a banner is seen, a subordinate clause is not.
+// The address receiving the money is not the party the invoice names. Request allows it and this
+// tool does not refuse it -- and it is the one line on this screen that distinguishes paying your
+// counterparty from paying whoever last edited the payment address. Banner, for the same reason
+// the amendment below gets one: a person skimming a confirmation prompt reads shapes, not clauses.
+if (sourceFacts.payeeDiffersFromRecord) {
+  console.log("\n" + "!".repeat(78));
+  console.log("  THE PAYMENT ADDRESS IS NOT THE PARTY OF RECORD on this invoice.");
+  console.log(`    paying      : ${sourceFacts.payee}`);
+  console.log(`    of record   : ${invoice.payeeOfRecord}`);
+  console.log("  Request permits this. Confirm with the creditor that the address is the one they");
+  console.log("  meant before approving.");
+  console.log("!".repeat(78));
+}
 if (sourceFacts.amountChangedBy) {
   const from = toHuman(BigInt(sourceFacts.amountChangedBy.fromBaseUnits), policy.token.decimals);
   const now = toHuman(BigInt(sourceFacts.invoiceBaseUnits), policy.token.decimals);

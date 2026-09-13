@@ -26,7 +26,7 @@ import { afterEach, describe, test } from "node:test";
 import { keccak256Hex } from "../src/keccak.ts";
 import { RequestError, fetchInvoice } from "../src/request.ts";
 import { recoverAddress } from "../src/secp256k1.ts";
-import { PAYEE_KEY, PAYER_KEY, STRANGER_KEY, actionDigest, addressOf, signAction } from "./signing.ts";
+import { PAYEE_KEY, PAYER_KEY, STRANGER_KEY, actionDigest, addressOf, signAction, signActionPersonal } from "./signing.ts";
 
 const FAU = "0x370DE27fdb7D1Ff1e1BaA7D11c5820a324Cf623C";
 const PAYMENT_ADDRESS = "0xc43d766CB7c48B9B198db87441b97c09e81717A1";
@@ -63,7 +63,16 @@ const CREATE: Action = {
   },
 };
 
-const CREATE_SIGNATURE = { method: "ecdsa", value: `0x${"ab".repeat(65)}` };
+/**
+ * A real signature by the payee of record.
+ *
+ * A placeholder lived here while `assertActionsAreSigned` skipped the create -- and the argument
+ * for skipping it (Request permits a delegate signer) was refuted by Request's own CreateAction,
+ * which refuses a create signed by neither party. The create is authenticated like every other
+ * action now, so a fixture that cannot produce a real signature is a fixture for an invoice
+ * Request itself would reject.
+ */
+const SIGNED_CREATE = signAction(CREATE, PAYEE_KEY);
 
 const realFetch = globalThis.fetch;
 afterEach(() => {
@@ -82,7 +91,7 @@ function channelIdFor(signedCreate: unknown): string {
 
 /** A channel whose create is genuine and whose later actions are exactly these signed envelopes. */
 function serve(later: ReadonlyArray<unknown>): string {
-  const signedCreate = { data: CREATE, signature: CREATE_SIGNATURE };
+  const signedCreate = SIGNED_CREATE;
   const transactions = [signedCreate, ...later].map((signed) => ({
     transaction: { data: JSON.stringify(signed) },
     blockNumber: 11_690_000,
@@ -383,4 +392,106 @@ describe("one authorisation has one meaning, however it is spelled", () => {
     const invoice = await read(id);
     assert.equal(invoice.invoiceBaseUnits, (BigInt(ONE) + 800n).toString());
   });
+});
+
+describe("the create is an action like any other", () => {
+  /**
+   * The create used to be skipped here entirely: no signature check, no role check. The argument
+   * was that the channel id already binds its bytes and that Request permits a delegate signer.
+   * The first half is true and does not help -- an id binding proves the BYTES, and anyone can
+   * compose a create naming any two parties and serve it under its own hash. The second half is
+   * false: Request's own `CreateAction` refuses a create signed by neither the payee nor the
+   * payer, so an invoice accepted on that argument is one Request's own clients reject.
+   *
+   * It matters beyond agreeing with Request. Every role check in this file is anchored to the
+   * payee and payer THAT create names. An unauthenticated create makes the party set itself
+   * attacker-chosen, and "an increase signed by the payer" then means "signed by whoever the
+   * forged create called the payer".
+   *
+   * Refusing nothing real: all 46 actions this deployment knows recover to the party the invoice
+   * names, creates included (`docs/evidence/signatures.json`).
+   */
+  function serveCreate(signedCreate: unknown): string {
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          result: {
+            transactions: [
+              { transaction: { data: JSON.stringify(signedCreate) }, blockNumber: 11_690_000, timestamp: 1_700_000_000 },
+            ],
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )) as typeof fetch;
+    return channelIdFor(signedCreate);
+  }
+
+  test("a create signed by a stranger is refused, however well it hashes to its own id", async () => {
+    // The id matches perfectly: it is derived from these exact bytes. That is the point.
+    assert.equal(await refusalFrom(serveCreate(signAction(CREATE, STRANGER_KEY))), "ACTION_SIGNATURE_INVALID");
+  });
+
+  test("a create with no signature at all is refused", async () => {
+    assert.equal(await refusalFrom(serveCreate({ data: CREATE })), "ACTION_UNSIGNED");
+  });
+
+  test("and a create signed by the payer -- a party Request allows -- is read", async () => {
+    // The control, without which the two above could pass because everything is refused.
+    const id = serveCreate(signAction(CREATE, PAYER_KEY));
+    assert.equal((await read(id)).invoiceBaseUnits, ONE);
+  });
+});
+
+describe("a wallet signature is a signature", () => {
+  /**
+   * Request has two ECDSA methods: `ecdsa` signs the digest directly, `ecdsa-ethereum` is
+   * `personal_sign` over the same digest. Only the first was accepted, so every invoice created
+   * from a browser wallet -- which cannot sign raw digests -- was called unauthenticatable and
+   * refused. Refusing a real invoice is the same defect as accepting a forged one, pointed the
+   * other way: the debt goes unpaid and the system reports a forgery.
+   *
+   * Clients differ on what they hand the wallet, the 32 digest bytes or the `0x…` text of them,
+   * so both are recognised. Honest limit: every invoice this deployment knows uses `ecdsa`, so
+   * these two encodings are pinned by this file and by `src/secp256k1.ts#personalSignDigest`,
+   * NOT by a live `ecdsa-ethereum` invoice. A third encoding would be refused, which is the safe
+   * direction -- a wrong guess recovers to a stranger and the role check below refuses it.
+   */
+  test("a create signed with personal_sign over the digest bytes is read", async () => {
+    const id = serveCreatePersonal(signActionPersonal(CREATE, PAYEE_KEY, "bytes"));
+    assert.equal((await read(id)).invoiceBaseUnits, ONE);
+  });
+
+  test("and one signed over the 0x text of the same digest is read too", async () => {
+    const id = serveCreatePersonal(signActionPersonal(CREATE, PAYEE_KEY, "hex"));
+    assert.equal((await read(id)).invoiceBaseUnits, ONE);
+  });
+
+  test("but a stranger's personal_sign is still a stranger's", async () => {
+    const id = serveCreatePersonal(signActionPersonal(CREATE, STRANGER_KEY, "bytes"));
+    assert.equal(await refusalFrom(id), "ACTION_SIGNATURE_INVALID");
+  });
+
+  test("an increase signed with personal_sign by the PAYEE is still the wrong party", async () => {
+    // The method is not a way around the roles.
+    const id = serveWithCreate(signAction(CREATE, PAYEE_KEY), [signActionPersonal(increase("500"), PAYEE_KEY)]);
+    assert.equal(await refusalFrom(id), "ACTION_ROLE_VIOLATION");
+  });
+
+  function serveCreatePersonal(signedCreate: unknown): string {
+    return serveWithCreate(signedCreate, []);
+  }
+
+  function serveWithCreate(signedCreate: unknown, later: ReadonlyArray<unknown>): string {
+    const transactions = [signedCreate, ...later].map((signed) => ({
+      transaction: { data: JSON.stringify(signed) },
+      blockNumber: 11_690_000,
+      timestamp: 1_700_000_000,
+    }));
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ result: { transactions } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })) as typeof fetch;
+    return channelIdFor(signedCreate);
+  }
 });

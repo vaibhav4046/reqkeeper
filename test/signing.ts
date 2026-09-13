@@ -14,9 +14,9 @@
  * names, which is the check no fixture can fake.
  */
 
-import { randomBytes } from "node:crypto";
 
 import { keccak256 } from "../src/keccak.ts";
+import { personalSignDigest } from "../src/secp256k1.ts";
 
 const P = 2n ** 256n - 2n ** 32n - 977n;
 const N = 0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
@@ -82,8 +82,14 @@ export function addressOf(privateKey: bigint): string {
  */
 export function signDigest(digest: Uint8Array, privateKey: bigint): string {
   const z = BigInt(`0x${Buffer.from(digest).toString("hex")}`);
-  for (;;) {
-    const k = mod(BigInt(`0x${randomBytes(32).toString("hex")}`), N);
+  // Deterministic k, in the spirit of RFC 6979: one key and one digest always produce the same
+  // signature. A random k made `signAction` impure, and a fixture that signs its create twice --
+  // once for the bytes it serves, once for the channel id derived from those bytes -- then built
+  // an id the served create does not hash to. That failure reads as a reader bug and is a fixture
+  // bug. Determinism is also what lets a recorded vector be recorded at all.
+  for (let counter = 0n; ; counter++) {
+    const seed = Buffer.from(hex32(mod(privateKey, N)) + Buffer.from(digest).toString("hex") + hex32(counter), "hex");
+    const k = mod(BigInt(`0x${Buffer.from(keccak256(Uint8Array.from(seed))).toString("hex")}`), N);
     if (k === 0n) continue;
     const R = mul(G, k);
     if (R === null) continue;
@@ -120,3 +126,25 @@ export function signAction(data: unknown, privateKey: bigint): { data: unknown; 
 export const PAYEE_KEY = 0x00000000000000000000000000000000000000000000000000000000000a11cen;
 export const PAYER_KEY = 0x0000000000000000000000000000000000000000000000000000000000000b0bn;
 export const STRANGER_KEY = 0x000000000000000000000000000000000000000000000000000000000000deadn;
+
+/**
+ * The same authorisation, produced the way a browser wallet produces it.
+ *
+ * `personal_sign` signs the EIP-191 prefix and the message, and Request calls that method
+ * `ecdsa-ethereum`. Two encodings of the same message are in the wild -- the 32 digest bytes, and
+ * the `0x…` text of those bytes -- so a fixture can produce either and the reader is expected to
+ * recognise both.
+ */
+export function signActionPersonal(
+  data: unknown,
+  privateKey: bigint,
+  encoding: "bytes" | "hex" = "bytes",
+): { data: unknown; signature: { method: string; value: string } } {
+  const digest = actionDigest(data);
+  const message =
+    encoding === "bytes" ? digest : new TextEncoder().encode(`0x${Buffer.from(digest).toString("hex")}`);
+  return {
+    data,
+    signature: { method: "ecdsa-ethereum", value: signDigest(personalSignDigest(message), privateKey) },
+  };
+}

@@ -437,6 +437,7 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
       // reads. An amount changed by later channel actions is the one figure there that nothing
       // authenticates.
       let amountChangedBy: { actions: number; fromBaseUnits: string } | undefined;
+      let payeeDiffersFromRecord = false;
       if (ctx.verifyAgainstRequest !== false) {
         const read = ctx.fetchInvoice ?? fetchInvoice;
         let invoice;
@@ -462,6 +463,11 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
         // real money read `invoice.anchor` too, and they cannot forget a check they never make.
         anchorBlock = invoice.anchor?.blockNumber;
         amountChangedBy = invoice.amountChangedBy;
+        // Hoisted for the same reason `amountChangedBy` is: it is read inside this verification
+        // block and needed in the plan below. `src/request.ts` computes it, documents that it
+        // "reaches the sentence a human approves", and both production callers dropped it -- so
+        // the control existed only as a sentence in a docblock.
+        payeeDiffersFromRecord = invoice.payeeDiffersFromRecord === true;
         // Learned now, and kept. An obligation created before the gateway was reachable — or fed
         // by the watcher from a file that carries no anchors — has no floor, so every scan for it
         // comes back truncated and it can never be concluded either way. The column takes it
@@ -539,6 +545,9 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
       // other tri-state exists because absence must not read as permission.
       let paidCheck: "PAID" | "NOT_PAID" | "UNKNOWN" | "CONFLICT" | "NOT_APPLICABLE" = "NOT_APPLICABLE";
       let conflictDetail = "";
+      let unknownReason: string | undefined;
+      let unknownDetail: string | undefined;
+      let unknownTxHash: string | undefined;
       if (!ctx.store.sentAttemptFor(oid)) {
         try {
           // Every field, not the reference and not the amount alone. Nothing has been
@@ -576,6 +585,15 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
               break;
             case "UNKNOWN":
               paidCheck = "UNKNOWN";
+              // WHY, and what was seen. `verdictFor` computes a precise reason and a detail that
+              // names the transaction, and this threw both away for a four-way disjunction --
+              // so an agent was told "retry when an endpoint answers" for a scan where an
+              // endpoint HAD answered and the fix was a second one. The single most
+              // decision-relevant fact the system held, the transaction a log was seen in,
+              // reached neither the agent nor the human.
+              unknownReason = verdict.reason;
+              unknownDetail = verdict.detail;
+              unknownTxHash = verdict.txHash;
               break;
             default: {
               const exhaustive: never = verdict;
@@ -597,15 +615,28 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
         );
       }
       if (paidCheck === "UNKNOWN") {
+        // One reason, named, with what to do about THAT reason. The disjunction this replaced
+        // listed four possible causes and prescribed the fix for one of them.
+        const remedy =
+          unknownReason === "UNCORROBORATED"
+            ? "One endpoint answered and no other confirmed it. Set REQKEEPER_RPC_ENDPOINTS to a " +
+              "comma-separated list of endpoints that answer, and propose again — retrying against " +
+              "the same single endpoint will return the same thing."
+            : unknownReason === "TRUNCATED"
+              ? "The scan could not reach the invoice's own anchor block, so it looked at a window " +
+                "a payment could be outside. Propose again once Request has confirmed the invoice, " +
+                "which gives the search a floor."
+              : unknownReason === "CONFLICTS_NOT_STATED"
+                ? "The reader did not say what conflicting logs it saw, so it has not concluded. " +
+                  "This is a defect in the chain reader, not a fact about the invoice."
+                : "No endpoint could be read at all. Try again when one answers.";
         return refusedBeforeWrite(
           oid,
           "SOURCE_UNVERIFIABLE",
-          "the chain could not be read far enough to establish whether this invoice has already " +
-            "been paid, so nothing is proposed on it. A scan that did not reach the invoice's own " +
-            "anchor block, that no second endpoint corroborated, that never said what conflicting " +
-            "logs it saw, or that could not run at all, is not evidence that the debt is unpaid. " +
-            "Retry when an endpoint answers, or once Request has confirmed the invoice so its " +
-            "anchor block bounds the search.",
+          `the chain could not establish whether this invoice has already been paid ` +
+            `(${unknownReason ?? "UNREADABLE"}): ${unknownDetail ?? "no detail"}.` +
+            (unknownTxHash ? ` The transaction it saw is ${unknownTxHash}.` : "") +
+            ` Nothing is proposed on a scan that did not conclude. ${remedy}`,
         );
       }
       const sourceFacts = buildSourceFacts({
@@ -613,6 +644,9 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
         hasBeenPaid: paidCheck === "PAID",
         ...(anchorBlock === undefined ? {} : { anchorBlock }),
         ...(amountChangedBy === undefined ? {} : { amountChangedBy }),
+        // The money goes somewhere other than the party of record. Legitimate in Request, so never
+        // a refusal -- and exactly the thing the person approving would want to be told.
+        ...(payeeDiffersFromRecord ? { payeeDiffersFromRecord: true } : {}),
       });
 
       // propose_payment deliberately passes no approval, so settleObligation stops at the
