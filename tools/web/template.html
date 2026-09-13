@@ -309,14 +309,32 @@
   @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important } }
   @media (max-width: 760px) {
     .app { grid-template-columns: 1fr }
-    /* The nav goes BELOW the hero on a phone.
-       At 375px the mark plus six stacked nav items ate roughly 400px before the first sentence
-       about what this is appeared -- so the one thing a stranger needs in the first five seconds
-       was the one thing below the fold. `order` moves it without touching the source order, so
-       the tab sequence and the reading order on a desktop are unchanged. */
-    aside { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; order: 2 }
-    main { order: 1 }
-    nav { flex-direction: row; flex-wrap: wrap; padding: 8px }
+    /* The nav is a tab strip at the top on a phone, not a column and not a footer.
+       Three attempts live in this comment because each fixed the previous one's damage. Stacked,
+       the mark plus six nav items ate roughly 400px before the first sentence about what this is
+       -- the one thing a stranger needs in the first five seconds, below the fold. `order: 2` on
+       the aside fixed that by moving the nav BELOW `main`, and `main` is the entire console: the
+       navigation landed after every section, so reaching it meant scrolling the whole page, and
+       visual order stopped matching tab order, which is the part a keyboard or screen-reader user
+       pays for.
+       A one-line horizontal strip costs about 40px and keeps source order, visual order and tab
+       order the same thing. It scrolls sideways rather than wrapping, so six items stay one row
+       at 320px. */
+    aside { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center }
+    nav {
+      flex-direction: row; flex-wrap: nowrap; padding: 6px 8px; width: 100%;
+      overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+      border-top: 1px solid var(--line);
+    }
+    nav::-webkit-scrollbar { display: none }
+    nav button { flex: none; border-left: 0; border-bottom: 2px solid transparent; padding: 7px 10px }
+    nav button[aria-current="true"] { border-left-color: transparent; border-bottom-color: var(--signal) }
+    /* A phone-sized mark. The desktop one is 136x120 and pushed the first sentence about what
+       this is off the screen on its own, which is what started the nav being moved in the first
+       place. The art survives at 48px because it is drawn as pixels. */
+    .brand { display: flex; align-items: center; gap: 10px; padding: 8px 10px; width: 100% }
+    .brand .sub { display: none }
+    .mark-wrap { margin: 0; width: 54px; height: 48px }
     .rail-foot { display: none }
     /* Two columns at phone width leaves the value track so narrow that break-all chops
        words mid-syllable ("11155111 se / polia"). Stack label over value instead. */
@@ -863,8 +881,14 @@
   draw();
 
   // --- settle flow --------------------------------------------------------
-  // Replays what the live run actually recorded for one obligation. Nothing is invented:
-  // the outcomes and the hash come from the artifact.
+  // Replays what the live run actually recorded for one obligation. The outcomes and the hash
+  // come from the artifact.
+  //
+  // One step is not from that run: the human approval. `live-harness.ts` asserted the decision
+  // inline when these rows were made, and the gate that reads a recorded decision by plan hash
+  // came afterwards -- docs/TRUTH.md says so in as many words. Animating it unlabelled made this
+  // page claim a step the recorded run did not take, which is the one thing a page of evidence
+  // must not do. It is labelled where it is drawn.
   const pair = liveRows.find((r) => r.actual === "SETTLED");
   const twin = liveRows.find((r) => r.expected === "ALREADY_SETTLED" && r.request_id === pair?.request_id);
   el("flow-target").textContent = pair ? short(pair.request_id || "", 14) : "";
@@ -873,7 +897,7 @@
     ["Import obligation", "identity derived from the Request invoice"],
     ["Policy gate", "payee, cap, fee ceiling, token decimals"],
     ["Reserve", "one plan holds the obligation"],
-    ["Human approval", "recomputed from the invoice, not the proposal"],
+    ["Human approval", "recomputed from the invoice — today's path, not this recorded run"],
     ["Calldata gate", "decode, re-encode, byte-compare"],
     ["Dispatch", pair ? `1 send · ${short(pair.tx_hash, 14)}` : "1 send"],
     ["Reconcile", "chain receipt AND source verdict"],

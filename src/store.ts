@@ -505,6 +505,25 @@ export class Store {
     }
   }
 
+  /**
+   * Obligations the reference index cannot see.
+   *
+   * The uniqueness index is partial -- `WHERE payment_reference IS NOT NULL` -- because a row may
+   * legitimately be imported before its invoice has been read. The cost is that such a row is
+   * invisible to BOTH duplicate defences: the index skips it and the cross-namespace lookup
+   * matches on equality. `importObligation` back-fills on re-import, so this is only reachable by
+   * a row created before that back-fill existed and never re-imported since. Those rows exist in
+   * databases in the field, and nothing could name them.
+   */
+  obligationsWithoutReference(): Array<{ obligationId: string; requestId: string; state: string }> {
+    return this.#db
+      .prepare(
+        "SELECT obligation_id AS obligationId, request_id AS requestId, state FROM obligations " +
+          "WHERE payment_reference IS NULL ORDER BY created_at",
+      )
+      .all() as Array<{ obligationId: string; requestId: string; state: string }>;
+  }
+
   /** Every conflicting transaction a human has cleared for this obligation, lower-cased. */
   reviewedConflicts(obligationId: string): Set<string> {
     const out = new Set<string>();
