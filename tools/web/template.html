@@ -131,7 +131,7 @@
     background: var(--panel); position: sticky; top: 0; z-index: 20; overflow-x: auto;
   }
   .stat { padding: 11px 18px; border-right: 1px solid var(--line); min-width: 116px; flex: none; }
-  .stat .k { color: var(--faint); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
+  .stat .k { color: var(--faint); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
   .stat .v { font-family: var(--pixel); font-size: 13px; margin-top: 7px; color: var(--text); }
   .stat .v.good { color: var(--signal); }
   .stat .v.warn { color: var(--amber); }
@@ -209,7 +209,7 @@
   th, td { padding: 7px 11px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
   th {
     position: sticky; top: 0; background: var(--panel-2); color: var(--faint);
-    font-size: 9px; letter-spacing: .1em; text-transform: uppercase; font-weight: 400; z-index: 1;
+    font-size: 11px; letter-spacing: .1em; text-transform: uppercase; font-weight: 400; z-index: 1;
   }
   tbody tr { cursor: pointer; }
   /* Row-level roving tabindex, so the focused row is the grid's single tab stop and the ring
@@ -309,7 +309,13 @@
   @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important } }
   @media (max-width: 760px) {
     .app { grid-template-columns: 1fr }
-    aside { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center }
+    /* The nav goes BELOW the hero on a phone.
+       At 375px the mark plus six stacked nav items ate roughly 400px before the first sentence
+       about what this is appeared -- so the one thing a stranger needs in the first five seconds
+       was the one thing below the fold. `order` moves it without touching the source order, so
+       the tab sequence and the reading order on a desktop are unchanged. */
+    aside { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; order: 2 }
+    main { order: 1 }
     nav { flex-direction: row; flex-wrap: wrap; padding: 8px }
     .rail-foot { display: none }
     /* Two columns at phone width leaves the value track so narrow that break-all chops
