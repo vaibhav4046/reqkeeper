@@ -109,6 +109,14 @@ export interface InvoiceFactsFromRequest {
   readonly paymentReference: string;
   /** Set when later channel actions changed the amount the create stated. See policy.ts. */
   readonly amountChangedBy?: { readonly actions: number; readonly fromBaseUnits: string };
+  /**
+   * Actions on this channel that did not authenticate, and were therefore not applied.
+   *
+   * Request ignores these too, so an invoice carrying them is still a payable invoice — but the
+   * person approving the payment should be told that somebody has been appending to the channel.
+   * Absent when the whole channel authenticated, which is every invoice this deployment knows.
+   */
+  readonly ignoredActions?: ReadonlyArray<IgnoredAction>;
   /** Where the create action is anchored on Sepolia. Absent while it is unconfirmed. */
   readonly anchor?: { readonly blockNumber: number; readonly transactionHash: string };
 }
@@ -344,16 +352,21 @@ export async function fetchInvoice(
   // The create's own payee and payer are the authority for those rules, and they are safe to
   // read here for exactly one reason: the line above has already proved the create hashes to the
   // id that was asked for, so they cannot have been substituted.
-  assertActionsAreSigned(id, actions, {
+  const authentication = authenticateActions(id, actions, create.index, {
     payee: asString(dig(create.data, "parameters", "payee", "value")),
     payer: asString(dig(create.data, "parameters", "payer", "value")),
   });
 
-  const everyAction = actions.map((a) => ({
-    index: a.index,
-    name: asString(dig(a.data, "name")),
-    parameters: dig(a.data, "parameters"),
-  }));
+  // Only what authenticated. Everything else is ignored exactly as Request ignores it, counted,
+  // and named to the human below -- rather than refusing the invoice, which let any stranger wedge
+  // a real debt for ever by appending junk to a public channel.
+  const everyAction = actions
+    .filter((a) => authentication.applicable.has(a.index))
+    .map((a) => ({
+      index: a.index,
+      name: asString(dig(a.data, "name")),
+      parameters: dig(a.data, "parameters"),
+    }));
   const later = everyAction.filter((a) => a.index > create.index);
 
   // Refuse a name this reader does not understand, rather than skipping it.
@@ -364,6 +377,10 @@ export async function fetchInvoice(
   // exactly the case where being quiet costs money, so an unknown name stops the settlement and
   // says which one it was. All 46 recorded invoices carry nothing but a `create`, so nothing in
   // this deployment is refused by it today.
+  //
+  // AUTHENTICATED names only, now. A stranger's junk action never reaches this check -- it was
+  // dropped upstream, as Request drops it -- so the refusal means what it says: a party to this
+  // invoice really took an action, and this reader cannot tell what it did to the debt.
   const UNDERSTOOD = new Set(["create", "cancel", "accept", "increaseExpectedAmount", "reduceExpectedAmount"]);
   const unknown = everyAction.find((a) => a.name === undefined || !UNDERSTOOD.has(a.name));
   if (unknown) {
@@ -509,6 +526,10 @@ export async function fetchInvoice(
     salt,
     paymentReference: derivePaymentReference(id, salt, payee),
     ...(amountChangedBy ? { amountChangedBy } : {}),
+    // Deliberately NOT part of the facts a plan hashes. Anyone can append to a public channel, so
+    // hashing this would let a stranger invalidate a human's approval on demand -- the wedge this
+    // change removes, rebuilt one layer up. It reaches the approval sentence instead.
+    ...(authentication.ignored.length > 0 ? { ignoredActions: authentication.ignored } : {}),
     ...(await boundAnchorFor(id, body, create.index, opts)),
   };
 }
@@ -759,130 +780,182 @@ export function recoverActionSigner(
  * invoice whose history cannot be authenticated is not an invoice whose amount can be trusted in
  * either direction.
  */
-function assertActionsAreSigned(
+/** Why one action on a channel was not applied, in the words a human would want. */
+export interface IgnoredAction {
+  readonly index: number;
+  readonly name: string;
+  readonly reason: string;
+}
+
+/**
+ * Every action on the channel, split into the ones that authenticate and the ones that do not.
+ *
+ * The create is the invoice's identity and must authenticate: a create this reader cannot tie to
+ * a party it names is not an invoice it will read at all. Every LATER action that fails is
+ * IGNORED and reported, which is what Request itself does --
+ * `request-logic/src/request-logic.ts#computeRequestFromTransactions` applies each action inside a
+ * try and, in its own words, "if an error occurs while applying we ignore the action", keeping the
+ * rest of the channel.
+ *
+ * This used to throw on the first bad action and refuse the whole invoice. Channels are public and
+ * append-only, so that handed any stranger a permanent denial of service: post one junk action to
+ * a channel and the debt can never be settled through this system again, while every other Request
+ * client goes on showing the invoice as payable. Refusing a real debt for ever is not the cautious
+ * direction -- it is the same defect as paying a forged one, pointed at the creditor instead.
+ *
+ * What does NOT change: nothing unauthenticated is ever applied. An ignored action moves no
+ * amount, cancels nothing, and is named to the human who approves the payment.
+ */
+function authenticateActions(
   id: string,
   actions: ReadonlyArray<{ index: number; data: unknown; signed: unknown }>,
+  createIndex: number,
   parties: { payee?: string; payer?: string },
-): void {
+): { applicable: ReadonlySet<number>; ignored: IgnoredAction[] } {
   const payee = parties.payee?.toLowerCase();
   const payer = parties.payer?.toLowerCase();
   /**
-   * Every signature already seen on this channel.
+   * Every signature already applied on this channel.
    *
    * A signature authorises ONE action, and nothing counted them. The gateway could serve the same
    * signed `increaseExpectedAmount` five times and the reader applied five increases -- one
    * signature, five deltas, all of them "signed by the payer" and every one of them true. A
    * reviewer measured it: one authorised increase of 500 became 2,500.
-   *
-   * Bounded downstream by the ceiling and by the human, which is why this is an overpay within
-   * limits rather than an unbounded loss. It is still a debt nobody agreed to.
    */
   const seen = new Set<string>();
+  const applicable = new Set<number>();
+  const ignored: IgnoredAction[] = [];
 
   for (const action of actions) {
     const name = asString(dig(action.data, "name")) ?? "unnamed";
-    // The create is checked like every other action, including its role.
-    //
-    // It used to be skipped here, on the argument that the channel id already binds its bytes and
-    // that Request permits a delegate to sign on a party's behalf, so a role rule would refuse
-    // legitimate invoices. The first half is true and the second is not: Request's own
-    // `CreateAction` refuses a create whose signer is neither the payee nor the payer, so an
-    // invoice this reader accepted on that argument is one Request's clients reject. And the id
-    // binding proves the BYTES, not the authorship -- anyone can compose a create naming any two
-    // parties and serve it under its own hash. Every role check below is anchored to the payee
-    // and payer THAT create names, so an unauthenticated create makes the party set itself
-    // attacker-chosen and the checks on later actions decorative.
-    //
-    // Refusing nothing real: all 46 actions this deployment knows recover to the payee
-    // (`docs/evidence/signatures.json`), creates included.
-    const method = asString(dig(action.signed, "signature", "method"));
-    const value = asString(dig(action.signed, "signature", "value"));
-    // Both of Request's ECDSA methods. `ecdsa` signs the digest directly; `ecdsa-ethereum` is what
-    // a browser wallet produces, the same digest under the EIP-191 personal_sign prefix. Refusing
-    // the second meant refusing every invoice created from a wallet that cannot sign raw digests
-    // -- a whole class of real invoices called forgeries, which is the same failure as accepting
-    // one, pointed the other way.
-    if (method !== "ecdsa" && method !== "ecdsa-ethereum") {
-      throw new RequestError(
-        "ACTION_UNSIGNED",
-        `action ${action.index} (${name}) on invoice ${id} is signed with ${method ?? "no method"}, which this ` +
-          "reader cannot check. An action it cannot authenticate is not one it will act on.",
-      );
+    const failure = failureFor(id, action, name, { payee, payer }, seen);
+    if (failure === null) {
+      applicable.add(action.index);
+      continue;
     }
-    if (!value) {
-      throw new RequestError(
-        "ACTION_UNSIGNED",
-        `action ${action.index} (${name}) on invoice ${id} carries no signature value`,
-      );
-    }
-
-    const digest = keccak256(new TextEncoder().encode(JSON.stringify(normalizeForHash(action.data)).toLowerCase()));
-    const signer = recoverActionSigner(method, digest, value, { payee, payer });
-    if (signer === null) {
-      throw new RequestError(
-        "ACTION_SIGNATURE_INVALID",
-        `action ${action.index} (${name}) on invoice ${id} carries a signature that recovers to no address; ` +
-          "the bytes have been altered or the signature is not over this action",
-      );
-    }
-
-    // Keyed on the DIGEST and the signer, not on the signature's spelling.
-    //
-    // One authorised signature has four accepted spellings: with or without `0x`, and with `s` or
-    // `N - s` (ECDSA is malleable and `recoverAddress` accepts both). A gateway replaying the
-    // same authorisation in two spellings applied two deltas -- so the guard that exists because a
-    // reviewer measured one increase of 500 becoming 2,500 was defeated by dropping two
-    // characters, with no cryptography involved at all. What a signature authorises is one action
-    // by one party, and that is what the key says now.
-    const authorised = `${signer}:${Buffer.from(digest).toString("hex")}`;
-    if (seen.has(authorised)) {
-      throw new RequestError(
-        "ACTION_REPLAYED",
-        `action ${action.index} (${name}) on invoice ${id} carries a signature that already appears ` +
-          "earlier on this channel. A signature authorises one action; serving it twice is two " +
-          "actions on one authorisation.",
-      );
-    }
-    seen.add(authorised);
-
-    // And it has to be about THIS invoice.
-    //
-    // Request's actions name the request they act on. Nothing compared that to the channel being
-    // read, so an increase legitimately signed by a payer on THEIR OWN invoice could be lifted
-    // onto somebody else's and applied there -- a real signature, a real party, the wrong debt.
-    const about = asString(dig(action.data, "parameters", "requestId"));
-    if (about !== undefined && about.toLowerCase() !== id.toLowerCase()) {
-      throw new RequestError(
-        "ACTION_FOREIGN",
-        `action ${action.index} (${name}) served on invoice ${id} says it acts on ${about}. A ` +
-          "signature over another invoice's action is not authorisation for this one.",
-      );
-    }
-
-    const role = signer === payee ? "payee" : signer === payer ? "payer" : null;
-    if (role === null) {
-      throw new RequestError(
-        "ACTION_SIGNATURE_INVALID",
-        `action ${action.index} (${name}) on invoice ${id} was signed by ${signer}, who is neither the payee ` +
-          `(${payee ?? "unnamed"}) nor the payer (${payer ?? "unnamed"}) this invoice names`,
-      );
-    }
-
-    const allowed = SIGNER_ROLES[name];
-    // A name this reader has never heard of is refused a few lines further down, by the check
-    // that exists to say so. Failing it HERE would refuse it for the wrong reason -- "Request
-    // only allows no party to take it" is not true of an action nobody here understands -- and a
-    // refusal that misstates its own cause sends the next reader looking in the wrong place.
-    if (!allowed) continue;
-    if (!allowed.includes(role)) {
-      throw new RequestError(
-        "ACTION_ROLE_VIOLATION",
-        `action ${action.index} on invoice ${id} is a ${name} signed by the ${role}, and Request only allows ` +
-          `${allowed.join(" or ")} to take it. An increase signed by the party being PAID ` +
-          "is somebody raising a debt against themselves' counterparty, which is not a thing this settles.",
-      );
-    }
+    // The create is the one action whose failure is the invoice's, not an intruder's: the channel
+    // id is a hash of these exact bytes, so a create that does not authenticate cannot be somebody
+    // else's contribution to the channel. Request refuses to CREATE one
+    // (`request-logic/src/actions/create.ts`: "Signer must be the payee or the payer"), and this
+    // reader refuses to read one.
+    if (action.index === createIndex) throw new RequestError(failure.code, failure.message);
+    ignored.push({ index: action.index, name, reason: failure.message });
   }
+  return { applicable, ignored };
+}
+
+/**
+ * One action, checked. `null` means it authenticates and may be applied.
+ *
+ * Every check here answers "did a party this invoice names really take this action, once, on this
+ * invoice, in a role Request allows" -- and each returns rather than throws, because the caller
+ * decides whether a failure refuses the invoice or merely drops the action.
+ */
+function failureFor(
+  id: string,
+  action: { index: number; data: unknown; signed: unknown },
+  name: string,
+  parties: { payee?: string; payer?: string },
+  seen: Set<string>,
+): { code: RequestErrorCode; message: string } | null {
+  const { payee, payer } = parties;
+  const method = asString(dig(action.signed, "signature", "method"));
+  const value = asString(dig(action.signed, "signature", "value"));
+  // Both of Request's ECDSA methods. `ecdsa` signs the digest directly; `ecdsa-ethereum` is what
+  // a browser wallet produces, the same digest under the EIP-191 personal_sign prefix. Refusing
+  // the second meant refusing every invoice created from a wallet that cannot sign raw digests
+  // -- a whole class of real invoices called forgeries, which is the same failure as accepting
+  // one, pointed the other way.
+  if (method !== "ecdsa" && method !== "ecdsa-ethereum") {
+    return {
+      code: "ACTION_UNSIGNED",
+      message:
+        `action ${action.index} (${name}) on invoice ${id} is signed with ${method ?? "no method"}, which this ` +
+        "reader cannot check. An action it cannot authenticate is not one it will act on.",
+    };
+  }
+  if (!value) {
+    return {
+      code: "ACTION_UNSIGNED",
+      message: `action ${action.index} (${name}) on invoice ${id} carries no signature value`,
+    };
+  }
+
+  const digest = keccak256(new TextEncoder().encode(JSON.stringify(normalizeForHash(action.data)).toLowerCase()));
+  const signer = recoverActionSigner(method, digest, value, {
+    ...(payee === undefined ? {} : { payee }),
+    ...(payer === undefined ? {} : { payer }),
+  });
+  if (signer === null) {
+    return {
+      code: "ACTION_SIGNATURE_INVALID",
+      message:
+        `action ${action.index} (${name}) on invoice ${id} carries a signature that recovers to no address; ` +
+        "the bytes have been altered or the signature is not over this action",
+    };
+  }
+
+  // Keyed on the DIGEST and the signer, not on the signature's spelling.
+  //
+  // One authorised signature has four accepted spellings: with or without `0x`, and with `s` or
+  // `N - s` (ECDSA is malleable and `recoverAddress` accepts both). A gateway replaying the
+  // same authorisation in two spellings applied two deltas -- so the guard that exists because a
+  // reviewer measured one increase of 500 becoming 2,500 was defeated by dropping two
+  // characters, with no cryptography involved at all. What a signature authorises is one action
+  // by one party, and that is what the key says now.
+  const authorised = `${signer}:${Buffer.from(digest).toString("hex")}`;
+  if (seen.has(authorised)) {
+    return {
+      code: "ACTION_REPLAYED",
+      message:
+        `action ${action.index} (${name}) on invoice ${id} carries a signature that already appears ` +
+        "earlier on this channel. A signature authorises one action; serving it twice is two " +
+        "actions on one authorisation.",
+    };
+  }
+
+  // And it has to be about THIS invoice.
+  //
+  // Request's actions name the request they act on. Nothing compared that to the channel being
+  // read, so an increase legitimately signed by a payer on THEIR OWN invoice could be lifted
+  // onto somebody else's and applied there -- a real signature, a real party, the wrong debt.
+  const about = asString(dig(action.data, "parameters", "requestId"));
+  if (about !== undefined && about.toLowerCase() !== id.toLowerCase()) {
+    return {
+      code: "ACTION_FOREIGN",
+      message:
+        `action ${action.index} (${name}) served on invoice ${id} says it acts on ${about}. A ` +
+        "signature over another invoice's action is not authorisation for this one.",
+    };
+  }
+
+  const role = signer === payee ? "payee" : signer === payer ? "payer" : null;
+  if (role === null) {
+    return {
+      code: "ACTION_SIGNATURE_INVALID",
+      message:
+        `action ${action.index} (${name}) on invoice ${id} was signed by ${signer}, who is neither the payee ` +
+        `(${payee ?? "unnamed"}) nor the payer (${payer ?? "unnamed"}) this invoice names`,
+    };
+  }
+
+  const allowed = SIGNER_ROLES[name];
+  // A name this reader has never heard of is handled by the caller, which refuses an
+  // AUTHENTICATED one -- an amendment a party really made and this reader cannot interpret is an
+  // "I do not know", and those do not get read as "nothing changed". Failing it HERE would refuse
+  // it for the wrong reason: "Request only allows no party to take it" is not true of an action
+  // nobody here understands.
+  if (allowed && !allowed.includes(role)) {
+    return {
+      code: "ACTION_ROLE_VIOLATION",
+      message:
+        `action ${action.index} on invoice ${id} is a ${name} signed by the ${role}, and Request only allows ` +
+        `${allowed.join(" or ")} to take it. An increase signed by the party being PAID ` +
+        "is somebody raising a debt against themselves' counterparty, which is not a thing this settles.",
+    };
+  }
+  seen.add(authorised);
+  return null;
 }
 
 function assertChannelIdBindsCreate(id: string, signedCreate: unknown): void {

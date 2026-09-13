@@ -438,6 +438,10 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
       // authenticates.
       let amountChangedBy: { actions: number; fromBaseUnits: string } | undefined;
       let payeeDiffersFromRecord = false;
+      // Actions on the channel that did not authenticate. Request ignores them, so this reader
+      // ignores them too -- and says so, because somebody appending to the channel of an invoice
+      // about to be paid is a thing the approver should hear from us rather than discover.
+      let ignoredActions = 0;
       if (ctx.verifyAgainstRequest !== false) {
         const read = ctx.fetchInvoice ?? fetchInvoice;
         let invoice;
@@ -468,6 +472,7 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
         // "reaches the sentence a human approves", and both production callers dropped it -- so
         // the control existed only as a sentence in a docblock.
         payeeDiffersFromRecord = invoice.payeeDiffersFromRecord === true;
+        ignoredActions = invoice.ignoredActions?.length ?? 0;
         // Learned now, and kept. An obligation created before the gateway was reachable — or fed
         // by the watcher from a file that carries no anchors — has no floor, so every scan for it
         // comes back truncated and it can never be concluded either way. The column takes it
@@ -697,6 +702,7 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
         },
         {
           namespace: NAMESPACE,
+          ...(ignoredActions > 0 ? { ignoredActions } : {}),
           requestId: facts.requestId,
           paymentReference: facts.paymentReference,
           obligationId: oid,

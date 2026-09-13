@@ -58,6 +58,8 @@ export interface WatchInvoice {
   readonly tokenAddress?: string;
   /** The payment address is not the party of record. Carried to the sentence a human reads. */
   readonly payeeDiffersFromRecord?: boolean;
+  /** Actions on the channel that did not authenticate, ignored as Request ignores them. */
+  readonly ignoredActions?: number;
   /**
    * Where Request anchored this invoice on Sepolia, when the caller knows it.
    *
@@ -301,6 +303,7 @@ export async function watchPass(
         // Carried to the approval sentence. `src/request.ts` computes this and says it reaches
         // the human; both production callers dropped it, so the control existed only in prose.
         ...(read.payeeDiffersFromRecord ? { payeeDiffersFromRecord: true } : {}),
+        ...(read.ignoredActions?.length ? { ignoredActions: read.ignoredActions.length } : {}),
       };
     } catch (e) {
       rows.push({
@@ -427,6 +430,7 @@ export async function watchPass(
       },
       {
         namespace: NAMESPACE,
+        ...(inv.ignoredActions ? { ignoredActions: inv.ignoredActions } : {}),
         requestId: inv.requestId,
         paymentReference: inv.paymentReference,
         obligationId: obligationId(NAMESPACE, inv.requestId),

@@ -227,6 +227,7 @@ if (reserved && reserved !== planHash) {
 const sentence = restate(policy, sourceFacts, decision.totalDebitBaseUnits, {
   requestId: facts.requestId,
   paymentReference: facts.paymentReference,
+  ...(invoice.ignoredActions?.length ? { ignoredActions: invoice.ignoredActions.length } : {}),
 });
 
 console.log("\n" + "=".repeat(78));

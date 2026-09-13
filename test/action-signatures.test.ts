@@ -122,6 +122,25 @@ async function messageFrom(id: string): Promise<string> {
   }
 }
 
+/**
+ * The invoice as it reads with an unauthenticated action on its channel: still payable, unchanged,
+ * and honest about what it dropped.
+ *
+ * Request applies each action inside a try and, in its own words, "if an error occurs while
+ * applying we ignore the action" (`request-logic/src/request-logic.ts`). This reader used to
+ * refuse the whole invoice instead -- so anyone could append one junk action to a public,
+ * append-only channel and make a real debt permanently unsettleable here while every other Request
+ * client went on showing it as payable. That is not the cautious direction; it is the mirror of
+ * paying a forgery, aimed at the creditor.
+ */
+async function ignoredBy(id: string, expectAmount = ONE) {
+  const invoice = await read(id);
+  assert.equal(invoice.invoiceBaseUnits, expectAmount, "an ignored action changed the debt");
+  assert.equal(invoice.amountChangedBy, undefined, "an ignored action was counted as an amendment");
+  assert.equal(invoice.ignoredActions?.length, 1, `the reader did not report what it ignored: ${JSON.stringify(invoice.ignoredActions)}`);
+  return invoice.ignoredActions?.[0]?.reason ?? "";
+}
+
 async function refusalFrom(id: string): Promise<string> {
   try {
     await read(id);
@@ -141,12 +160,13 @@ describe("an action only counts if the right party signed it", () => {
     assert.equal(invoice.amountChangedBy?.actions, 1);
   });
 
-  test("the same increase signed by the PAYEE is refused", async () => {
+  test("the same increase signed by the PAYEE changes nothing", async () => {
     // The forgery that costs money, and the one a signature check alone would not catch: the
     // payee is real, is named on this invoice, and signed this action perfectly. Request does not
-    // let the party being paid raise what it is owed, and neither does this.
-    const id = serve([signAction(increase("500"), PAYEE_KEY)]);
-    assert.equal(await refusalFrom(id), "ACTION_ROLE_VIOLATION");
+    // let the party being paid raise what it is owed, so Request ignores it -- and so does this,
+    // which means the debt stays at exactly what the create said.
+    const reason = await ignoredBy(serve([signAction(increase("500"), PAYEE_KEY)]));
+    assert.match(reason, /only allows payer to take it/, reason);
   });
 
   test("a reduction signed by the PAYEE lowers the debt", async () => {
@@ -155,26 +175,29 @@ describe("an action only counts if the right party signed it", () => {
     assert.equal(invoice.invoiceBaseUnits, (BigInt(ONE) - 400n).toString());
   });
 
-  test("a reduction signed by the PAYER is refused, even though it would pay LESS", async () => {
-    // Refused in the direction that costs nothing, deliberately. An invoice whose history cannot
-    // be authenticated is not one whose amount can be trusted in either direction, and a reader
-    // that only checks the actions it dislikes is a reader an attacker gets to choose for.
-    const id = serve([signAction(reduce("400"), PAYER_KEY)]);
-    assert.equal(await refusalFrom(id), "ACTION_ROLE_VIOLATION");
+  test("a reduction signed by the PAYER is ignored too, even though it would pay LESS", async () => {
+    // Dropped in the direction that costs nothing, deliberately. A reader that only checks the
+    // actions it dislikes is a reader an attacker gets to choose for -- and an amount is only
+    // this invoice's amount if the party Request allows to move it moved it.
+    const reason = await ignoredBy(serve([signAction(reduce("400"), PAYER_KEY)]));
+    assert.match(reason, /only allows payee to take it/, reason);
   });
 
-  test("an action signed by a stranger is refused whoever it claims to be", async () => {
-    const id = serve([signAction(cancel, STRANGER_KEY)]);
-    assert.equal(await refusalFrom(id), "ACTION_SIGNATURE_INVALID");
+  test("an action signed by a stranger is ignored whoever it claims to be", async () => {
+    const reason = await ignoredBy(serve([signAction(cancel, STRANGER_KEY)]));
+    assert.match(reason, /neither the payee/, reason);
   });
 
-  test("a stranger cannot cancel a real invoice, so a real debt cannot be wedged", async () => {
-    // The availability half. A forged cancel makes a genuine debt permanently unpayable and
-    // nothing downstream would question it: cancellation is supposed to be final.
-    const forged = serve([signAction(cancel, STRANGER_KEY)]);
-    assert.equal(await refusalFrom(forged), "ACTION_SIGNATURE_INVALID");
+  test("a stranger cannot cancel a real invoice, and cannot wedge one either", async () => {
+    // The availability half, twice over. A forged cancel would make a genuine debt permanently
+    // unpayable -- cancellation is final, and nothing downstream would question it. A forged
+    // ANYTHING used to do the same by a longer road: the reader refused the whole invoice, so the
+    // debt was just as unsettleable and the refusal even named the attacker's action as the cause.
+    const forged = await read(serve([signAction(cancel, STRANGER_KEY)]));
+    assert.equal(forged.invoiceBaseUnits, ONE, "a stranger's cancel changed this invoice");
+    assert.equal(forged.ignoredActions?.length, 1);
 
-    // And a real one still cancels. The check must not have turned cancellation off.
+    // And a real one still cancels. Ignoring the impostors must not have turned cancellation off.
     const genuine = serve([signAction(cancel, PAYEE_KEY)]);
     assert.equal(await refusalFrom(genuine), "INVOICE_CANCELLED");
   });
@@ -185,33 +208,35 @@ describe("an action only counts if the right party signed it", () => {
     // number -- and it is the case a reader that merely CHECKS FOR a signature would pass.
     const signed = signAction(increase("500"), PAYER_KEY) as { data: Action; signature: unknown };
     const tampered = { data: increase("5000000000000000000"), signature: signed.signature };
-    const id = serve([tampered]);
-    assert.equal(await refusalFrom(id), "ACTION_SIGNATURE_INVALID");
+    const reason = await ignoredBy(serve([tampered]));
+    assert.match(reason, /neither the payee|recovers to no address/, reason);
   });
 
   test("a signature method this reader cannot check is refused, not skipped", async () => {
     // `ecdsa-typed-data` is a real Request method and this reader does not implement it. Reading
     // the action anyway would mean acting on bytes nothing authenticated, which is the state this
     // whole file exists to leave behind.
-    const id = serve([{ data: increase("500"), signature: { method: "ecdsa-typed-data", value: "0x00" } }]);
-    assert.equal(await refusalFrom(id), "ACTION_UNSIGNED");
+    const reason = await ignoredBy(
+      serve([{ data: increase("500"), signature: { method: "ecdsa-typed-data", value: "0x00" } }]),
+    );
+    assert.match(reason, /ecdsa-typed-data/, reason);
   });
 
-  test("garbage where a signature should be is refused, and says which failure it was", async () => {
-    const id = serve([{ data: increase("500"), signature: { method: "ecdsa", value: `0x${"11".repeat(65)}` } }]);
-    assert.equal(await refusalFrom(id), "ACTION_SIGNATURE_INVALID");
-    // Not just the code. "Recovers to no address" and "recovers to somebody who is not a party"
+  test("garbage where a signature should be is ignored, and says which failure it was", async () => {
+    // Not just "ignored". "Recovers to no address" and "recovers to somebody who is not a party"
     // are different failures with different next steps -- one is corrupt bytes, the other is an
-    // impostor -- and a refusal that reports the second for the first sends the reader looking
-    // for an attacker who does not exist.
-    const message = await messageFrom(id);
-    assert.match(message, /recovers to no address/, message);
-    assert.doesNotMatch(message, /signed by null/, message);
+    // impostor -- and a report that gives the second for the first sends the reader looking for
+    // an attacker who does not exist.
+    const reason = await ignoredBy(
+      serve([{ data: increase("500"), signature: { method: "ecdsa", value: `0x${"11".repeat(65)}` } }]),
+    );
+    assert.match(reason, /recovers to no address/, reason);
+    assert.doesNotMatch(reason, /signed by null/, reason);
   });
 
-  test("an action carrying no signature at all is refused", async () => {
-    const id = serve([{ data: increase("500") }]);
-    assert.equal(await refusalFrom(id), "ACTION_UNSIGNED");
+  test("an action carrying no signature at all is ignored", async () => {
+    const reason = await ignoredBy(serve([{ data: increase("500") }]));
+    assert.match(reason, /no method/, reason);
   });
 });
 
@@ -288,8 +313,13 @@ describe("a signature authorises one action, on one invoice", () => {
     // 2,500. Every copy is genuinely signed by the payer and every copy is genuinely an increase;
     // what nobody checked was how many times one authorisation may be spent.
     const signed = signAction(increase("500"), PAYER_KEY);
-    const id = serve([signed, signed, signed, signed, signed]);
-    assert.equal(await refusalFrom(id), "ACTION_REPLAYED");
+    const invoice = await read(serve([signed, signed, signed, signed, signed]));
+    // Once. The four copies are ignored, as Request ignores them, and the authorisation the payer
+    // really gave is honoured exactly once.
+    assert.equal(invoice.invoiceBaseUnits, (BigInt(ONE) + 500n).toString());
+    assert.equal(invoice.amountChangedBy?.actions, 1);
+    assert.equal(invoice.ignoredActions?.length, 4, JSON.stringify(invoice.ignoredActions));
+    assert.match(String(invoice.ignoredActions?.[0]?.reason), /already appears/);
   });
 
   test("two DIFFERENT increases, each signed once, both apply", async () => {
@@ -309,8 +339,8 @@ describe("a signature authorises one action, on one invoice", () => {
       { name: "increaseExpectedAmount", parameters: { deltaAmount: "500", requestId: `01${"ff".repeat(32)}` } },
       PAYER_KEY,
     );
-    const id = serve([foreign]);
-    assert.equal(await refusalFrom(id), "ACTION_FOREIGN");
+    const reason = await ignoredBy(serve([foreign]));
+    assert.match(reason, /says it acts on/, reason);
   });
 
   test("and one that names this invoice is fine", async () => {
@@ -362,14 +392,17 @@ describe("one authorisation has one meaning, however it is spelled", () => {
       "the malleated signature must still recover to the payer, or the test is about a broken signature",
     );
 
-    assert.equal(await refusalFrom(serve([original, respelled])), "ACTION_REPLAYED");
+    const invoice = await read(serve([original, respelled]));
+    assert.equal(invoice.invoiceBaseUnits, (BigInt(ONE) + 500n).toString(), "one authorisation, applied twice");
+    assert.match(String(invoice.ignoredActions?.[0]?.reason), /already appears/);
   });
 
   test("and the same increase with the 0x dropped is still one authorisation", async () => {
     const action = increase("500");
     const original = signAction(action, PAYER_KEY);
     const bare = { data: action, signature: { method: "ecdsa", value: original.signature.value.replace(/^0x/, "") } };
-    assert.equal(await refusalFrom(serve([original, bare])), "ACTION_REPLAYED");
+    const invoice = await read(serve([original, bare]));
+    assert.equal(invoice.invoiceBaseUnits, (BigInt(ONE) + 500n).toString(), "one authorisation, applied twice");
   });
 
   test("all four spellings of one signature apply one delta, or none", async () => {
@@ -382,7 +415,9 @@ describe("one authorisation has one meaning, however it is spelled", () => {
       original.signature.value.replace(/^0x/, ""),
       flipped.replace(/^0x/, ""),
     ].map((value) => ({ data: action, signature: { method: "ecdsa", value } }));
-    assert.equal(await refusalFrom(serve(spellings)), "ACTION_REPLAYED");
+    const invoice = await read(serve(spellings));
+    assert.equal(invoice.invoiceBaseUnits, (BigInt(ONE) + 500n).toString(), "one authorisation, spent four times");
+    assert.equal(invoice.ignoredActions?.length, 3, JSON.stringify(invoice.ignoredActions));
   });
 
   test("but two genuinely different authorisations still both apply", async () => {
@@ -474,7 +509,9 @@ describe("a wallet signature is a signature", () => {
   test("an increase signed with personal_sign by the PAYEE is still the wrong party", async () => {
     // The method is not a way around the roles.
     const id = serveWithCreate(signAction(CREATE, PAYEE_KEY), [signActionPersonal(increase("500"), PAYEE_KEY)]);
-    assert.equal(await refusalFrom(id), "ACTION_ROLE_VIOLATION");
+    const invoice = await read(id);
+    assert.equal(invoice.invoiceBaseUnits, ONE, "a personal_sign increase by the payee moved the debt");
+    assert.match(String(invoice.ignoredActions?.[0]?.reason), /only allows payer to take it/);
   });
 
   function serveCreatePersonal(signedCreate: unknown): string {

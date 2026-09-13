@@ -143,3 +143,29 @@ describe("what the agent is told when the chain could not conclude", () => {
     assert.match(String(body.detail), /defect in the chain reader/i, String(body.detail));
   });
 });
+
+describe("what the approver is told about the channel itself", () => {
+  test("actions that could not be authenticated are named, and change no figure", async () => {
+    // Request ignores an action whose application throws -- "if an error occurs while applying we
+    // ignore the action" -- and so does this reader, because refusing the invoice instead let any
+    // stranger wedge a real debt by appending junk to a public channel. Ignoring it quietly would
+    // be the other half of that mistake: somebody has been appending to the channel of an invoice
+    // about to be paid, and the person deciding is entitled to hear it from us.
+    const { body } = await propose({
+      ignoredActions: [
+        { index: 1, name: "increaseExpectedAmount", reason: "signed by 0xdead…, who is neither the payee nor the payer" },
+      ],
+    });
+    assert.equal(body.state, "AWAITING_APPROVAL", JSON.stringify(body).slice(0, 300));
+    assert.ok(body.approvalSentence);
+    assert.match(body.approvalSentence, /1 action\(s\).*could not be\s+authenticated|could not be authenticated/i, body.approvalSentence);
+    // And the amount is the create's, untouched.
+    assert.match(body.approvalSentence, /Pay 1 FAU/, body.approvalSentence);
+  });
+
+  test("a clean channel says nothing about ignored actions", async () => {
+    const { body } = await propose({});
+    assert.ok(body.approvalSentence);
+    assert.doesNotMatch(body.approvalSentence, /could not be authenticated/i, body.approvalSentence);
+  });
+});

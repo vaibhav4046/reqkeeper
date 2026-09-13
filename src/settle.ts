@@ -27,6 +27,14 @@ export interface SettleInput {
    * is not an identity.
    */
   readonly paymentReference: string;
+  /**
+   * How many actions on the invoice's Request channel did not authenticate and were ignored.
+   *
+   * Told to the human in the approval sentence and carried nowhere else: it is a fact about the
+   * channel, not about the payment, and putting it in the facts would put it in the plan hash --
+   * where a stranger appending junk to a public channel could invalidate an approval at will.
+   */
+  readonly ignoredActions?: number;
   readonly obligationId: string;
   readonly facts: SourceFacts;
   readonly steps: ReadonlyArray<{ kind: string; to: string; data: string; value: string }>;
@@ -218,7 +226,22 @@ export function restate(
    * the payment writes, so it is also how they check afterwards that this is the payment that
    * happened.
    */
-  identity?: { readonly requestId?: string; readonly paymentReference?: string },
+  identity?: {
+    readonly requestId?: string;
+    readonly paymentReference?: string;
+    /**
+     * How many actions on this invoice's Request channel did not authenticate.
+     *
+     * Request ignores those and so does this system, so they change no figure above -- which is
+     * exactly why they have to be said out loud. Somebody has been appending to a channel this
+     * payment is about, and a person deciding whether to send money is entitled to know before
+     * they decide rather than after.
+     *
+     * Passed beside the identity rather than inside the facts on purpose: channels are public, so
+     * a count in the plan hash would let any stranger invalidate a human's approval on demand.
+     */
+    readonly ignoredActions?: number;
+  },
 ): string {
   const d = policy.token.decimals;
   return (
@@ -243,6 +266,12 @@ export function restate(
       ? ` NOTE: this invoice was raised at ${toHuman(BigInt(facts.amountChangedBy.fromBaseUnits), d)}` +
         ` ${policy.token.symbol} and changed by ${facts.amountChangedBy.actions} later signed action(s) on` +
         " its Request channel. The signatures check out; confirm the figure with the creditor anyway."
+      : "") +
+    (identity?.ignoredActions
+      ? ` NOTE: ${identity.ignoredActions} action(s) on this invoice's Request channel could not be` +
+        " authenticated and were ignored, exactly as Request ignores them. They changed none of the" +
+        " figures above. Anyone can append to a public channel, so this is not evidence of anything" +
+        " by itself — but if you were not expecting it, ask the creditor before approving."
       : "")
   );
 }
@@ -626,6 +655,7 @@ async function settleOrRefuse(
   const restatement = restate(policy, input.facts, decision.totalDebitBaseUnits, {
     requestId: input.requestId,
     paymentReference: input.paymentReference,
+    ...(input.ignoredActions ? { ignoredActions: input.ignoredActions } : {}),
   });
 
   // --- 3. exclusive ownership --------------------------------------------
