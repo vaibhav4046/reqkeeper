@@ -78,7 +78,13 @@ export const PUBLIC_TOOLS = [
 
 /** Named here rather than imported so the hosted bundle carries no store and no provider. */
 const RETRY_GUIDANCE: Record<string, string> = {
-  SETTLED: "Both the chain receipt and Request agree. Nothing to do.",
+  // Not "Request agrees": nothing in the settle path asks Request anything. Both signals are
+  // read from a public RPC by this project -- the receipt, and the fee-proxy event for that
+  // same transaction. Claiming another system vouched for our own read is the thing this
+  // surface is least entitled to do, since a Request engineer is who would call it.
+  SETTLED:
+    "The receipt and the fee-proxy event for that same transaction both check out, read here " +
+    "from a public RPC. Nothing to do.",
   ALREADY_SETTLED: "This debt is paid. A retry cannot pay it again and must not try.",
   ALREADY_DISPATCHED: "A payment for this obligation was already sent. Observe it; never resend.",
   REFERENCE_ALREADY_CLAIMED: "Another obligation holds this reference. It is the same debt renamed.",

@@ -140,7 +140,7 @@ BLOCKED 4  invoice created via the hosted REST API — optional: …
 BLOCKED 5  payment calldata fetched from the hosted REST API — optional: …
   ok   6  land payment through KeeperHub — tx 0xb90a077185858154… relayed via 0x5af5194b4b0909eb978e3cf1e25333852277f07d
   ok   7  eth_getTransactionReceipt says success — gasUsed 74618
-  ok   8  Request reports the reference paid — 0x050562a52ec69fa2 in the fee-proxy log, same tx
+  ok   8  the fee-proxy event carries this reference — 0x050562a52ec69fa2 in the fee-proxy log, same tx
 
 10 ok · 0 failed · 2 blocked
 ```

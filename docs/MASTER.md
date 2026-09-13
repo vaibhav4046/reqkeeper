@@ -516,8 +516,12 @@ Requires at least one filter: `txHash`, `walletAddress`, `paymentReference`, `re
 ```
 
 `request.paymentReference` is the canonical anchor. `request.hasBeenPaid` is Request's own
-settlement verdict — one of the two signals `SETTLED` requires. The other is an independent
-`eth_getTransactionReceipt`.
+settlement verdict, and this project does NOT use it as a settlement signal — no `SETTLED` path
+reads it. The two signals `SETTLED` requires are both read here from a public RPC: an independent
+`eth_getTransactionReceipt`, and the `ERC20FeeProxy` event for that same transaction carrying this
+reference, token, payee and amount. `facts.hasBeenPaid` is populated from this project's own chain
+read, not from Request. For Request's own verdict as a third opinion, `tools/invoice/check-paid.mjs`
+asks its SDK directly and needs no credential.
 
 **Doc conflict, RESOLVED 2026-09-09 — the gateway wins.** The docs disagree about when a Client ID
 is obtainable, and it turned out not to matter: the REST API is a convenience layer, and this

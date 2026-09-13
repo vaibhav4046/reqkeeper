@@ -272,7 +272,7 @@ if (!settled) {
   const why = "no recorded live settlement in docs/refusals-live.json — run npm run harness:live";
   record("6  land payment through KeeperHub", "BLOCKED", why);
   record("7  eth_getTransactionReceipt says success", "BLOCKED", why);
-  record("8  Request reports the reference paid", "BLOCKED", why);
+  record("8  the fee-proxy event carries this reference", "BLOCKED", why);
 } else {
   const hash = settled.tx_hash as string;
   const reference = settled.payment_reference as string;
@@ -299,12 +299,12 @@ if (!settled) {
   // Request's own payment detection, read as a chain fact rather than through its API.
   const sighting = await findPaymentByReference(reference, { lookbackBlocks: 300_000, rpcUrl: RPC });
   if (sighting.found && sighting.txHash?.toLowerCase() === hash.toLowerCase()) {
-    record("8  Request reports the reference paid", "ok", `${reference} in the fee-proxy log, same tx`);
+    record("8  the fee-proxy event carries this reference", "ok", `${reference} in the fee-proxy log, same tx`);
   } else if (sighting.found) {
-    record("8  Request reports the reference paid", "FAIL", `reference found under a different tx: ${sighting.txHash}`);
+    record("8  the fee-proxy event carries this reference", "FAIL", `reference found under a different tx: ${sighting.txHash}`);
   } else {
     record(
-      "8  Request reports the reference paid",
+      "8  the fee-proxy event carries this reference",
       sighting.truncated ? "BLOCKED" : "FAIL",
       sighting.truncated ? "scan window ran out before the payment" : `no fee-proxy log for ${reference}`,
     );

@@ -81,7 +81,7 @@ Safety without liveness is not recovery. Never paying twice is not the whole pro
 |---|---|---|---|
 | RQ-1 | major | the money scripts took payee/amount/fee/reference from `.env` and a JSON file, never reading the invoice — violating this repo's own spec | **VERIFIED** — Request judge ran the real script with a foreign reference: `REFUSED before any write (REFERENCE_MISMATCH)`, SQLite byte-identical after |
 | RQ-FALSE | major | README misstated Request's own detection ("sums events carrying it") | **VERIFIED** — judge checked the new wording clause-by-clause against installed SDK source |
-| RQ-ATTRIB | major | four surfaces credited Request with what ReqKeeper verified itself | FIXED_UNVERIFIED |
+| RQ-ATTRIB | major | four surfaces credited Request with what ReqKeeper verified itself | **VERIFIED** — and the first pass was half a fix: a later sweep found `gate-a`'s docblock corrected while its four printed labels still read "Request reports the reference paid", published verbatim in RUNBOOK.md, plus two instances the original finding missed (`mcp-public.ts` telling agents "Both the chain receipt and Request agree", and MASTER.md claiming `hasBeenPaid` is one of the two signals SETTLED requires — no SETTLED path reads it). All fixed and re-run. |
 | RQ-2 | major | watcher accepted a reference-only sighting as proof of payment (grief: suppress a real invoice) | FIXED_UNVERIFIED |
 
 ## Process incident, recorded because it nearly cost work
