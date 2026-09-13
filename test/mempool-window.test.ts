@@ -112,7 +112,7 @@ function honestScan(ceiling: number) {
     found: false,
     corroborated: true,
     truncated: false,
-    conflictKinds: [],
+    conflictingLogs: [],
     negativeCorroborations: 2,
     scannedBlocks: 300_000,
     scannedFrom: ANCHOR_BLOCK,

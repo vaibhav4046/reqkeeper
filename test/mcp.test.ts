@@ -45,7 +45,7 @@ const INVOICE_AS_REQUEST_HOLDS_IT = {
 const NOTHING_ON_CHAIN = {
   found: false,
   truncated: false,
-  conflictKinds: [],
+  conflictingLogs: [],
   negativeCorroborations: 2,
 } as const;
 
@@ -58,7 +58,7 @@ function ctx(over: Partial<McpContext> = {}): McpContext & { provider: FixturePr
     //
     // Every field of NOTHING_ON_CHAIN is load-bearing, and each one was added after a stub that
     // omitted it was read as "unpaid, go ahead": `truncated: false` says the window reached the
-    // floor, `conflictKinds: []` says the scan looked at conflicting logs and found none, and
+    // floor, `conflictingLogs: []` says the scan looked at conflicting logs and found none, and
     // `negativeCorroborations` says another endpoint answered the same way. A reader that states
     // none of that has not concluded anything, and the already-paid gate refuses on it.
     findPayment: async () => ({ ...NOTHING_ON_CHAIN }),

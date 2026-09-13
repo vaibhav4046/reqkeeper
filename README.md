@@ -98,9 +98,11 @@ Totals are **recomputed from rows**, never read from a summary field: an artifac
 `duplicates: 0` in its own header proves nothing, because that is the number a bug gets wrong.
 Tamper with a summary and leave its rows alone, and this exits 1 — for every number an artifact
 either names after a row field or explains in its own `totalsFrom` block. The check prints how
-many it recomputed and **names every one it could not**, so the coverage is on the page rather
-than in this sentence. Twelve are currently uncovered, all in the three artifacts that only a
-credentialed live run can regenerate; their generators already carry the declarations.
+many it recomputed and **names the first four it could not**, then how many more there are, so the
+coverage is on the page rather than in this sentence. Twelve are currently uncovered, all in the
+three artifacts that only a credentialed live run can regenerate. Seven of the twelve would be
+declared by the next such run; the other five are counters that do not exist in live mode, where
+no call reaches the fixture that counts them.
 
 Last run: **24 ok · 0 failed · 0 blocked**, including — checked against the chain with no credentials — a
 successful receipt for `0xb90a0771…` at block 11,665,983, the ERC20FeeProxy event inside that
@@ -116,14 +118,14 @@ dependencies. `typecheck` and `build` call `tsc`, so those two want `npm install
 ```bash
 npm install           # only for typecheck and build; everything above runs without it
 
-npm test              # 551 tests, 109 suites
+npm test              # 566 tests, 113 suites
 npm run typecheck     # tsc --noEmit
 npm run build         # console + api; the tree must stay clean afterwards
 npm run gate-a        # Request <-> KeeperHub <-> Sepolia end to end
                       #   9 ok, 0 failed, 3 blocked with no credential; 10/0/2 with a
                       #   KEEPERHUB_API_KEY in .env. Blocked is never counted as a pass.
-npm run race          # 50 processes, one obligation, one payment
-npm run crash         # kill the process at 9 checkpoints; zero duplicates at every one
+npm run race          # 50 processes, one obligation, one payment (fixture provider, no chain)
+npm run crash         # kill the process at 9 checkpoints; zero duplicates (fixture, no chain)
 npm run probe:mcp     # KeeperHub's own MCP server, read-only by default
 ```
 

@@ -135,7 +135,7 @@ const unpaid: PaymentSighting = {
   found: false,
   scannedBlocks: 450_000,
   truncated: false,
-    conflictKinds: [],
+    conflictingLogs: [],
     negativeCorroborations: 2,
   // Read after the chain moved past the preflight: only then is absence evidence.
   scannedTo: AGED_CEILING,

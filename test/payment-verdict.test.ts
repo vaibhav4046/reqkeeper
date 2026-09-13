@@ -52,11 +52,11 @@ describe("verdictFor turns a sighting into one of four answers", () => {
       found: false,
       truncated: false,
       conflicts: ["0xdead: pays a fee of 1, the plan fee is 0"],
-      conflictKinds: ["fee"],
+      conflictingLogs: [["fee"]],
       negativeCorroborations: 2,
     } as PaymentSighting);
     assert.equal(v.kind, "CONFLICT_OURS");
-    assert.deepEqual(v.kind === "CONFLICT_OURS" ? [...v.conflictKinds] : null, ["fee"]);
+    assert.deepEqual(v.kind === "CONFLICT_OURS" ? v.conflictingLogs.map((l) => [...l]) : null, [["fee"]]);
   });
 
   test("a log that paid SOMEBODY ELSE is NOT_PAID, with the log reported alongside", () => {
@@ -70,7 +70,7 @@ describe("verdictFor turns a sighting into one of four answers", () => {
       found: false,
       truncated: false,
       conflicts: ["0xdead: pays 0xdeadbeef, not our payee"],
-      conflictKinds: ["to"],
+      conflictingLogs: [["to"]],
       negativeCorroborations: 2,
     } as PaymentSighting);
     assert.equal(v.kind, "NOT_PAID");
@@ -78,7 +78,7 @@ describe("verdictFor turns a sighting into one of four answers", () => {
   });
 
   test("a negative that never said what conflicting logs it saw is UNKNOWN", () => {
-    // Absent is not empty. A reader that never populated `conflictKinds` did not look, and this
+    // Absent is not empty. A reader that never populated `conflictingLogs` did not look, and this
     // exact sighting used to come back NOT_PAID from `verdictFor` while the worker and the
     // operator release both refused it -- one object, three readings, and the weakest of them
     // was the one guarding the money.
@@ -91,7 +91,7 @@ describe("verdictFor turns a sighting into one of four answers", () => {
     // publicnode returns an empty `eth_getLogs` for a fee-proxy log this project can point at on
     // chain, with no error. One endpoint's silence is not absence, and the already-paid gate is
     // the one place where believing it means paying an invoice a second time.
-    const v = verdictFor({ found: false, truncated: false, conflictKinds: [] });
+    const v = verdictFor({ found: false, truncated: false, conflictingLogs: [] });
     assert.equal(v.kind, "UNKNOWN");
     assert.equal(v.kind === "UNKNOWN" ? v.reason : null, "UNCORROBORATED");
   });
@@ -111,7 +111,7 @@ describe("verdictFor turns a sighting into one of four answers", () => {
 
   test("only a covered window with nothing in it is NOT_PAID", () => {
     const v = verdictFor({ found: false, truncated: false,
-    conflictKinds: [],
+    conflictingLogs: [],
     negativeCorroborations: 2, scannedFrom: 100, scannedTo: 200 });
     assert.equal(v.kind, "NOT_PAID");
   });
@@ -131,9 +131,9 @@ describe("verdictFor turns a sighting into one of four answers", () => {
       { found: false, truncated: true },
       { found: false },
       { found: false, truncated: false,
-    conflictKinds: [],
+    conflictingLogs: [],
     negativeCorroborations: 2, conflicts: ["x"] } as PaymentSighting,
-      { found: false, truncated: false, conflictKinds: ["amount"], negativeCorroborations: 2 } as PaymentSighting,
+      { found: false, truncated: false, conflictingLogs: [["amount"]], negativeCorroborations: 2 } as PaymentSighting,
       { found: false, truncated: false, negativeCorroborations: 2 },
       null,
     ];
@@ -142,5 +142,76 @@ describe("verdictFor turns a sighting into one of four answers", () => {
         ["PAID", "NOT_PAID", "CONFLICT_OURS", "UNKNOWN"].includes(verdictFor(c, { requireCorroboration: true }).kind),
       );
     }
+  });
+});
+
+describe("one stranger's log cannot speak for ours", () => {
+  /**
+   * The sixteenth instance of the class, found by two independent reviewers on the same day.
+   *
+   * `conflictKinds` used to be one flat array accumulated across every log in the scan, and
+   * `conflictVerdict` read it as though it described a single log:
+   *
+   *     wrongCounterparty = kinds.includes("to") || ...
+   *     wrongValue        = kinds.includes("amount") || ...
+   *     return wrongValue && !wrongCounterparty ? "OURS_AND_WRONG" : "NOT_OURS"
+   *
+   * A set cannot say which kind came from which log. So a log that really had paid OUR payee, in
+   * OUR token, under our reference, for the wrong amount -- the #1959 leak executing with
+   * different fields, the exact shape the escalation exists for -- was reclassified NOT_OURS the
+   * moment any other log in the window contributed a `to`. NOT_OURS is the release answer: the
+   * worker moves to PREFLIGHT_UNAVAILABLE and the debt is proposed and paid again.
+   *
+   * Payment references are public: they derive from data anchored openly on Sepolia, and this
+   * codebase says so. So the masking log cost an attacker one unit of a testnet token.
+   *
+   * The repair is the shape. One entry per log, and "was ANY log ours and wrong" is answerable
+   * again -- a flattened list cannot even be passed in.
+   */
+  const OURS_WRONG_AMOUNT = ["amount"] as const;
+  const A_STRANGERS_LOG = ["to"] as const;
+
+  test("a junk log paying somebody else does not downgrade our own money moving wrongly", () => {
+    const v = verdictFor({
+      found: false,
+      truncated: false,
+      negativeCorroborations: 2,
+      conflicts: ["0xleak: pays 1 wei, the invoice is 1 FAU", "0xjunk: pays 0xdeadbeef, not our payee"],
+      conflictingLogs: [[...OURS_WRONG_AMOUNT], [...A_STRANGERS_LOG]],
+    } as PaymentSighting);
+    assert.equal(v.kind, "CONFLICT_OURS", "a stranger's log masked our own");
+  });
+
+  test("order does not matter either", () => {
+    const v = verdictFor({
+      found: false,
+      truncated: false,
+      negativeCorroborations: 2,
+      conflictingLogs: [[...A_STRANGERS_LOG], [...OURS_WRONG_AMOUNT]],
+    } as PaymentSighting);
+    assert.equal(v.kind, "CONFLICT_OURS");
+  });
+
+  test("and one log that is wrong about BOTH counterparty and value is still a stranger's", () => {
+    // The control that stops the fix over-escalating. A log paying a different payee for a
+    // different amount is somebody else's transfer, however many fields disagree -- and treating
+    // every conflicting log as ours would let one junk transfer wedge any invoice for ever.
+    const v = verdictFor({
+      found: false,
+      truncated: false,
+      negativeCorroborations: 2,
+      conflictingLogs: [["to", "amount"]],
+    } as PaymentSighting);
+    assert.equal(v.kind, "NOT_PAID");
+  });
+
+  test("many stranger logs stay NOT_PAID, however many there are", () => {
+    const v = verdictFor({
+      found: false,
+      truncated: false,
+      negativeCorroborations: 2,
+      conflictingLogs: [["to"], ["token"], ["emitter"], ["to", "amount"]],
+    } as PaymentSighting);
+    assert.equal(v.kind, "NOT_PAID");
   });
 });

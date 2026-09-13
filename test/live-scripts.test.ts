@@ -93,13 +93,25 @@ function channelIdFor(signedCreate: unknown): string {
 const REQUEST_ID = channelIdFor(CREATE_ACTION);
 const DERIVED_REFERENCE = derivePaymentReference(REQUEST_ID, SALT, PAYMENT_ADDRESS);
 
+/** The IPFS CID the stub gateway claims this create was stored as. */
+const STORAGE_CID = "QmFixtureCidForTheCreateAction";
+const ANCHOR_TX = `0x${"11".repeat(32)}`;
+/** Request's storage contract on Sepolia; the anchor's transaction must emit from it. */
+const REQUEST_STORAGE = "0xd6c085a4d14e9e171f4af58f7f48bd81173f167e";
+
 function gatewayBody(anchor?: { blockNumber: number; transactionHash: string }): unknown {
   const action = CREATE_ACTION;
   return {
     // `meta.storageMeta` is where the Sepolia block of the create action lives. Empty is the
     // real shape while the create is still unconfirmed, which is why the anchor is optional
     // everywhere downstream.
-    meta: { storageMeta: anchor === undefined ? [] : [{ ethereum: anchor }] },
+    meta: {
+      storageMeta: anchor === undefined ? [] : [{ ethereum: anchor }],
+      // The CID of the bytes this create was stored as. `fetchInvoice` binds the anchor to it:
+      // the transaction the anchor names must have emitted a log from Request's storage contract
+      // carrying this string, or the anchor is a number the gateway chose and is refused.
+      transactionsStorageLocation: anchor === undefined ? [] : [STORAGE_CID],
+    },
     result: {
       transactions: [{ state: "confirmed", transaction: { data: JSON.stringify(action) } }],
     },
@@ -301,6 +313,27 @@ async function startChain(): Promise<{ url: string; ranges: Array<{ from: number
       const { method, params } = JSON.parse(body) as { method: string; params: unknown[] };
       let result: unknown = [];
       if (method === "eth_chainId") result = `0x${EXPECTED_CHAIN_ID.toString(16)}`;
+      else if (method === "eth_getTransactionReceipt") {
+        // The anchoring transaction, as Sepolia really answers for one: a log from Request's
+        // storage contract whose data carries the CID of the bytes it stored. Without it the
+        // anchor is unbound, `fetchInvoice` drops it, and the scan below has no floor to prove
+        // coverage against -- which is the safe answer, and not what this test is about.
+        const hash = String((params as string[])[0] ?? "").toLowerCase();
+        result =
+          hash === ANCHOR_TX.toLowerCase()
+            ? {
+                status: "0x1",
+                blockNumber: `0x${(HEAD - 2_000).toString(16)}`,
+                logs: [
+                  {
+                    address: REQUEST_STORAGE,
+                    data: `0x${Buffer.from(STORAGE_CID, "utf8").toString("hex")}`,
+                    topics: [],
+                  },
+                ],
+              }
+            : null;
+      }
       else if (method === "eth_blockNumber") result = `0x${HEAD.toString(16)}`;
       else if (method === "eth_getLogs") {
         const filter = params[0] as { fromBlock: string; toBlock: string };
@@ -358,7 +391,7 @@ describe("scripts/settle-live.ts searches a window that can contain the payment"
     // The preferred shape: the create is anchored, so the floor is a fact about this invoice
     // rather than a guess about how far back to look.
     const anchoredAt = HEAD - 2_000;
-    const gateway = await startGateway({ blockNumber: anchoredAt, transactionHash: `0x${"11".repeat(32)}` });
+    const gateway = await startGateway({ blockNumber: anchoredAt, transactionHash: ANCHOR_TX });
     const chain = await startChain();
     const scratch = mkdtempSync(join(tmpdir(), "reqkeeper-settle-live-anchored-"));
 

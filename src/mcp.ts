@@ -436,39 +436,16 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
           );
         }
 
-        // The anchor is corroborated against its own transaction before it is believed.
+        // The anchor arrives already bound, or not at all.
         //
-        // It arrives as `{ blockNumber, transactionHash }` and only the block was ever used; the
-        // hash — the one value that can check it — was read and consumed nowhere. The anchor is
-        // the floor of every payment scan for this invoice, so a gateway that moves it moves the
-        // window: a reviewer set it past a real payment and watched an invoice that was already
-        // settled come back NOT_PAID, which is what opens the already-paid gate.
-        //
-        // One receipt read settles it. A hash whose receipt sits in a different block is a
-        // fabricated anchor and the proposal stops; a read that fails leaves the anchor unset,
-        // which makes scans inconclusive rather than wrongly bounded — the safe direction.
-        anchorBlock = undefined;
-        const claimedAnchor = invoice.anchor;
-        const anchorTx = claimedAnchor?.transactionHash;
-        if (claimedAnchor && typeof anchorTx === "string" && anchorTx.length > 0) {
-          try {
-            const anchorReceipt = await receiptOf(ctx.rpcUrl ?? DEFAULT_RPC, anchorTx);
-            if (anchorReceipt.blockNumber === claimedAnchor.blockNumber) {
-              anchorBlock = claimedAnchor.blockNumber;
-            } else if (anchorReceipt.blockNumber !== undefined) {
-              return refusedBeforeWrite(
-                oid,
-                "REQUEST_UNREADABLE",
-                `the invoice claims it was anchored at block ${claimedAnchor.blockNumber}, but the ` +
-                  `transaction it names is in block ${anchorReceipt.blockNumber}. The anchor bounds every ` +
-                  "search for a payment on this invoice, so a wrong one hides payments that exist.",
-              );
-            }
-          } catch {
-            // Unread, not disproved. Left unset, so scans stay inconclusive instead of bounded by
-            // a number nothing corroborated.
-          }
-        }
+        // `fetchInvoice` proves it: the transaction the anchor names must have stored THIS
+        // invoice's bytes in Request's storage contract, identified by the CID the gateway served
+        // beside it. That check used to live here and was weaker -- it compared block numbers
+        // against the receipt of whatever hash the gateway offered, which any real recent
+        // transaction satisfies. Two spellings of one rule is the shape this codebase keeps
+        // paying for, so there is one, and it is upstream of every caller: the scripts that move
+        // real money read `invoice.anchor` too, and they cannot forget a check they never make.
+        anchorBlock = invoice.anchor?.blockNumber;
         amountChangedBy = invoice.amountChangedBy;
         // Learned now, and kept. An obligation created before the gateway was reachable — or fed
         // by the watcher from a file that carries no anchors — has no floor, so every scan for it

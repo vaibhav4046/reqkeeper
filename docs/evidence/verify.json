@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-13T13:56:58.326Z",
+  "generatedAt": "2026-09-13T14:27:12.640Z",
   "chainId": 11155111,
   "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
   "credentialsUsed": "none",
@@ -37,145 +37,169 @@
       "id": "race.exactly-once",
       "claim": "50 concurrent workers, one payment",
       "status": "ok",
-      "detail": "1 broadcast, 1 distinct transaction(s)"
+      "detail": "1 broadcast, 1 distinct transaction(s)",
+      "evidence": "FIXTURE"
     },
     {
       "id": "race.not-the-provider",
       "claim": "exactly-once is ReqKeeper's, not KeeperHub's idempotency cache",
       "status": "ok",
-      "detail": "1 post(s) reached the provider, 0 deduped by key — the losers never got that far"
+      "detail": "1 post(s) reached the provider, 0 deduped by key — the losers never got that far",
+      "evidence": "FIXTURE"
     },
     {
       "id": "race.second-wave",
       "claim": "the same plan and key, after every process exited, sends nothing",
       "status": "ok",
-      "detail": "0 broadcast in the second wave"
+      "detail": "0 broadcast in the second wave",
+      "evidence": "FIXTURE"
     },
     {
       "id": "race.no-crashes",
       "claim": "every worker reached a designed outcome",
       "status": "ok",
-      "detail": "no worker threw or produced no output"
+      "detail": "no worker threw or produced no output",
+      "evidence": "FIXTURE"
     },
     {
       "id": "artifacts.totals",
       "claim": "every artifact's summary matches its own rows",
       "status": "ok",
-      "detail": "34 summary number(s) recomputed from rows and agreeing, over 9 artifact(s) carrying a summary (10 .json scanned under docs/); 12 summary number(s) name no row field and were NOT recomputed: docs/evidence/mcp-settlements.json:settled · docs/evidence/mcp-settlements.json:withExecutionId · docs/evidence/race-live.json:broadcasts · docs/evidence/race-live.json:postsReachingTheProvider · +8 more"
+      "detail": "36 summary number(s) recomputed from rows and agreeing, over 9 artifact(s) carrying a summary (10 .json scanned under docs/); 12 summary number(s) name no row field and were NOT recomputed: docs/evidence/mcp-settlements.json:settled · docs/evidence/mcp-settlements.json:withExecutionId · docs/evidence/race-live.json:broadcasts · docs/evidence/race-live.json:postsReachingTheProvider · +8 more",
+      "evidence": "DERIVED"
     },
     {
       "id": "race.live",
       "claim": "3 concurrent workers against real KeeperHub and real Sepolia",
       "status": "ok",
-      "detail": "1 payment(s) carrying 0xd9e6ee9360a89ed9, 0 duplicate(s), 1 distinct transaction(s), 0 in the second wave — recomputed from the worker rows"
+      "detail": "1 payment(s) carrying 0xd9e6ee9360a89ed9, 0 duplicate(s), 1 distinct transaction(s), 0 in the second wave — recomputed from the worker rows",
+      "evidence": "RECORDED"
     },
     {
       "id": "race.live.block",
       "claim": "the block README cites for the live race",
       "status": "ok",
-      "detail": "block 11691069 for 0x41b01a14cb…, read from the chain"
+      "detail": "block 11691069 for 0x41b01a14cb…, read from the chain",
+      "evidence": "RECORDED"
     },
     {
       "id": "keeperhub.mcp",
       "claim": "value moved through KeeperHub's MCP surface, not only REST",
       "status": "ok",
-      "detail": "3 settlement(s) via mcp, 3 settled at one send each"
+      "detail": "3 settlement(s) via mcp, 3 settled at one send each",
+      "evidence": "RECORDED"
     },
     {
       "id": "keeperhub.mcp.execution-ids",
       "claim": "each carries the KeeperHub execution id that produced it",
       "status": "ok",
-      "detail": "a8h3pjg9wymv0b84xllla, wft98bw4s4jzm02ucr21b, 1i5q3nmtdwx5wnw8paami"
+      "detail": "a8h3pjg9wymv0b84xllla, wft98bw4s4jzm02ucr21b, 1i5q3nmtdwx5wnw8paami",
+      "evidence": "RECORDED"
     },
     {
       "id": "crash.no-duplicates",
       "claim": "no crash checkpoint produces a duplicate payment",
       "status": "ok",
-      "detail": "9 checkpoint(s) reached, zero duplicates"
+      "detail": "9 checkpoint(s) reached, zero duplicates",
+      "evidence": "FIXTURE"
     },
     {
       "id": "live.one-send-per-settlement",
       "claim": "every recorded settlement cost exactly one send",
       "status": "ok",
-      "detail": "38 settled, 38 physical send(s)"
+      "detail": "38 settled, 38 physical send(s)",
+      "evidence": "RECORDED"
     },
     {
       "id": "live.distinct",
       "claim": "no transaction and no payment reference is reused",
       "status": "ok",
-      "detail": "38 distinct transactions over 38 rows, 38 distinct references"
+      "detail": "38 distinct transactions over 38 rows, 38 distinct references",
+      "evidence": "RECORDED"
     },
     {
       "id": "live.replays-cost-nothing",
       "claim": "replays of a settled obligation send nothing",
       "status": "ok",
-      "detail": "38 replays, 0 send(s)"
+      "detail": "38 replays, 0 send(s)",
+      "evidence": "RECORDED"
     },
     {
       "id": "live.refused-before-write",
       "claim": "refusals happen before any provider write",
       "status": "ok",
-      "detail": "45 row(s) refused at zero gas"
+      "detail": "45 row(s) refused at zero gas",
+      "evidence": "RECORDED"
     },
     {
       "id": "request.derivation",
       "claim": "every recorded payment reference re-derives from its invoice",
       "status": "ok",
-      "detail": "46/46 reproduce from keccak256(requestId + salt + paymentAddress)"
+      "detail": "46/46 reproduce from keccak256(requestId + salt + paymentAddress)",
+      "evidence": "LIVE"
     },
     {
       "id": "chain.receipt",
       "claim": "L001's transaction has a successful receipt",
       "status": "ok",
-      "detail": "0xb90a077185858154… → success, block 11665983, gas 74618"
+      "detail": "0xb90a077185858154… → success, block 11665983, gas 74618",
+      "evidence": "LIVE"
     },
     {
       "id": "chain.receipt-log",
       "claim": "the receipt's own logs contain the fee-proxy payment",
       "status": "ok",
-      "detail": "emitted by 0x399F5EE1…"
+      "detail": "emitted by 0x399F5EE1…",
+      "evidence": "LIVE"
     },
     {
       "id": "keeperhub.mcp.onchain.0x7a3496f145f70a31",
       "claim": "the MCP settlement for 0x7a3496f145f70a31 is on chain",
       "status": "ok",
-      "detail": "0xe02fd64ced29c8e147…"
+      "detail": "0xe02fd64ced29c8e147…",
+      "evidence": "RECORDED"
     },
     {
       "id": "keeperhub.mcp.onchain.0xd510cbe43703a7f2",
       "claim": "the MCP settlement for 0xd510cbe43703a7f2 is on chain",
       "status": "ok",
-      "detail": "0xfe4b0168d7add3aeea…"
+      "detail": "0xfe4b0168d7add3aeea…",
+      "evidence": "RECORDED"
     },
     {
       "id": "keeperhub.mcp.onchain.0x461f0e0890226cce",
       "claim": "the MCP settlement for 0x461f0e0890226cce is on chain",
       "status": "ok",
-      "detail": "0xf206bbaa9e25309b4c…"
+      "detail": "0xf206bbaa9e25309b4c…",
+      "evidence": "RECORDED"
     },
     {
       "id": "race.live.onchain",
       "claim": "that live payment is on chain, exactly once",
       "status": "ok",
-      "detail": "0x41b01a14cbdb8dd65c…"
+      "detail": "0x41b01a14cbdb8dd65c…",
+      "evidence": "RECORDED"
     },
     {
       "id": "chain.reference",
       "claim": "every recorded payment is on chain, in the transaction its row names",
       "status": "ok",
-      "detail": "38/38 recorded payments matched emitter, token, payee, amount and fee in the transaction the row names (payee, amount and fee joined from docs/live-invoices.json; token is FAU from src/plan.ts, the only token this deployment settles in)"
+      "detail": "38/38 recorded payments matched emitter, token, payee, amount and fee in the transaction the row names (payee, amount and fee joined from docs/live-invoices.json; token is FAU from src/plan.ts, the only token this deployment settles in)",
+      "evidence": "LIVE"
     },
     {
       "id": "chain.completeness",
       "claim": "no payment on chain is missing from the evidence",
       "status": "ok",
-      "detail": "every fee-proxy payment to this deployment's 1 payee(s) over 11665964..11696324, asked of 4 endpoint(s): 44 found across their union, every one accounted for by an evidence file. The payee set comes from docs/, the payments come from the chain."
+      "detail": "every fee-proxy payment to this deployment's 1 payee(s) over 11665964..11696468, asked of 4 endpoint(s): 44 found across their union, every one accounted for by an evidence file. The payee set comes from docs/, the payments come from the chain.",
+      "evidence": "LIVE"
     },
     {
       "id": "docs.citations",
       "claim": "every citation the documentation makes still resolves",
       "status": "ok",
-      "detail": "120 citation(s) across 12 document(s) resolve: 117 name a symbol that is still declared in the file they name, and 3 name a line that is still inside it. A symbol citation cannot drift — inserting code above it moves nothing — which is why the line-numbered form was converted after a reviewer found three citations pointing at unrelated code."
+      "detail": "120 citation(s) across 12 document(s) resolve: 117 name a symbol that is still declared in the file they name, and 3 name a line that is still inside it. A symbol citation cannot drift — inserting code above it moves nothing — which is why the line-numbered form was converted after a reviewer found three citations pointing at unrelated code.",
+      "evidence": "DERIVED"
     }
   ]
 }

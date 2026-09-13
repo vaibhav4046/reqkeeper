@@ -59,6 +59,8 @@ const SEPOLIA_HEX = "0xaa36a7";
 // end-to-end run refused at SOURCE_UNVERIFIABLE. A fixture chain shorter than the invoices it
 // serves is not a simplification, it is a different chain.
 const HEAD_BLOCK = 11_700_000;
+/** Request's storage contract on Sepolia, the emitter that binds an anchor to its invoice. */
+const REQUEST_STORAGE = "0xd6c085a4d14e9e171f4af58f7f48bd81173f167e";
 const sameAddress = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const word = (hex: string) => hex.replace(/^0x/, "").toLowerCase().padStart(64, "0");
 
@@ -74,7 +76,7 @@ function paymentLogData(to: string, amount: string): string {
 
 export class KeeperHubFixture {
   /** Create transactions this chain contains, hash -> block. See `announceAnchor`. */
-  #anchors = new Map<string, number>();
+  #anchors = new Map<string, { blockNumber: number; storageCid: string }>();
   #server: Server | null = null;
   #alt: Server | null = null;
   #port = 0;
@@ -135,8 +137,8 @@ export class KeeperHubFixture {
    * transaction, in that block" — which is true of the chain being imitated, and is the whole
    * reason HEAD_BLOCK sits above them.
    */
-  announceAnchor(transactionHash: string, blockNumber: number): void {
-    this.#anchors.set(transactionHash.toLowerCase(), blockNumber);
+  announceAnchor(transactionHash: string, blockNumber: number, storageCid: string): void {
+    this.#anchors.set(transactionHash.toLowerCase(), { blockNumber, storageCid });
   }
 
   async start(): Promise<void> {
@@ -281,7 +283,21 @@ export class KeeperHubFixture {
           // invoices it serves discards every anchor and makes every scan inconclusive.
           const anchored = this.#anchors.get(hash);
           if (anchored === undefined) return reply(null);
-          return reply({ status: "0x1", gasUsed: "0x0", blockNumber: `0x${anchored.toString(16)}`, logs: [] });
+          // Including the storage log. The anchor is bound to the bytes it stored, not merely to
+          // a block: `src/request.ts` requires a log from Request's storage contract carrying the
+          // CID the gateway served, because a block number a gateway can choose is not a floor.
+          return reply({
+            status: "0x1",
+            gasUsed: "0x0",
+            blockNumber: `0x${anchored.blockNumber.toString(16)}`,
+            logs: [
+              {
+                address: REQUEST_STORAGE,
+                data: `0x${Buffer.from(anchored.storageCid, "utf8").toString("hex")}`,
+                topics: [],
+              },
+            ],
+          });
         }
         return reply({
           status: "0x1",

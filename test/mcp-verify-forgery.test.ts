@@ -106,7 +106,7 @@ function ctx(): McpContext {
     // Conclusive, and it has to say so: a window that reached the floor, a scan that stated
     // which conflicting logs it saw, and another endpoint that answered the same way. Without
     // all three the already-paid gate refuses and there is no obligation to ask about.
-    findPayment: async () => ({ found: false, truncated: false, conflictKinds: [], negativeCorroborations: 2 }),
+    findPayment: async () => ({ found: false, truncated: false, conflictingLogs: [], negativeCorroborations: 2 }),
     fetchInvoice: async () => INVOICE_AS_REQUEST_HOLDS_IT,
   } as McpContext;
 }

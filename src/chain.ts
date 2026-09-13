@@ -236,7 +236,15 @@ export interface PaymentSighting extends Partial<PaymentLogFields> {
    * Absent means the reader did not say, which is not zero and is not a number of agreements.
    */
   readonly negativeCorroborations?: number;
-  readonly conflictKinds?: readonly ConflictKind[];
+  /**
+   * The conflicting logs, one entry per log, each listing what that log disagreed about.
+   *
+   * NOT a union across the scan. A flat list cannot answer "was any single log ours and wrong",
+   * which is the only question that decides between escalating to a human and releasing the
+   * obligation to be paid again -- and a stranger's log could contribute a kind that cancelled
+   * ours. Absent means the reader never looked; `[]` means it looked and saw none.
+   */
+  readonly conflictingLogs?: readonly (readonly ConflictKind[])[];
   /**
    * The highest block this scan covered.
    *
@@ -331,13 +339,29 @@ export function matchPaymentLog(
  */
 export type ConflictVerdict = "OURS_AND_WRONG" | "NOT_OURS" | "UNKNOWN";
 
-export function conflictVerdict(sighting: { readonly conflictKinds?: readonly ConflictKind[] }): ConflictVerdict {
-  const kinds = sighting.conflictKinds;
-  if (!kinds) return "UNKNOWN";
-  if (kinds.length === 0) return "NOT_OURS";
+export function conflictVerdict(sighting: {
+  readonly conflictingLogs?: readonly (readonly ConflictKind[])[];
+}): ConflictVerdict {
+  const logs = sighting.conflictingLogs;
+  if (!logs) return "UNKNOWN";
+  if (logs.length === 0) return "NOT_OURS";
+  // ANY single log being ours-and-wrong is the answer. The kinds used to arrive as one flat list
+  // accumulated across the whole scan, and a set cannot say which kind came from which log -- so
+  // one junk transfer to a stranger contributed `to`, `wrongCounterparty` went true, and a log
+  // that really had paid OUR payee in OUR token for the wrong amount was reclassified NOT_OURS.
+  // That is the release answer. Payment references are public, so the masking log cost an
+  // attacker one unit of a testnet token: two panels reproduced it independently.
+  //
+  // The repair is the shape, not the predicate. With one entry per log the question "was any log
+  // ours and wrong" is answerable again, and a flattened list can no longer be handed in.
+  return logs.some(isOursAndWrong) ? "OURS_AND_WRONG" : "NOT_OURS";
+}
+
+/** Our payee, our token, our reference -- and the wrong amount or fee. Nobody else's mistake. */
+function isOursAndWrong(kinds: readonly ConflictKind[]): boolean {
   const wrongCounterparty = kinds.includes("token") || kinds.includes("to") || kinds.includes("emitter");
   const wrongValue = kinds.includes("amount") || kinds.includes("fee") || kinds.includes("feeAddress");
-  return wrongValue && !wrongCounterparty ? "OURS_AND_WRONG" : "NOT_OURS";
+  return wrongValue && !wrongCounterparty;
 }
 
 
@@ -391,7 +415,7 @@ export type PaymentVerdict =
       readonly kind: "CONFLICT_OURS";
       readonly detail: string;
       readonly conflicts: readonly string[];
-      readonly conflictKinds: readonly ConflictKind[];
+      readonly conflictingLogs: readonly (readonly ConflictKind[])[];
       readonly txHash?: string;
     }
   /**
@@ -466,7 +490,7 @@ export function verdictFor(
       kind: "CONFLICT_OURS",
       detail: `a log pays this invoice's payee and token under its reference but disagrees: ${conflicts.join("; ")}`,
       conflicts,
-      conflictKinds: sighting.conflictKinds ?? [],
+      conflictingLogs: sighting.conflictingLogs ?? [],
       ...(sighting.txHash === undefined ? {} : { txHash: sighting.txHash }),
     };
   }
@@ -643,7 +667,7 @@ export async function findPaymentByReference(
         return {
           ...first,
           conflicts: second.conflicts,
-          ...(second.conflictKinds ? { conflictKinds: second.conflictKinds } : {}),
+          ...(second.conflictingLogs ? { conflictingLogs: second.conflictingLogs } : {}),
           truncated,
           scannedFrom: floor,
           negativeCorroborations,
@@ -675,7 +699,7 @@ async function scanForReference(
   const topics = [EVENT_TOPIC, referenceTopic(reference)];
   let to = head;
   const conflicts: string[] = [];
-  const conflictKinds: ConflictKind[] = [];
+  const conflictingLogs: ConflictKind[][] = [];
 
   while (to >= floor) {
     const from = Math.max(floor, to - MAX_RANGE + 1);
@@ -708,7 +732,8 @@ async function scanForReference(
       // Carries our reference, pays something else. Do not settle on it, and do not
       // pretend it was never there: the caller has to hear about it.
       conflicts.push(`${log.transactionHash}: ${verdict.conflicts.join("; ")}`);
-      conflictKinds.push(...verdict.kinds);
+      // One entry per log, never a union across the scan. See `conflictVerdict`.
+      conflictingLogs.push(verdict.kinds);
     }
 
     if (from === floor) break;
@@ -734,7 +759,7 @@ async function scanForReference(
     // that cost this project three separate duplicate-payment findings under `truncated` and
     // `confirmations`. A reader that concluded says what it saw; a reader that did not conclude
     // leaves the field off, and the callers treat that as unknown.
-    conflictKinds,
+    conflictingLogs,
   };
 }
 

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-13T13:26:41.955Z",
+  "generatedAt": "2026-09-13T14:26:04.002Z",
   "mode": "LIVE_READ",
   "note": "Every action of every invoice this deployment knows, read from Request's public gateway with no credential, with the ECDSA signer recovered and checked against the payee and payer the create names. The digest is keccak256 over the action's data, keys deep-sorted and the whole JSON lowercased.",
   "gateway": "https://sepolia.gateway.request.network",
@@ -13,11 +13,21 @@
         "field": "ok",
         "equals": true
       }
+    },
+    "anchorsBound": {
+      "count": true,
+      "from": "anchors",
+      "where": {
+        "field": "bound",
+        "equals": true
+      }
     }
   },
   "totals": {
     "actions": 46,
-    "recovered": 46
+    "recovered": 46,
+    "anchors": 46,
+    "anchorsBound": 46
   },
   "rows": [
     {
@@ -433,6 +443,238 @@
       "signer": "0xc43d766cb7c48b9b198db87441b97c09e81717a1",
       "role": "payee",
       "ok": true
+    }
+  ],
+  "anchors": [
+    {
+      "requestId": "01ee24955c76fd84d9ed61ed4ce540b5b38a8726b59dbcdb0179a03145ee590e24",
+      "bound": true,
+      "block": 11665964
+    },
+    {
+      "requestId": "01b590902494aadfecb5f0ade8ec96898b795414dab3639a01c876f3f3b85ca55e",
+      "bound": true,
+      "block": 11665964
+    },
+    {
+      "requestId": "0108b3f7d7d7d3c1fd21d37ba996b21d019c59cbaaa75c5cb5801fc3d9a371c142",
+      "bound": true,
+      "block": 11665964
+    },
+    {
+      "requestId": "01ebe6ff40be92bf45254a3414bc261de367a5e53f2fa64cc10150a8a516f7d00b",
+      "bound": true,
+      "block": 11665964
+    },
+    {
+      "requestId": "01f10066792b4d935010acfe7f38b1d5021d5cb8ca18faa1d30a25ab5fddabe11e",
+      "bound": true,
+      "block": 11665966
+    },
+    {
+      "requestId": "0134836903e3443964bd0dd89325ce10044e75a7576bed9ed547b9117bef9efebd",
+      "bound": true,
+      "block": 11665966
+    },
+    {
+      "requestId": "01f8760de3aedadd8dac2047f3704197a748ff227641866facf7672cb8ebb95b6c",
+      "bound": true,
+      "block": 11665967
+    },
+    {
+      "requestId": "01f5e9980219b3bc9256317f432a0e1dad4d8d8f0d4785669b43ef1853b7ac8d8e",
+      "bound": true,
+      "block": 11665967
+    },
+    {
+      "requestId": "01ad82bdab0c091a96b079709192bd530d4d19454677fc7a07e047ac27a8bf6641",
+      "bound": true,
+      "block": 11665968
+    },
+    {
+      "requestId": "0161e3fda6e7c78fb57003188ede8311469547d9dd853112c9de51f258fa4ae712",
+      "bound": true,
+      "block": 11665968
+    },
+    {
+      "requestId": "01d59d31066267257414b0c98cab28410afefaaf2b4debe327a55cdde3660d958b",
+      "bound": true,
+      "block": 11665968
+    },
+    {
+      "requestId": "01f024d26d375e3814be6c446ebf7e784bd4929e8fcf3412528939d89389dfb04f",
+      "bound": true,
+      "block": 11665969
+    },
+    {
+      "requestId": "018d5d3482bc3d37421f5c906b41744eceacd38850efbc326b1aecf227bf4b7e41",
+      "bound": true,
+      "block": 11665969
+    },
+    {
+      "requestId": "0111f604c877b2693be5b3af3e5a258512c68c7b358ef083e631ee49498606c474",
+      "bound": true,
+      "block": 11665969
+    },
+    {
+      "requestId": "01f442166977e7083ef5101f7a54ca9acd211d3b53b865e12fdff39e79d38847dc",
+      "bound": true,
+      "block": 11665970
+    },
+    {
+      "requestId": "0197676ffc973edad639ebedd6ab24089a0340cda8605f1db64fc05893fa3a7729",
+      "bound": true,
+      "block": 11665970
+    },
+    {
+      "requestId": "01083560667ba9bbf58d8a4e0f62349cd72012b24ff4d1268be855dd03f8a88a11",
+      "bound": true,
+      "block": 11665970
+    },
+    {
+      "requestId": "013552114682051872ce33a0cfcf0cad8078e50fa57ba1e6bc76aec1c39b0e13e3",
+      "bound": true,
+      "block": 11665971
+    },
+    {
+      "requestId": "013d517d16a2837850269be5451d7b922cbefc46498b1e9dfb3f1eb76e2e8ccd86",
+      "bound": true,
+      "block": 11665971
+    },
+    {
+      "requestId": "0172bd883405a232a14c6dea81cda04cf5991ef970c20edb3dc10e76015405cd2c",
+      "bound": true,
+      "block": 11665972
+    },
+    {
+      "requestId": "01986c235355414cfb88330b1bfb80e6315e7580e17173bf46b421d86ee0acead9",
+      "bound": true,
+      "block": 11665972
+    },
+    {
+      "requestId": "016c8e6c5c0b35da848b2d02254c0431c167502ea8d607e07eac1ec4e4d461dc2f",
+      "bound": true,
+      "block": 11665972
+    },
+    {
+      "requestId": "0154c2ed411f64b59f0f4dd2a8994f27f1bd1bd8ef77cdc369d7afd7b842cbd088",
+      "bound": true,
+      "block": 11665972
+    },
+    {
+      "requestId": "013060aa7ab07b7065c67f1177c6f337ec479ab49d554e2205f8e48076285fc04e",
+      "bound": true,
+      "block": 11665974
+    },
+    {
+      "requestId": "01c3bf6cc534c28b9795caafc372ad3f463a8f934882355444bc93c016fcb3e71a",
+      "bound": true,
+      "block": 11665974
+    },
+    {
+      "requestId": "019c43c7ce45f0f6c6c34110548b697246ac35cad6c2996bf65a754504e7ab481e",
+      "bound": true,
+      "block": 11665974
+    },
+    {
+      "requestId": "0183fae0150e5db1fd02f906fcfd272b4b360f192f12bf50202cc99173bdc79b5a",
+      "bound": true,
+      "block": 11665974
+    },
+    {
+      "requestId": "01139b84a0f4e3360e9f398b90ef351e9c6ab4eda1f38e0e807d3a8e2fdad07dce",
+      "bound": true,
+      "block": 11665975
+    },
+    {
+      "requestId": "015693e7dcfb14296e1a594cdaf84b0ca17847e149b8f8af84aaf8a918473ddbc3",
+      "bound": true,
+      "block": 11665975
+    },
+    {
+      "requestId": "01c72a443bb04cfb8d1c97c321085386aa1e58ca206d59c5a9ba149a01f5d5754a",
+      "bound": true,
+      "block": 11665976
+    },
+    {
+      "requestId": "01655b3589928d6ff2d75e9c64f8818630f19949e64ca1abbe4af4bff04e2f6168",
+      "bound": true,
+      "block": 11665976
+    },
+    {
+      "requestId": "0191d91abd9e9cae5c923b540d45a9b9a1fd4e09bbff3f4fbb917d5b0181eeac24",
+      "bound": true,
+      "block": 11665977
+    },
+    {
+      "requestId": "01c6436cefaa5b4f791120a324b431845353f9e48def48c71d66a5a5d914aa2b14",
+      "bound": true,
+      "block": 11665977
+    },
+    {
+      "requestId": "0164ce481cb10e902856d4cb72a8d22b2dc4363bef18477267043a01484506e6f2",
+      "bound": true,
+      "block": 11665977
+    },
+    {
+      "requestId": "0117c18a649dcf1d9074669a6695648b7c7bbc3192d19e8d032d92710834d2d6b3",
+      "bound": true,
+      "block": 11665978
+    },
+    {
+      "requestId": "010fa126235cca31408a0c1be1b5d967646b43858ef220fe086490d707ec544982",
+      "bound": true,
+      "block": 11665978
+    },
+    {
+      "requestId": "017739ecdca4615f1420c189949e54277ee9e3ca41bd325c31899426d32f8a903d",
+      "bound": true,
+      "block": 11665978
+    },
+    {
+      "requestId": "0162051d919a4b6ebc6330c32785cefb18f558aa92624ddef288b789464ce261ad",
+      "bound": true,
+      "block": 11665978
+    },
+    {
+      "requestId": "01d31ec31d403e2236c7c17fb42c291165dd723ab9488ab60a975beaa0bcd860fb",
+      "bound": true,
+      "block": 11665979
+    },
+    {
+      "requestId": "01524a4ab0a02a882b031bca8d602e6dcdfe43e00b1184cb74aa4d8c61b6d799e2",
+      "bound": true,
+      "block": 11665980
+    },
+    {
+      "requestId": "016ff0225b1dd706b7ad8b2461f09e09c4ac9c662f1e919a1eeb71a8705f03b48e",
+      "bound": true,
+      "block": 11666747
+    },
+    {
+      "requestId": "01b7cd715cfe60ac07f637ed0eb62bf5d1c00c56e3599b8ce6b0a962e8b7f49914",
+      "bound": true,
+      "block": 11691240
+    },
+    {
+      "requestId": "0100050749a02764daf24490bf744e96e0c18dd84ac11d9ba406864b998677ab56",
+      "bound": true,
+      "block": 11691240
+    },
+    {
+      "requestId": "01bacd26d41e94e7fbd5e22aaa70e888c408fd491281b2cfa2a54278f819c37004",
+      "bound": true,
+      "block": 11691240
+    },
+    {
+      "requestId": "0120636e46f045e0335ecf25b8a4a72175098860be7504c9d383c252ec0d2cb90e",
+      "bound": true,
+      "block": 11691241
+    },
+    {
+      "requestId": "013c3ee6c59e76f6c2ca8ce0d523b896d0cc094f0d024357e5754d88ec8a6740ea",
+      "bound": true,
+      "block": 11691241
     }
   ]
 }

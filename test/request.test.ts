@@ -42,6 +42,23 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const ANCHOR_TX = "0x3f028b50a0db700274855770781e672fa118271e37582998a064419eb5bea495";
 const STRANGER = "0xdEAdBeef00000000000000000000000000000001";
 
+/**
+ * A receipt proving the anchor: Request's storage contract, the anchor's block, these bytes.
+ *
+ * `fetchInvoice` will not believe an anchor unless the transaction it names emitted a log from
+ * Request's storage contract carrying the CID the gateway served beside it. A block number the
+ * gateway can choose is not a floor, and the floor is what decides whether "no payment found"
+ * means the invoice is unpaid -- a reviewer moved an anchor forward and watched an invoice that
+ * was already paid come back payable. So a fixture that wants a usable anchor produces that log.
+ */
+const REQUEST_STORAGE = "0xd6c085a4d14e9e171f4af58f7f48bd81173f167e";
+const anchorReceipt = (blockNumber: number, cid: string) => async () => ({
+  blockNumber,
+  logs: [{ address: REQUEST_STORAGE, data: `0x${Buffer.from(cid, "utf8").toString("hex")}` }],
+});
+const WITH_ANCHOR = { readReceipt: anchorReceipt(11665964, "QmFixtureCid") };
+
+
 /** The `create` action exactly as the gateway serves it, before it is stringified. */
 function createAction() {
   return {
@@ -191,7 +208,7 @@ describe("derivePaymentReference reproduces a reference that exists on Sepolia",
 describe("fetchInvoice reads the invoice the gateway actually serves", () => {
   test("the real payload parses into whole facts", async () => {
     const { urls } = stubGateway(gatewayBody());
-    const facts = await fetchInvoice(CHANNEL_ID);
+    const facts = await fetchInvoice(CHANNEL_ID, WITH_ANCHOR);
 
     assert.ok(urls[0].includes(`channelId=${CHANNEL_ID}`));
     assert.equal(facts.requestId, CHANNEL_ID);
@@ -207,7 +224,7 @@ describe("fetchInvoice reads the invoice the gateway actually serves", () => {
 
   test("the reference is derived from what was read, and matches the recorded one", async () => {
     stubGateway(gatewayBody());
-    const facts = await fetchInvoice(CHANNEL_ID);
+    const facts = await fetchInvoice(CHANNEL_ID, WITH_ANCHOR);
     assert.equal(facts.paymentReference, CHANNEL_REFERENCE);
   });
 
@@ -221,7 +238,7 @@ describe("fetchInvoice reads the invoice the gateway actually serves", () => {
     stubGateway(body);
 
     const id = idOf(body);
-    const facts = await fetchInvoice(id);
+    const facts = await fetchInvoice(id, WITH_ANCHOR);
     assert.equal(facts.payee, PAYMENT_ADDRESS);
     assert.equal(facts.payeeOfRecord, STRANGER);
     assert.equal(
@@ -236,14 +253,14 @@ describe("fetchInvoice reads the invoice the gateway actually serves", () => {
     body.meta.storageMeta = [];
     stubGateway(body);
 
-    const facts = await fetchInvoice(CHANNEL_ID);
+    const facts = await fetchInvoice(CHANNEL_ID, WITH_ANCHOR);
     assert.equal(facts.anchor, undefined);
     assert.equal(facts.paymentReference, CHANNEL_REFERENCE);
   });
 
   test("a custom gateway URL without a trailing slash still forms one path", async () => {
     const { urls } = stubGateway(gatewayBody());
-    await fetchInvoice(CHANNEL_ID, { gatewayUrl: "https://gateway.example" });
+    await fetchInvoice(CHANNEL_ID, { gatewayUrl: "https://gateway.example", ...WITH_ANCHOR });
     assert.match(urls[0], /^https:\/\/gateway\.example\/getTransactionsByChannelId\?/);
   });
 });
@@ -254,7 +271,7 @@ describe("fetchInvoice refuses rather than returning half an invoice", () => {
     await assert.rejects(
       // Under the id this body's own create hashes to, so the refusal under test is the one the
       // case is named for rather than REQUEST_ID_MISMATCH shadowing all of them.
-      () => fetchInvoice(idOf(body)),
+      () => fetchInvoice(idOf(body), WITH_ANCHOR),
       (e: RequestError) => {
         assert.ok(e instanceof RequestError, `expected RequestError, got ${e?.constructor?.name}`);
         assert.equal(e.code, code, `expected ${code}, got ${e.code}: ${e.message}`);
@@ -325,7 +342,7 @@ describe("fetchInvoice refuses rather than returning half an invoice", () => {
       throw new Error("ETIMEDOUT");
     }) as unknown as typeof fetch;
     await assert.rejects(
-      () => fetchInvoice(REQUEST_ID),
+      () => fetchInvoice(REQUEST_ID, WITH_ANCHOR),
       (e: RequestError) => e.code === "GATEWAY_UNAVAILABLE" && /ETIMEDOUT/.test(e.message),
     );
   });
@@ -362,21 +379,21 @@ describe("fetchInvoiceChecked refuses a caller's facts rather than preferring th
 
   test("facts that agree are allowed through, and the returned ones are Request's", async () => {
     stubGateway(gatewayBody());
-    const facts = await fetchInvoiceChecked(CHANNEL_ID, agreeing);
+    const facts = await fetchInvoiceChecked(CHANNEL_ID, agreeing, WITH_ANCHOR);
     assert.equal(facts.paymentReference, CHANNEL_REFERENCE);
     assert.equal(facts.payee, PAYMENT_ADDRESS);
   });
 
   test("with nothing claimed it is just a read", async () => {
     stubGateway(gatewayBody());
-    const facts = await fetchInvoiceChecked(CHANNEL_ID);
+    const facts = await fetchInvoiceChecked(CHANNEL_ID, {}, WITH_ANCHOR);
     assert.equal(facts.paymentReference, CHANNEL_REFERENCE);
   });
 
   test("a supplied reference for another debt is REFERENCE_MISMATCH", async () => {
     stubGateway(gatewayBody());
     await assert.rejects(
-      () => fetchInvoiceChecked(CHANNEL_ID, { ...agreeing, paymentReference: "0xfaac1220a314c4a9" }),
+      () => fetchInvoiceChecked(CHANNEL_ID, { ...agreeing, paymentReference: "0xfaac1220a314c4a9" }, WITH_ANCHOR),
       (e: RequestError) => e.code === "REFERENCE_MISMATCH",
     );
   });

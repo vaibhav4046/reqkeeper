@@ -150,8 +150,25 @@ export function operatorReleaseDecision(input) {
                 ? { kind: "REFUSE_UNCORROBORATED" }
                 : { kind: "REFUSE_INCONCLUSIVE" };
         // Covered, corroborated, and nothing in the window could be a payment of this invoice.
-        case "NOT_PAID":
-            return { kind: "RELEASE" };
+        //
+        // Which still is not "nothing WILL be paid". The scan read blocks; a leaked dry run sitting
+        // in the mempool is in no block. So the nonce proof decides, exactly as it does for the
+        // worker -- and when it cannot be made, a named human may take the risk explicitly rather
+        // than the door quietly pretending the question was answered.
+        case "NOT_PAID": {
+            switch (input.exclusion.kind) {
+                case "NONCE_CONSUMED":
+                    return { kind: "RELEASE" };
+                case "NOT_PROVEN":
+                    return input.acknowledgedMempoolRisk === true
+                        ? { kind: "RELEASE" }
+                        : { kind: "REFUSE_LEAK_NOT_EXCLUDED", code: input.exclusion.code };
+                default: {
+                    const exhaustive = input.exclusion;
+                    return exhaustive;
+                }
+            }
+        }
         default: {
             const exhaustive = verdict;
             return exhaustive;

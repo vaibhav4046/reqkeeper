@@ -100,7 +100,15 @@ export interface PaymentSighting extends Partial<PaymentLogFields> {
      * Absent means the reader did not say, which is not zero and is not a number of agreements.
      */
     readonly negativeCorroborations?: number;
-    readonly conflictKinds?: readonly ConflictKind[];
+    /**
+     * The conflicting logs, one entry per log, each listing what that log disagreed about.
+     *
+     * NOT a union across the scan. A flat list cannot answer "was any single log ours and wrong",
+     * which is the only question that decides between escalating to a human and releasing the
+     * obligation to be paid again -- and a stranger's log could contribute a kind that cancelled
+     * ours. Absent means the reader never looked; `[]` means it looked and saw none.
+     */
+    readonly conflictingLogs?: readonly (readonly ConflictKind[])[];
     /**
      * The highest block this scan covered.
      *
@@ -161,7 +169,7 @@ export declare function matchPaymentLog(log: PaymentLogFields & {
  */
 export type ConflictVerdict = "OURS_AND_WRONG" | "NOT_OURS" | "UNKNOWN";
 export declare function conflictVerdict(sighting: {
-    readonly conflictKinds?: readonly ConflictKind[];
+    readonly conflictingLogs?: readonly (readonly ConflictKind[])[];
 }): ConflictVerdict;
 /**
  * What a chain read ESTABLISHED about a payment, as three mutually exclusive answers.
@@ -217,7 +225,7 @@ export type PaymentVerdict =
     readonly kind: "CONFLICT_OURS";
     readonly detail: string;
     readonly conflicts: readonly string[];
-    readonly conflictKinds: readonly ConflictKind[];
+    readonly conflictingLogs: readonly (readonly ConflictKind[])[];
     readonly txHash?: string;
 }
 /**

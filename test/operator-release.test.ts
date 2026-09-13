@@ -17,13 +17,32 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { operatorReleaseDecision } from "../src/exclusion.ts";
+import { operatorReleaseDecision, type LeakExclusion } from "../src/exclusion.ts";
 
-const conclusiveNegative = { found: false, truncated: false, conflictKinds: [], negativeCorroborations: 2 };
+const conclusiveNegative = { found: false, truncated: false, conflictingLogs: [], negativeCorroborations: 2 };
+
+/**
+ * The leak is proven dead: another transaction is mined at the nonce the dry run would have used.
+ *
+ * Supplied to every case below that is about the SIGHTING, so the sighting is what decides them.
+ * The cases about the leak itself pass `notProven` instead.
+ */
+const proven: LeakExclusion = {
+  kind: "NONCE_CONSUMED",
+  payer: "0x00000000000000000000000000000000000ce111",
+  preflightNonce: 42,
+  observedNonce: 43,
+  provenThroughBlock: 11_000_010,
+};
+const notProven: LeakExclusion = {
+  kind: "NOT_PROVEN",
+  code: "PAYER_NOT_DEDICATED",
+  detail: "the payer account is shared, so a moved nonce proves nothing about this transaction",
+};
 
 describe("an operator may release a wedged preflight, but not over a payment", () => {
   test("a conclusive negative on a waiting obligation releases", () => {
-    const d = operatorReleaseDecision({ state: "PAYMENT_PREFLIGHT", sighting: conclusiveNegative });
+    const d = operatorReleaseDecision({ state: "PAYMENT_PREFLIGHT", exclusion: proven, sighting: conclusiveNegative });
     assert.equal(d.kind, "RELEASE");
   });
 
@@ -32,8 +51,9 @@ describe("an operator may release a wedged preflight, but not over a payment", (
     // it twice, and being certain does not change that.
     const d = operatorReleaseDecision({
       state: "PAYMENT_PREFLIGHT",
+      exclusion: proven,
       sighting: { found: true, truncated: false,
-    conflictKinds: [],
+    conflictingLogs: [],
     negativeCorroborations: 2, txHash: "0xabc" },
     });
     assert.equal(d.kind, "REFUSE_PAID");
@@ -44,13 +64,14 @@ describe("an operator may release a wedged preflight, but not over a payment", (
     // Found is found. A short scan makes a negative worthless, never a positive.
     const d = operatorReleaseDecision({
       state: "PAYMENT_PREFLIGHT",
+      exclusion: proven,
       sighting: { found: true, truncated: true, txHash: "0xabc" },
     });
     assert.equal(d.kind, "REFUSE_PAID");
   });
 
   test("a truncated scan refuses: it cannot say the invoice is unpaid", () => {
-    const d = operatorReleaseDecision({ state: "PAYMENT_PREFLIGHT", sighting: { found: false, truncated: true } });
+    const d = operatorReleaseDecision({ state: "PAYMENT_PREFLIGHT", exclusion: proven, sighting: { found: false, truncated: true } });
     assert.equal(d.kind, "REFUSE_INCONCLUSIVE");
   });
 
@@ -58,7 +79,7 @@ describe("an operator may release a wedged preflight, but not over a payment", (
     // Undefined is a reader that did not say, and a reader that did not say is not one that said
     // no. This is the whole defect class in one line, so it is pinned in the one place a human
     // can override the machine.
-    const d = operatorReleaseDecision({ state: "PAYMENT_PREFLIGHT", sighting: { found: false } });
+    const d = operatorReleaseDecision({ state: "PAYMENT_PREFLIGHT", exclusion: proven, sighting: { found: false } });
     assert.equal(d.kind, "REFUSE_INCONCLUSIVE");
   });
 
@@ -69,7 +90,8 @@ describe("an operator may release a wedged preflight, but not over a payment", (
     // which resolve.ts wrote "no payment for this reference on chain" into the audit trail.
     const d = operatorReleaseDecision({
       state: "PAYMENT_PREFLIGHT",
-      sighting: { found: false, truncated: false, conflictKinds: ["amount"] },
+      exclusion: proven,
+      sighting: { found: false, truncated: false, conflictingLogs: [["amount"]] },
     });
     assert.equal(d.kind, "REFUSE_CONFLICT");
   });
@@ -80,18 +102,20 @@ describe("an operator may release a wedged preflight, but not over a payment", (
     // invoice for ever. This is the same split the worker draws, from the same function.
     const d = operatorReleaseDecision({
       state: "PAYMENT_PREFLIGHT",
-      sighting: { found: false, truncated: false, conflictKinds: ["to", "amount"], negativeCorroborations: 2 },
+      exclusion: proven,
+      sighting: { found: false, truncated: false, conflictingLogs: [["to", "amount"]], negativeCorroborations: 2 },
     });
     assert.equal(d.kind, "RELEASE");
   });
 
   test("a sighting that never says what conflicting logs it saw has not concluded", () => {
-    // `conflictKinds` absent used to take the same branch as `conflictKinds: []` — "no conflict"
+    // `conflictingLogs` absent used to take the same branch as `conflictingLogs: []` — "no conflict"
     // — and released. Both readings are now distinct: a reader that concluded states the list,
     // even when it is empty, and one that did not leaves it off. Same shape as `truncated` and
     // `confirmations`, which cost this project three separate duplicate-payment findings.
     const d = operatorReleaseDecision({
       state: "PAYMENT_PREFLIGHT",
+      exclusion: proven,
       sighting: { found: false, truncated: false },
     });
     assert.equal(d.kind, "REFUSE_INCONCLUSIVE");
@@ -105,7 +129,8 @@ describe("an operator may release a wedged preflight, but not over a payment", (
     // authorised a payment.
     const d = operatorReleaseDecision({
       state: "PAYMENT_PREFLIGHT",
-      sighting: { found: false, truncated: false, conflictKinds: [], negativeCorroborations: 0 },
+      exclusion: proven,
+      sighting: { found: false, truncated: false, conflictingLogs: [], negativeCorroborations: 0 },
     });
     assert.equal(d.kind, "REFUSE_UNCORROBORATED");
 
@@ -113,7 +138,8 @@ describe("an operator may release a wedged preflight, but not over a payment", (
     assert.equal(
       operatorReleaseDecision({
         state: "PAYMENT_PREFLIGHT",
-        sighting: { found: false, truncated: false, conflictKinds: [] },
+        exclusion: proven,
+        sighting: { found: false, truncated: false, conflictingLogs: [] },
       }).kind,
       "REFUSE_UNCORROBORATED",
     );
@@ -121,8 +147,67 @@ describe("an operator may release a wedged preflight, but not over a payment", (
 
   test("an obligation that is not waiting on a dry run is refused by state", () => {
     for (const state of ["SETTLED", "PAYMENT_EXECUTING", "EVIDENCE_CONFLICT", "IMPORTED"]) {
-      const d = operatorReleaseDecision({ state, sighting: conclusiveNegative });
+      const d = operatorReleaseDecision({ state, exclusion: proven, sighting: conclusiveNegative });
       assert.equal(d.kind, "REFUSE_STATE", `${state} must not be releasable this way`);
     }
+  });
+});
+
+describe("a scan cannot see the mempool, and the door has to say so", () => {
+  /**
+   * The finding this suite existed to prevent, found in this suite's own subject.
+   *
+   * The worker will not release on a clean chain negative alone: `eth_getLogs` reads blocks, a
+   * leaked dry run sitting unmined is in no block, and a transaction can sit pending with no
+   * bound at all. So it demands a spent nonce as well. This door applied only the first half --
+   * and on a deployment whose payer is KeeperHub's shared relayer the nonce proof can never be
+   * made, so the automatic path never releases and this door is the ONLY exit. The stricter test
+   * was therefore never applied to anything.
+   *
+   * The sequence it costs: a dry run executes and the reply is lost, the leak sits in the
+   * mempool, an operator runs the documented line, the scan truthfully reports no payment, the
+   * obligation is released and paid again, and then the leak mines. Two physical payments on one
+   * human approval.
+   */
+  test("a clean negative does NOT release while the leak is unexcluded", () => {
+    const d = operatorReleaseDecision({
+      state: "PAYMENT_PREFLIGHT",
+      exclusion: notProven,
+      sighting: conclusiveNegative,
+    });
+    assert.equal(d.kind, "REFUSE_LEAK_NOT_EXCLUDED");
+    assert.equal(d.kind === "REFUSE_LEAK_NOT_EXCLUDED" ? d.code : null, "PAYER_NOT_DEDICATED");
+  });
+
+  test("a named human may take that risk explicitly, and only explicitly", () => {
+    // The alternative to this is wedging the obligation for ever, because nobody can prove a
+    // transaction will never be mined. So the risk is transferable -- to a person, by name, in
+    // writing -- and never assumed. `false` and absent both refuse.
+    const base = { state: "PAYMENT_PREFLIGHT", exclusion: notProven, sighting: conclusiveNegative } as const;
+    assert.equal(operatorReleaseDecision({ ...base, acknowledgedMempoolRisk: true }).kind, "RELEASE");
+    assert.equal(operatorReleaseDecision({ ...base, acknowledgedMempoolRisk: false }).kind, "REFUSE_LEAK_NOT_EXCLUDED");
+    assert.equal(operatorReleaseDecision(base).kind, "REFUSE_LEAK_NOT_EXCLUDED");
+  });
+
+  test("the acknowledgement buys nothing else: a payment on chain still refuses", () => {
+    // It is permission to accept an UNPROVABLE risk, not permission to ignore evidence. Every
+    // other refusal outranks it.
+    const paid = { found: true, truncated: false, conflictingLogs: [], negativeCorroborations: 2, txHash: "0xabc" };
+    for (const sighting of [paid, { found: false, truncated: true }, { found: false, truncated: false, conflictingLogs: [["fee" as const]], negativeCorroborations: 2 }]) {
+      const d = operatorReleaseDecision({
+        state: "PAYMENT_PREFLIGHT",
+        exclusion: notProven,
+        sighting,
+        acknowledgedMempoolRisk: true,
+      });
+      assert.notEqual(d.kind, "RELEASE", `acknowledging the mempool risk released on ${JSON.stringify(sighting)}`);
+    }
+  });
+
+  test("and when the nonce IS spent, no acknowledgement is asked for", () => {
+    // The machine proves it whenever it can. Asking a human to accept a risk that has already
+    // been excluded teaches them to click through the ones that have not.
+    const d = operatorReleaseDecision({ state: "PAYMENT_PREFLIGHT", exclusion: proven, sighting: conclusiveNegative });
+    assert.equal(d.kind, "RELEASE");
   });
 });

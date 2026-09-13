@@ -21,7 +21,7 @@
  * chain directly and never trusts a status field.
  */
 
-import { type CallStep, decodeAllowedCall } from "./calldata-gate.ts";
+import { type AllowedCall, type CallStep, decodeAllowedCall } from "./calldata-gate.ts";
 import { readReceipt, rpcCall } from "./chain.ts";
 import { classifySimulateReply } from "./provider.ts";
 import type { ExecuteResult, ExecutionProvider, Receipt, SimulateOutcome } from "./provider.ts";
@@ -98,20 +98,27 @@ export class KeeperHubProvider implements ExecutionProvider {
    * the arguments mean exactly the approved bytes. Any doubt refuses, non-retryably: a
    * malformed plan is not going to become well-formed on a retry.
    */
-  #toArgs(step: CallStep): { functionName: string; functionArgs: string } {
-    const call = decodeAllowedCall(step);
-    return { functionName: call.functionName, functionArgs: JSON.stringify(call.args) };
+  #toArgs(step: CallStep): AllowedCall {
+    return decodeAllowedCall(step);
   }
 
   #body(step: CallStep): Record<string, unknown> {
-    const { functionName, functionArgs } = this.#toArgs(step);
+    // Every field comes off the VALIDATED call, not off the step.
+    //
+    // `contractAddress: step.to` and `value: step.value ?? "0"` used to sit here, which made the
+    // gate's own contract -- "providers must send `call.to`, not `step.to`" -- true only by
+    // accident: `decodeAllowedCall` throws before those lines are reached, so the allowlisted
+    // target was enforced by the ORDER of two statements rather than by what is sent. Reorder
+    // them, or add a third transport that builds its body first, and the guard is gone with no
+    // test failing. Reading the validated call is the same bytes and cannot come apart.
+    const call = this.#toArgs(step);
     return {
       chainId: this.#cfg.chainId,
-      contractAddress: step.to,
-      functionName,
+      contractAddress: call.to,
+      functionName: call.functionName,
       // Not a typo and not an array: KeeperHub requires the arguments as a JSON *string*.
-      functionArgs,
-      value: step.value ?? "0",
+      functionArgs: JSON.stringify(call.args),
+      value: call.value,
     };
   }
 

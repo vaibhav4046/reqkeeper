@@ -235,12 +235,15 @@ export class KeeperHubMcpProvider implements ExecutionProvider {
   #args(step: CallStep): Record<string, unknown> {
     const call = decodeAllowedCall(step);
     return {
-      contract_address: step.to,
+      // The validated target, not `step.to` -- see the note in src/keeperhub.ts#KeeperHubProvider.
+      // Sending the step's own field made the allowlist depend on `decodeAllowedCall` throwing
+      // first, which is an ordering accident rather than a guarantee.
+      contract_address: call.to,
       chain_id: String(this.#cfg.chainId),
       function_name: call.functionName,
       // A JSON string, not an array. Same requirement as the REST route.
       function_args: JSON.stringify(call.args),
-      value: "0",
+      value: call.value,
     };
   }
 

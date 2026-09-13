@@ -18,6 +18,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 
 import { keccak256 } from "../src/keccak.ts";
+import { fetchInvoice } from "../src/request.ts";
 import { recoverAddress } from "../src/secp256k1.ts";
 
 const GATEWAY = process.env.REQUEST_GATEWAY_URL ?? "https://sepolia.gateway.request.network";
@@ -55,6 +56,17 @@ const invoices = JSON.parse(readFileSync("docs/live-invoices.json", "utf8")) as 
 console.log(`\nRequest channel actions — signature and role, over ${invoices.invoices.length} invoice(s)\n`);
 
 const rows: Row[] = [];
+/**
+ * The anchor, bound or not.
+ *
+ * An anchor is the floor of every payment scan for an invoice, and the only thing that lets a
+ * negative be conclusive at all -- so a gateway that can choose it can make an invoice that was
+ * paid 450,000 blocks ago come back unpaid, and it is paid again. `fetchInvoice` refuses an anchor
+ * unless the transaction it names emitted, from Request's storage contract, a log carrying the CID
+ * of the bytes the gateway served beside it. This is that check over every invoice this deployment
+ * knows, against the public gateway and a public RPC, with no credential.
+ */
+const anchors: Array<{ requestId: string; bound: boolean; block: number | null; note?: string }> = [];
 for (const invoice of invoices.invoices) {
   const url = `${GATEWAY}/getTransactionsByChannelId?channelId=${encodeURIComponent(invoice.requestId)}`;
   let body: { result?: { transactions?: Array<{ transaction?: { data?: string } }> } };
@@ -102,6 +114,25 @@ for (const invoice of invoices.invoices) {
   });
 }
 
+for (const invoice of invoices.invoices) {
+  try {
+    const read = await fetchInvoice(invoice.requestId, { gatewayUrl: GATEWAY });
+    anchors.push({
+      requestId: invoice.requestId,
+      bound: read.anchor !== undefined,
+      block: read.anchor?.blockNumber ?? null,
+      ...(read.anchor ? {} : { note: "no anchor could be bound; scans for it stay inconclusive" }),
+    });
+  } catch (e) {
+    anchors.push({ requestId: invoice.requestId, bound: false, block: null, note: (e as Error).message.slice(0, 160) });
+  }
+}
+const anchorsBound = anchors.filter((a) => a.bound).length;
+for (const a of anchors.filter((x) => !x.bound)) {
+  console.log(`  ANCHOR  ${a.requestId.slice(0, 12)}…: ${a.note ?? "unbound"}`);
+}
+console.log(`  ${anchorsBound} of ${anchors.length} anchor(s) bound to the transaction that stored the invoice`);
+
 const ok = rows.filter((r) => r.ok).length;
 for (const row of rows.filter((r) => !r.ok)) {
   console.log(`  FAIL  ${row.requestId.slice(0, 12)}… action ${row.index} (${row.name}): ${row.note ?? `signer ${row.signer ?? "unrecoverable"} is neither party`}`);
@@ -128,13 +159,15 @@ writeFileSync(
       totalsFrom: {
         actions: { count: true },
         recovered: { count: true, where: { field: "ok", equals: true } },
+        anchorsBound: { count: true, from: "anchors", where: { field: "bound", equals: true } },
       },
-      totals: { actions: rows.length, recovered: ok },
+      totals: { actions: rows.length, recovered: ok, anchors: anchors.length, anchorsBound },
       rows,
+      anchors,
     },
     null,
     2,
   )}\n`,
 );
 console.log("  written to docs/evidence/signatures.json\n");
-process.exit(ok === rows.length && rows.length > 0 ? 0 : 1);
+process.exit(ok === rows.length && anchorsBound === anchors.length && rows.length > 0 ? 0 : 1);

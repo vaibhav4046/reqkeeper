@@ -309,10 +309,18 @@ const artifact = {
   generatedAt: new Date().toISOString(),
   mode: LIVE ? ("LIVE" as const) : ("FIXTURE" as const),
   chainId: 11155111,
-  note:
-    "N independent processes, one SQLite file, one Request obligation, released from a barrier. " +
-    "The fixture counts every non-simulate POST regardless of idempotency key, and reports the " +
-    "deduplicated ones separately, so the result cannot be KeeperHub's cache taking the credit.",
+  // Written per mode, like every other mode-dependent field here. It was not, and a LIVE artifact
+  // carried the fixture's sentence -- describing counters that are the -1 sentinel three lines
+  // above it, in a run where no fixture existed to count anything. A reviewer found it.
+  note: LIVE
+    ? "N independent processes, one SQLite file, one Request obligation, released from a barrier, " +
+      "against the real KeeperHub API and real Sepolia. No fixture ran, so the provider-side " +
+      "counters are the -1 sentinel rather than 0: nothing counted them. The chain is the counter " +
+      "here -- one fee-proxy event carrying this reference is one payment."
+    : "N independent processes, one SQLite file, one Request obligation, released from a barrier. " +
+      "The fixture counts every non-simulate POST regardless of idempotency key, and reports the " +
+      "deduplicated ones separately, so the result cannot be KeeperHub's cache taking the credit. " +
+      "No chain saw this run and the transaction hashes in it are synthetic.",
   workers: WORKERS,
   invoice: { requestId, reference, payee, anchorBlock: liveAnchorBlock },
   // Derivations for the totals whose names do not point at a row field. The nested shape is the

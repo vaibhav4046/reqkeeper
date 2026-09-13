@@ -49,7 +49,9 @@ export type RequestErrorCode =
   /** An action's signature recovers to nobody, or to a party the invoice does not name. */
   | "ACTION_SIGNATURE_INVALID"
   /** An action was signed by a real party of this invoice, in a role Request does not allow it. */
-  | "ACTION_ROLE_VIOLATION";
+  | "ACTION_ROLE_VIOLATION"
+  /** The anchor names a transaction that did not store this invoice's bytes. */
+  | "ANCHOR_UNBOUND";
 
 export class RequestError extends Error {
   // See MoneyError: Node's strip-only TypeScript mode rejects constructor parameter
@@ -99,9 +101,34 @@ export interface InvoiceFactsFromRequest {
   readonly anchor?: { readonly blockNumber: number; readonly transactionHash: string };
 }
 
+/**
+ * Read one receipt, for the anchor binding below.
+ *
+ * A function rather than a chain module import, for two reasons. `src/chain.ts` imports nothing
+ * from here and this keeps it that way; and a test that has to reach a public endpoint to read an
+ * invoice is a test that fails for reasons it is not about.
+ */
+export type ReceiptReader = (
+  hash: string,
+  rpcUrl?: string,
+) => Promise<{
+  blockNumber?: number;
+  logs?: ReadonlyArray<{ address?: string; data?: string }>;
+}>;
+
+/** The real one. Lazily imported so this module has no load-time dependency on the chain reader. */
+const defaultReceiptReader: ReceiptReader = async (hash, rpcUrl) => {
+  const { DEFAULT_RPC, readReceipt } = await import("./chain.ts");
+  return readReceipt(rpcUrl ?? DEFAULT_RPC, hash);
+};
+
 export interface FetchInvoiceOptions {
   readonly gatewayUrl?: string;
   readonly timeoutMs?: number;
+  /** Where to read the anchor's own transaction from. Defaults to `SEPOLIA_RPC`. */
+  readonly rpcUrl?: string;
+  /** Injectable for tests; see `ReceiptReader`. */
+  readonly readReceipt?: ReceiptReader;
 }
 
 /**
@@ -434,7 +461,7 @@ export async function fetchInvoice(
     salt,
     paymentReference: derivePaymentReference(id, salt, payee),
     ...(amountChangedBy ? { amountChangedBy } : {}),
-    ...storageAnchor(body, create.index),
+    ...(await boundAnchorFor(id, body, create.index, opts)),
   };
 }
 
@@ -483,6 +510,105 @@ export function toInvoiceFacts(
  * Sepolia block and transaction hash of the create. Absent or null while unconfirmed, which is
  * reported by omission rather than by inventing a zero block.
  */
+/**
+ * The anchor for this create, bound or absent. Pulls the CID `meta` served beside it.
+ *
+ * `meta.transactionsStorageLocation[i]` is aligned with `result.transactions[i]` -- Request's own
+ * `data-read.ts` builds the three arrays with parallel maps over one list -- so the create's CID
+ * is the entry at the create's index and nowhere else. Same alignment rule the anchor itself uses.
+ */
+async function boundAnchorFor(
+  id: string,
+  body: unknown,
+  index: number,
+  opts: FetchInvoiceOptions,
+): Promise<{ anchor?: { blockNumber: number; transactionHash: string } }> {
+  const claimed = storageAnchor(body, index).anchor;
+  if (!claimed) return {};
+  const cid = asString(asArray(dig(body, "meta", "transactionsStorageLocation"))[index]);
+  const bound = await bindAnchor(id, claimed, cid, opts.readReceipt ?? defaultReceiptReader, opts.rpcUrl);
+  return bound ? { anchor: bound } : {};
+}
+
+/**
+ * Request's storage contract on Sepolia. The anchor's own transaction must emit from it.
+ *
+ * Sourced from the gateway's own responses (`meta.storageMeta[].ethereum.smartContractAddress`,
+ * identical across all 46 invoices this deployment knows) and cross-checked against Request's
+ * published `subgraph-sepolia.yaml`.
+ */
+const REQUEST_STORAGE = "0xd6c085a4d14e9e171f4af58f7f48bd81173f167e";
+
+/**
+ * Prove the anchor belongs to THIS invoice, or do not have one.
+ *
+ * The anchor is the floor of every payment scan for this invoice, and it decides whether a
+ * negative is conclusive at all: without one, `findPaymentByReference` reports `truncated` and the
+ * already-paid gate refuses. So an anchor a caller can choose is an anchor that can turn "this
+ * invoice was paid 460,000 blocks ago" into "not paid" — and then the invoice is paid a second
+ * time. A reviewer demonstrated exactly that by moving the anchor forward.
+ *
+ * It arrives in `meta`, which the channel id does NOT hash, so the id binding says nothing about
+ * it. The first repair checked the receipt of the transaction the anchor names and compared block
+ * numbers — which proves a transaction with that hash is in that block, and any real recent
+ * transaction on Sepolia satisfies that.
+ *
+ * This binds it to the invoice. The anchoring transaction is the one that wrote this channel's
+ * bytes to Request's storage contract, and that contract's event carries the IPFS CID of the
+ * bytes it stored. The CID is a content hash: it cannot name this invoice's create unless it IS
+ * this invoice's create. So the anchor is believed when, and only when, the transaction it names
+ * emitted from Request's storage contract a log carrying the CID the gateway served alongside it.
+ *
+ * Three outcomes, and the difference between them is the point:
+ *   - bound        -> the anchor is returned and scans may conclude from it
+ *   - unreadable   -> no anchor; scans stay inconclusive, which costs liveness and never money
+ *   - disproved    -> REFUSED. A receipt in another block, or one that stored other bytes, is a
+ *                     fabricated anchor, and the invoice around it is not to be acted on.
+ */
+async function bindAnchor(
+  id: string,
+  anchor: { blockNumber: number; transactionHash: string },
+  cid: string | undefined,
+  readReceipt: ReceiptReader,
+  rpcUrl?: string,
+): Promise<{ blockNumber: number; transactionHash: string } | undefined> {
+  let receipt: Awaited<ReturnType<ReceiptReader>>;
+  try {
+    receipt = await readReceipt(anchor.transactionHash, rpcUrl);
+  } catch {
+    return undefined; // unread, not disproved
+  }
+  if (receipt.blockNumber === undefined) return undefined;
+  if (receipt.blockNumber !== anchor.blockNumber) {
+    throw new RequestError(
+      "ANCHOR_UNBOUND",
+      `invoice ${id} claims it was anchored at block ${anchor.blockNumber}, but the transaction it ` +
+        `names is in block ${receipt.blockNumber}. The anchor bounds every search for a payment on ` +
+        "this invoice, so a wrong one hides payments that exist.",
+    );
+  }
+  if (!cid) return undefined; // nothing to bind it to; unproven rather than disproved
+
+  const wanted = Buffer.from(cid, "utf8").toString("hex").toLowerCase();
+  const stored = (receipt.logs ?? []).some(
+    (log) =>
+      typeof log.address === "string" &&
+      log.address.toLowerCase() === REQUEST_STORAGE &&
+      typeof log.data === "string" &&
+      log.data.toLowerCase().includes(wanted),
+  );
+  if (!stored) {
+    throw new RequestError(
+      "ANCHOR_UNBOUND",
+      `invoice ${id} names ${anchor.transactionHash} as the transaction that anchored it, but that ` +
+        `transaction stored no bytes identified by ${cid} in Request's storage contract. A block ` +
+        "number anybody can choose is not a floor: it decides whether a scan that found no payment " +
+        "means the invoice is unpaid.",
+    );
+  }
+  return anchor;
+}
+
 function storageAnchor(body: unknown, index: number): { anchor?: { blockNumber: number; transactionHash: string } } {
   const metas = asArray(dig(body, "meta", "storageMeta"));
   // This array is aligned with `result.transactions`, so the create's anchor is the entry at the
@@ -522,6 +648,7 @@ function normalizeForHash(value: unknown): unknown {
  * `increaseExpectedAmount` are the payer's, `reduceExpectedAmount` is the payee's.
  */
 const SIGNER_ROLES: Readonly<Record<string, ReadonlyArray<"payee" | "payer">>> = {
+  create: ["payee", "payer"],
   cancel: ["payee", "payer"],
   accept: ["payer"],
   increaseExpectedAmount: ["payer"],

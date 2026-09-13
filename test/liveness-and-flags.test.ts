@@ -140,7 +140,13 @@ describe("every flag the documentation prints is a flag the script can parse", (
     // that will never fire, which is exactly what --release-preflight was.
     const source = readFileSync("scripts/resolve.ts", "utf8");
     const pattern = flagPatternOf("scripts/resolve.ts");
-    const read = [...source.matchAll(/args\.get\("([a-z][a-z0-9-]*)"\)/g)].map((m) => m[1]);
+    // Both readers. `args.has` is how the boolean flags are read -- including
+    // --accept-mempool-risk, which is the one a human types to take a risk the machine cannot
+    // exclude -- and checking only `args.get` would leave exactly those unchecked.
+    const read = [
+      ...[...source.matchAll(/args\.get\("([a-z][a-z0-9-]*)"\)/g)].map((m) => m[1]),
+      ...[...source.matchAll(/args\.has\("([a-z][a-z0-9-]*)"\)/g)].map((m) => m[1]),
+    ];
 
     assert.ok(read.length > 0, "resolve.ts reads no flags, so this check is watching nothing");
     const unreachable = read.filter((f) => !pattern.test(`--${f}`));

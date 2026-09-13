@@ -18,6 +18,7 @@
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { describe, test } from "node:test";
 
 import { encodeCall } from "../src/abi.ts";
@@ -193,4 +194,55 @@ describe("the calldata gate refuses each field it is supposed to compare", () =>
     assert.notEqual(check([payStep({ amount: (BigInt(AMOUNT) + 1n).toString() })]), null);
     assert.notEqual(check([payStep({ fee: (BigInt(FEE) - 1n).toString() })]), null);
   });
+});
+
+describe("the providers send the call the gate validated, not the step they were handed", () => {
+  /**
+   * A structural check, deliberately, because no behavioural one exists.
+   *
+   * `decodeAllowedCall` returns `to` and `value` straight through after validating them, so a
+   * body built from `step.to` produces byte-identical bytes to one built from `call.to` — today.
+   * What differs is WHY it is safe: with `step.to` the allowlist is enforced only because
+   * `decodeAllowedCall` happens to throw earlier in the same function. Reorder two statements, or
+   * add a transport that assembles its body before decoding, and the target allowlist is gone
+   * with every test still passing. `src/calldata-gate.ts` states the rule — "providers must send
+   * this, not `step.to`" — and both providers used to break it.
+   *
+   * So this reads the providers' own source. It is the only thing that can fail when the hazard
+   * comes back, and the hazard is a silent one.
+   */
+  const bodyOf = (file: string, marker: string): string => {
+    const source = readFileSync(file, "utf8");
+    const start = source.indexOf(marker);
+    assert.notEqual(start, -1, `${file} no longer has ${marker}, so this check is watching nothing`);
+    const end = source.indexOf("\n  }", start);
+    assert.notEqual(end, -1, `could not find the end of ${marker} in ${file}`);
+    // Comments stripped first: the body carries a note explaining what it must NOT send, and a
+    // check that reads prose reports the hazard it was told about rather than the code.
+    const NEWLINE = String.fromCharCode(10);
+    return source
+      .slice(start, end)
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .split(NEWLINE)
+      .map((line) => line.replace(/\/\/.*$/, ""))
+      .join(NEWLINE);
+  };
+
+  for (const [file, marker] of [
+    ["src/keeperhub.ts", "#body(step: CallStep)"],
+    ["src/keeperhub-mcp.ts", "#args(step: CallStep)"],
+  ] as const) {
+    test(`${file} builds its request from the validated call`, () => {
+      const body = bodyOf(file, marker);
+      assert.ok(
+        !/step\.to\b/.test(body),
+        `${file} sends step.to; the allowlisted target is the one decodeAllowedCall returned`,
+      );
+      assert.ok(
+        !/step\.value\b/.test(body),
+        `${file} sends step.value; the validated value is the one decodeAllowedCall returned`,
+      );
+      assert.match(body, /call\.to\b/, `${file} must send the validated target`);
+    });
+  }
 });

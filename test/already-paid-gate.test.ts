@@ -138,7 +138,7 @@ describe("a chain read that could not conclude is not evidence the invoice is un
     const { body, provider, store } = await propose(async () => ({
       found: true,
       truncated: false,
-    conflictKinds: [],
+    conflictingLogs: [],
     negativeCorroborations: 2,
       txHash: `0x${"cd".repeat(32)}`,
       amount: AMOUNT,
@@ -158,7 +158,7 @@ describe("a chain read that could not conclude is not evidence the invoice is un
     const { body, provider, store } = await propose(async () => ({
       found: false,
       truncated: false,
-    conflictKinds: [],
+    conflictingLogs: [],
     negativeCorroborations: 2,
       scannedBlocks: 450_000,
     }));

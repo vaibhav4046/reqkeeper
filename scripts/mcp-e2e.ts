@@ -38,7 +38,6 @@ import { createInterface } from "node:readline";
 import { KeeperHubFixture } from "./fixture-keeperhub.ts";
 import { obligationId } from "../src/identity.ts";
 import { NAMESPACE } from "../src/plan.ts";
-import { fetchInvoice } from "../src/request.ts";
 import { Store } from "../src/store.ts";
 
 const SERVER = new URL("mcp-server.ts", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
@@ -135,8 +134,24 @@ await fx.start();
 // anchor is dropped, every scan comes back truncated, and the run refuses at SOURCE_UNVERIFIABLE
 // over a fixture gap rather than anything the code did.
 try {
-  const live = await fetchInvoice(inv.requestId);
-  if (live.anchor) fx.announceAnchor(live.anchor.transactionHash, live.anchor.blockNumber);
+  // Read from the gateway directly rather than through `fetchInvoice`: the fixture has to be told
+  // the CID as well as the anchor, because the anchor is bound to the bytes it stored, and
+  // `fetchInvoice` returns the bound anchor rather than the storage location it was bound by.
+  const res = await fetch(
+    `https://sepolia.gateway.request.network/getTransactionsByChannelId?channelId=${inv.requestId}`,
+    { signal: AbortSignal.timeout(30_000) },
+  );
+  const body = (await res.json()) as {
+    meta?: {
+      storageMeta?: Array<{ ethereum?: { blockNumber?: number; transactionHash?: string } }>;
+      transactionsStorageLocation?: string[];
+    };
+  };
+  const eth = body.meta?.storageMeta?.[0]?.ethereum;
+  const cid = body.meta?.transactionsStorageLocation?.[0];
+  if (eth?.transactionHash && eth.blockNumber !== undefined && cid) {
+    fx.announceAnchor(eth.transactionHash, eth.blockNumber, cid);
+  }
 } catch {
   // The gateway is unreachable. The server's own fetch will fail the same way and say so; this
   // is not the place to report it.

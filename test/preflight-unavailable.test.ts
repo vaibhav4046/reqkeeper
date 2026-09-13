@@ -171,7 +171,7 @@ const unpaid: PaymentSighting = {
   corroborated: true,
   scannedBlocks: 450_000,
   truncated: false,
-    conflictKinds: [],
+    conflictingLogs: [],
     negativeCorroborations: 2,
   scannedTo: AGED_CEILING,
 };
@@ -182,7 +182,7 @@ const unpaidButTooSoon: PaymentSighting = {
   corroborated: true,
   scannedBlocks: 450_000,
   truncated: false,
-    conflictKinds: [],
+    conflictingLogs: [],
     negativeCorroborations: 2,
   scannedTo: PREFLIGHT_HEAD,
 };

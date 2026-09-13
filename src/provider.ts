@@ -2,17 +2,25 @@
  * The KeeperHub execution boundary, behind one interface so the harness can inject the
  * faults that matter without touching a real chain.
  *
- * Three platform behaviours are modelled explicitly because each one is a documented,
- * money-critical hazard rather than a hypothetical:
+ * Three platform behaviours are modelled explicitly. Two are documented; the third is modelled
+ * and was NOT observed here, and saying which is which is the whole value of the list:
  *
- *   REPLAY_EXPIRED  docs/api/direct-execution: "Replay lasts 24 hours ... Past that the
- *                   stored response is gone and the same key executes again, silently."
- *   CACHED_FAILURE  issue #1840: a reused key replays a cached FAILURE, so a retry can
- *                   never succeed. Rotating the key would "fix" it by paying twice.
- *   SIMULATE_IGNORED  issues #1959 / #1929: `?simulate=true` is ignored on the transfer and
- *                   protocol-action routes and the transaction really executes. So a dry run
- *                   is not a safety boundary, and a tx hash coming back from one is evidence
- *                   of a real send.
+ *   REPLAY_EXPIRED  DOCUMENTED. docs/api/direct-execution: "Replay lasts 24 hours ... Past that
+ *                   the stored response is gone and the same key executes again, silently."
+ *   CACHED_FAILURE  DOCUMENTED. Issue #1840: a reused key replays a cached FAILURE, so a retry
+ *                   can never succeed. Rotating the key would "fix" it by paying twice.
+ *   SIMULATE_IGNORED  MODELLED, NOT OBSERVED. Issues #1959 / #1929 describe `?simulate=true`
+ *                   being ignored on the PROTOCOL-ACTION and node routes. This deployment's only
+ *                   write route is `/execute/contract-call`, which those issues do not cover, and
+ *                   a probe on 2026-09-09 did not reproduce it anywhere (docs/MASTER.md#holes).
+ *                   This header used to call it a live bug on the transfer route, which
+ *                   contradicted the project's own master document -- an overclaim against the
+ *                   platform, in the file a KeeperHub engineer would read first.
+ *
+ *                   The defence stays exactly as it was. A dry run is not treated as a safety
+ *                   boundary, and a transaction hash coming back from one is treated as evidence
+ *                   of a real send, because the cost of being wrong is a double payment and the
+ *                   cost of being careful is nothing.
  */
 
 export type Fault =

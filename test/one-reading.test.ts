@@ -1,7 +1,7 @@
 /**
  * One sighting, three consumers, one reading.
  *
- * `PaymentSighting` carries `found`, `truncated`, `corroborated`, `conflicts`, `conflictKinds`
+ * `PaymentSighting` carries `found`, `truncated`, `corroborated`, `conflicts`, `conflictingLogs`
  * and `negativeCorroborations`. Three places decide money from it: the already-paid gate that
  * decides whether an invoice may be proposed at all, the worker that decides whether an
  * obligation whose dry run never came back may be released and paid again, and the operator
@@ -56,7 +56,7 @@ const MATRIX: ReadonlyArray<{ name: string; conclusive: boolean; sighting: Payme
   {
     name: "covered, corroborated, nothing in it",
     conclusive: true,
-    sighting: { found: false, truncated: false, conflictKinds: [], negativeCorroborations: 2, scannedTo: CEILING },
+    sighting: { found: false, truncated: false, conflictingLogs: [], negativeCorroborations: 2, scannedTo: CEILING },
   },
   {
     name: "covered and corroborated, with a log that paid somebody else",
@@ -65,7 +65,7 @@ const MATRIX: ReadonlyArray<{ name: string; conclusive: boolean; sighting: Payme
       found: false,
       truncated: false,
       conflicts: ["0xdead: pays 0xdeadbeef, not our payee"],
-      conflictKinds: ["to"],
+      conflictingLogs: [["to"]],
       negativeCorroborations: 1,
       scannedTo: CEILING,
     },
@@ -77,7 +77,7 @@ const MATRIX: ReadonlyArray<{ name: string; conclusive: boolean; sighting: Payme
       found: false,
       truncated: false,
       conflicts: ["0xdead: pays a fee of 1, the plan fee is 0"],
-      conflictKinds: ["fee"],
+      conflictingLogs: [["fee"]],
       negativeCorroborations: 2,
       scannedTo: CEILING,
     },
@@ -85,7 +85,7 @@ const MATRIX: ReadonlyArray<{ name: string; conclusive: boolean; sighting: Payme
   {
     name: "covered, but nobody else answered the negative",
     conclusive: false,
-    sighting: { found: false, truncated: false, conflictKinds: [], scannedTo: CEILING },
+    sighting: { found: false, truncated: false, conflictingLogs: [], scannedTo: CEILING },
   },
   {
     name: "covered, corroborated, but it never said what conflicting logs it saw",
@@ -95,12 +95,12 @@ const MATRIX: ReadonlyArray<{ name: string; conclusive: boolean; sighting: Payme
   {
     name: "the window stopped short",
     conclusive: false,
-    sighting: { found: false, truncated: true, conflictKinds: [], negativeCorroborations: 2, scannedTo: CEILING },
+    sighting: { found: false, truncated: true, conflictingLogs: [], negativeCorroborations: 2, scannedTo: CEILING },
   },
   {
     name: "it never said whether the window stopped short",
     conclusive: false,
-    sighting: { found: false, conflictKinds: [], negativeCorroborations: 2, scannedTo: CEILING },
+    sighting: { found: false, conflictingLogs: [], negativeCorroborations: 2, scannedTo: CEILING },
   },
   {
     name: "a payment, corroborated",
@@ -250,7 +250,19 @@ describe("no consumer of a sighting is more willing than the verdict", () => {
       // 3. The operator escape. A human typing this is signing "no payment for this reference on
       //    chain" into the audit trail, so it may not be easier to satisfy than the automatic
       //    path it exists to substitute for.
-      const decision = operatorReleaseDecision({ state: "PAYMENT_PREFLIGHT", sighting });
+      // The leak is proven dead in every case here, so the SIGHTING is what decides -- which is
+      // what this file is about. The proof itself is the subject of test/operator-release.test.ts.
+      const decision = operatorReleaseDecision({
+        state: "PAYMENT_PREFLIGHT",
+        exclusion: {
+          kind: "NONCE_CONSUMED",
+          payer: PAYER,
+          preflightNonce: PREFLIGHT_NONCE,
+          observedNonce: PREFLIGHT_NONCE + 1,
+          provenThroughBlock: CEILING,
+        },
+        sighting,
+      });
       assert.equal(
         decision.kind === "RELEASE",
         conclusive,

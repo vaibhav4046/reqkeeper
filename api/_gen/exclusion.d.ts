@@ -172,6 +172,23 @@ export type OperatorRelease = {
 /** Only one endpoint returned this negative, and one endpoint's silence is not absence. */
  | {
     readonly kind: "REFUSE_UNCORROBORATED";
+}
+/**
+ * The scan says nothing was paid, and the scan cannot see the mempool.
+ *
+ * `eth_getLogs` reads blocks. A dry run that leaked and is sitting unmined is in no block, so a
+ * clean negative over every block that exists is still not "the leak is dead" -- and a
+ * transaction can sit pending with no bound at all. The worker refuses to release on the scan
+ * alone for exactly this reason and demands a spent nonce as well; this door was applying half
+ * of that test, while being the ONLY exit a deployment on a shared relayer can reach. So the
+ * half that was missing was missing everywhere, in practice.
+ *
+ * `code` is the reason the nonce proof could not be made, so an operator is told which of the
+ * two things to go and fix rather than being refused in the abstract.
+ */
+ | {
+    readonly kind: "REFUSE_LEAK_NOT_EXCLUDED";
+    readonly code: ExclusionGap;
 } | {
     readonly kind: "REFUSE_STATE";
     readonly state: string;
@@ -194,4 +211,24 @@ export declare function operatorReleaseDecision(input: {
      * there is one reading, and this function only decides what a HUMAN may do with each answer.
      */
     readonly sighting: PaymentSighting | null | undefined;
+    /**
+     * The leak-exclusion proof, or the reason it could not be made.
+     *
+     * The same proof the worker requires, from the same function. Both exits from
+     * PAYMENT_PREFLIGHT have to apply it or the stricter one is decoration: an operator who cannot
+     * get past the automatic path simply uses this one, and a deployment whose payer is a shared
+     * relayer can NEVER get past the automatic path.
+     */
+    readonly exclusion: LeakExclusion;
+    /**
+     * A human saying, in writing, that they accept the risk the machine cannot exclude.
+     *
+     * Not a bypass flag with a shrug behind it. When the nonce proof cannot be made there is no
+     * evidence left to gather -- nobody can prove a transaction will never be mined -- so the only
+     * honest options are "wedge this obligation for ever" and "let a named person take the risk on
+     * the record". The first is the failure this project has fixed four times in other disguises.
+     * The second is what this is, and `scripts/resolve.ts` writes both the name and the
+     * acknowledgement into the audit trail.
+     */
+    readonly acknowledgedMempoolRisk?: boolean;
 }): OperatorRelease;

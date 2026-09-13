@@ -44,15 +44,37 @@ const RPC = process.env.SEPOLIA_RPC ?? "https://ethereum-sepolia-rpc.publicnode.
 const JSON_ONLY = process.argv.includes("--json");
 
 type Status = "ok" | "FAIL" | "BLOCKED";
+/**
+ * How the evidence behind a claim was obtained.
+ *
+ * A claim proved against a fixture and a claim proved against Sepolia are not the same claim, and
+ * a ledger that prints PROVEN for both is not a truth ledger. The race and the crash matrix are
+ * FIXTURE runs; `docs/TRUTH.md` used to mark their rows PROVEN with the disclosure thirty lines
+ * below the table, and `docs/SUBMISSION.md` printed the race's synthetic transaction hash under a
+ * sentence promising public Sepolia RPCs had re-derived everything below it. Two reviewers picked
+ * that out, and both were right. So the mode is a COLUMN now, generated beside every row from the
+ * artifact's own `mode` field rather than written by hand in prose that can drift away from it.
+ */
+type Evidence = "LIVE" | "RECORDED" | "FIXTURE" | "DERIVED";
+
 interface Check {
   readonly id: string;
   readonly claim: string;
   status: Status;
   detail: string;
+  evidence: Evidence;
 }
 const checks: Check[] = [];
-const record = (id: string, claim: string, status: Status, detail: string): void => {
-  checks.push({ id, claim, status, detail });
+const record = (id: string, claim: string, status: Status, detail: string, evidence: Evidence = "DERIVED"): void => {
+  checks.push({ id, claim, status, detail, evidence });
+};
+
+/** What an artifact says about itself, mapped onto the four words this ledger uses. */
+const evidenceOf = (mode: string | undefined): Evidence => {
+  if (mode === undefined) return "DERIVED";
+  if (/FIXTURE/i.test(mode)) return "FIXTURE";
+  if (/LIVE/i.test(mode)) return mode.includes("READ") ? "LIVE" : "RECORDED";
+  return "DERIVED";
 };
 
 const readJson = <T>(path: string): T | null => {
@@ -1131,6 +1153,35 @@ if (payeeSet.size === 0) {
   );
 }
 
+// ---- how each claim was proved ---------------------------------------------
+//
+// Set from the ARTIFACT rather than typed at each call site, because a call site can forget and a
+// forgotten one reads as DERIVED -- the most flattering value. Every mode here is the file's own
+// `mode` field, so a fixture artifact cannot be described as anything else without editing the
+// fixture's own output.
+{
+  const modeOf = (path: string): string | undefined => (readJson<{ mode?: string }>(path) ?? {}).mode;
+  const sources: Array<[RegExp, string]> = [
+    [/^race\.live/, "docs/evidence/race-live.json"],
+    [/^race/, "docs/evidence/race.json"],
+    [/^crash/, "docs/evidence/crash.json"],
+    [/^live/, "docs/refusals-live.json"],
+    [/^keeperhub\.mcp/, "docs/evidence/mcp-settlements.json"],
+    [/^refusals/, "docs/refusals.json"],
+    [/^signatures/, "docs/evidence/signatures.json"],
+  ];
+  for (const check of checks) {
+    const source = sources.find(([re]) => re.test(check.id));
+    if (source) {
+      check.evidence = evidenceOf(modeOf(source[1]));
+      continue;
+    }
+    // Everything else asked a public endpoint during THIS run, or recomputed a number from files
+    // in the tree. Those are different kinds of proof and are named differently.
+    check.evidence = /^(chain|request)/.test(check.id) ? "LIVE" : "DERIVED";
+  }
+}
+
 // ---- report ----------------------------------------------------------------
 
 const failed = checks.filter((c) => c.status === "FAIL");
@@ -1165,12 +1216,17 @@ const truth = [
   "",
   `Generated ${artifact.generatedAt} · chain 11155111 (Sepolia) · credentials used: none`,
   "",
-  "| Claim | Status | Evidence | Reproduce |",
-  "|---|---|---|---|",
+  "| Claim | Status | Proved against | Evidence | Reproduce |",
+  "|---|---|---|---|---|",
   ...checks.map(
     (c) =>
-      `| ${c.claim} | ${c.status === "ok" ? "PROVEN" : c.status === "BLOCKED" ? "UNPROVEN" : "**FAILED**"} | ${c.detail.replace(/\|/g, "\\|")} | \`npm run verify:all\` |`,
+      `| ${c.claim} | ${c.status === "ok" ? "PROVEN" : c.status === "BLOCKED" ? "UNPROVEN" : "**FAILED**"} | ${c.evidence} | ${c.detail.replace(/\|/g, "\\|")} | \`npm run verify:all\` |`,
   ),
+  "",
+  "`LIVE` asked a public Sepolia endpoint during this run. `RECORDED` is a real payment made",
+  "earlier, on chain, re-read now. `FIXTURE` never touched a chain: it proves the logic, against a",
+  "counting fixture in place of KeeperHub. `DERIVED` recomputed a number from files in this tree.",
+  "A row's word comes from the artifact's own `mode` field, not from this sentence.",
   "",
   "## What this does not claim",
   "",
@@ -1179,6 +1235,10 @@ const truth = [
   "  fee-proxy event for the same transaction and amount, and a minimum confirmation depth",
   "  (`REQKEEPER_MIN_CONFIRMATIONS`, default 2). Nothing re-checks after settlement, so the honest",
   "  word is \"confirmed at a stated depth\", never \"final\" or \"irreversible\".",
+  "- **The crash matrix runs against a fixture too.** Nine checkpoints, a real process killed at",
+  "  each, sends counted out of process so the count survives the kill — and no chain. It proves",
+  "  that a crash at any point produces no duplicate; it is not a live-money run. The table above",
+  "  says FIXTURE on those rows, which is the disclosure that cannot drift away from them.",
   "- **The race runs against a fixture.** It proves the reservation and the compare-and-set across",
   "  real processes; it is not a live-money run. The fixture counts every call that reached it,",
   "  including ones its own idempotency cache would have absorbed, so the result cannot be",

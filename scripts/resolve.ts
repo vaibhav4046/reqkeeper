@@ -21,7 +21,7 @@ import { obligationId } from "../src/identity.ts";
 import { NAMESPACE } from "../src/plan.ts";
 import { Store } from "../src/store.ts";
 import { drainUntilQuiet } from "../src/worker.ts";
-import { operatorReleaseDecision, payerAddress } from "../src/exclusion.ts";
+import { excludeByNonce, operatorReleaseDecision, payerAddress, payerIsDedicated } from "../src/exclusion.ts";
 import { readPayerNonce } from "../src/chain.ts";
 import type { Receipt } from "../src/provider.ts";
 
@@ -196,7 +196,35 @@ if (releaseTarget) {
     console.error("  to endpoints that answer, and run this again.");
     process.exit(1);
   }
-  const decision = operatorReleaseDecision({ state: row.state, sighting: seen });
+  // The same leak-exclusion proof the worker demands, made here rather than skipped.
+  //
+  // This door used to apply only the chain read, and a chain read cannot see the mempool. On a
+  // deployment whose payer is KeeperHub's shared relayer the automatic path can NEVER release --
+  // the nonce proof is unavailable by construction -- so this door is the only exit, and the
+  // stricter half of the test was in practice applied to nothing.
+  let reading;
+  if (payer) {
+    try {
+      reading = await readPayerNonce(payer, rpcUrl);
+    } catch {
+      // Unreadable is not excluded. Left undefined, which `excludeByNonce` reports as a gap.
+      reading = undefined;
+    }
+  }
+  const exclusion = excludeByNonce({
+    reading,
+    preflightNonce: row.preflightNonce,
+    scannedTo: seen.scannedTo,
+    payerConfigured: payer !== undefined,
+    payerIsDedicated: payerIsDedicated(),
+  });
+  const decision = operatorReleaseDecision({
+    state: row.state,
+    exclusion,
+    sighting: seen,
+    // Typed by a human, on the command line, naming the risk. See the refusal below.
+    acknowledgedMempoolRisk: args.has("accept-mempool-risk"),
+  });
   switch (decision.kind) {
     case "REFUSE_STATE":
       console.error(`  ${releaseTarget.slice(0, 14)}… is ${decision.state}, not PAYMENT_PREFLIGHT — nothing to release`);
@@ -227,6 +255,22 @@ if (releaseTarget) {
       console.error("  Set REQKEEPER_RPC_ENDPOINTS to endpoints that answer, and run this again.");
       process.exit(1);
       break;
+    case "REFUSE_LEAK_NOT_EXCLUDED":
+      console.error(`  REFUSED: the chain says nothing was paid, and the chain cannot see the mempool.`);
+      console.error("");
+      console.error("  A dry run that executed and lost its reply leaves a transaction that may still be");
+      console.error("  sitting unmined. `eth_getLogs` reads blocks, so it is invisible to every scan, and a");
+      console.error("  transaction can sit pending with no bound at all. Releasing now authorises a second");
+      console.error("  payment that lands when the first one mines.");
+      console.error("");
+      console.error(`  The proof that would settle it could not be made: ${decision.code}.`);
+      console.error("");
+      console.error("  Either make that proof -- point REQKEEPER_PAYER_ADDRESS at an account nothing else");
+      console.error("  broadcasts from and set REQKEEPER_PAYER_IS_DEDICATED=true -- or, if you accept that");
+      console.error("  this obligation may be paid twice, re-run with --accept-mempool-risk. Your name goes");
+      console.error("  in the audit trail next to that decision.");
+      process.exit(1);
+      break;
     case "RELEASE":
       break;
     default: {
@@ -242,7 +286,15 @@ if (releaseTarget) {
     reason: "no payment for this reference on chain, across a scan that reached the invoice's anchor",
     scannedFrom: seen.scannedFrom ?? null,
     scannedTo: seen.scannedTo ?? null,
+    // What the machine could prove, and what a human took on instead. An audit trail that
+    // records only the release cannot tell the two apart later, and they are not the same event.
+    leakExclusion: exclusion.kind,
+    leakExclusionGap: exclusion.kind === "NOT_PROVEN" ? exclusion.code : null,
+    mempoolRiskAcceptedBy: exclusion.kind === "NOT_PROVEN" ? operator : null,
   });
+  if (exclusion.kind === "NOT_PROVEN") {
+    console.log(`  NOTE: the leak could not be excluded (${exclusion.code}); ${operator} accepted that risk.`);
+  }
   console.log(`  released ${releaseTarget.slice(0, 14)}… on ${operator}'s authority; the debt is payable again.`);
   console.log("  The release is in the audit trail under PREFLIGHT_RELEASED_BY_OPERATOR.");
   store.close();

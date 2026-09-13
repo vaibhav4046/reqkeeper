@@ -372,14 +372,38 @@ npm run resolve -- --release-preflight <obligationId> --operator alice@finance
 ```
 
 It names one obligation, it demands a human's name for the audit trail, and it reads the chain
-before it agrees to anything. Three refusals are built into it, and all three are cases where
+before it agrees to anything. Five refusals are built into it, and every one is a case where
 "release it" would mean paying twice:
 
 - the invoice **is** paid — the obligation is moved to `EVIDENCE_CONFLICT` and the transaction is
   named, because a payment with no attempt row behind it is an incident, not a settlement;
+- a log pays this invoice's payee and token under its reference but disagrees about the amount or
+  the fee — this deployment's money moving in a plan nobody made;
 - the scan could not reach the invoice's anchor, so it cannot say the invoice is unpaid;
-- the scan did not state whether it was truncated at all — a reader that did not say is not a
-  reader that said no.
+- the scan did not state whether it was truncated at all, or no second endpoint confirmed its
+  negative — a reader that did not say is not a reader that said no;
+- **the leak has not been excluded.** The chain read says nothing was paid, and a chain read
+  cannot see the mempool: `eth_getLogs` reads blocks, and a dry run that executed and lost its
+  reply may still be sitting unmined, with no bound on how long it can sit there. This is the
+  refusal the automatic path applies too, and it used to be missing here — which mattered more
+  than it sounds, because on a shared relayer the automatic path can never release and this door
+  is the only exit.
+
+#### When the leak cannot be excluded
+
+```bash
+npm run resolve -- --release-preflight <obligationId> --operator alice@finance --accept-mempool-risk
+```
+
+Nobody can prove a transaction will never be mined. If `REQKEEPER_PAYER_ADDRESS` names an account
+nothing else broadcasts from, and `REQKEEPER_PAYER_IS_DEDICATED=true` says so, the resolver proves
+the leak dead from a spent nonce and never asks. Otherwise there are exactly two honest options:
+leave the obligation waiting for ever, or let a named person accept that it may be paid twice.
+
+`--accept-mempool-risk` is the second one. It does not weaken any other check — a payment on
+chain, a conflicting log, an inconclusive scan all still refuse with the flag set — and the
+audit row records `leakExclusionGap` and `mempoolRiskAcceptedBy` alongside the release, so the
+decision is attributable afterwards rather than indistinguishable from one the machine proved.
 
 The release lands in the audit trail as `PREFLIGHT_RELEASED_BY_OPERATOR` with the block range the
 decision was made over. Nothing about this is a switch: it is a human taking responsibility, with
