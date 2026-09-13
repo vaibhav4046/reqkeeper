@@ -90,7 +90,7 @@ export interface SettleDeps {
    * a leaked dry run is dead and hands the obligation to an operator instead. See
    * src/exclusion.ts for why a nonce and not a timer.
    */
-  readonly payerNonce?: () => Promise<number>;
+  readonly payerNonce?: () => Promise<number | undefined>;
   /**
    * Where the authority to spend is read from. Defaults to `"store"`.
    *
@@ -783,6 +783,12 @@ async function settleOrRefuse(deps: SettleDeps, input: SettleInput): Promise<Set
   // Same discipline as the head above, and the same failure handling: a nonce that could not be
   // read is left undefined rather than defaulted, because a wrong baseline would let the observer
   // conclude the leak was excluded when it was not.
+  // The slot the leak would take, and only when it is actually knowable.
+  //
+  // `deps.payerNonce` returns the account's PENDING count when nothing is queued and undefined
+  // otherwise: with a queue the next broadcast lands somewhere above the mined count and no later
+  // reading can say where, so recording a number would be recording a guess. Undefined keeps the
+  // observer inconclusive, which is the honest answer.
   let preflightNonce: number | undefined;
   if (deps.payerNonce) {
     try {

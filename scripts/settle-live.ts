@@ -269,7 +269,11 @@ const outcome = await settleObligation(
     payerNonce: async () => {
       const payer = payerAddress();
       if (!payer) throw new Error("no payer configured");
-      return (await readPayerNonce(payer, RPC)).nonce;
+      const reading = await readPayerNonce(payer, RPC);
+      // Only when nothing is queued is the next broadcast's slot knowable. With a queue the leak
+      // lands somewhere above the mined count and no later reading can say where, so returning a
+      // number here would be returning a guess. See src/exclusion.ts.
+      return reading.pending === reading.nonce ? reading.nonce : undefined;
     },
     sourceSaysPaid: async (_requestId: string, txHash: string) => {
       const seen = await scanForThisInvoice();

@@ -139,7 +139,8 @@ describe("an obligation wedged by a failed dry run can actually be recovered", (
         sourceSaysPaid: async () => true,
         sightPayment: scanner(seen),
         payer: PAYER,
-        readPayerNonce: async () => ({ payer: PAYER, nonce: PREFLIGHT_NONCE + 1, head: ANCHOR_BLOCK }),
+        payerIsDedicated: true,
+        readPayerNonce: async () => ({ payer: PAYER, nonce: PREFLIGHT_NONCE + 1, pending: PREFLIGHT_NONCE + 1, head: ANCHOR_BLOCK }),
       },
       { now: 1_000_000, maxPasses: 3, lookaheadMs: 120_000 },
     );

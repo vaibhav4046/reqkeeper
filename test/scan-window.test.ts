@@ -198,7 +198,8 @@ function drainAgainstChain(store: Store, opts: { anchorBlock?: number }) {
       sightPayment: (reference, expect) =>
         findPaymentByReference(reference, { lookbackBlocks: LOOKBACK, expect, ...opts }),
       payer: PAYER,
-      readPayerNonce: async () => ({ payer: PAYER, nonce: PREFLIGHT_NONCE + 1, head: ANCHOR }),
+      payerIsDedicated: true,
+      readPayerNonce: async () => ({ payer: PAYER, nonce: PREFLIGHT_NONCE + 1, pending: PREFLIGHT_NONCE + 1, head: ANCHOR }),
     },
     { now: 1_000_000, maxPasses: 3, lookaheadMs: 120_000 },
   );

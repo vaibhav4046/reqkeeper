@@ -216,7 +216,8 @@ describe("absence is only evidence once the chain has moved past the send", () =
         sourceSaysPaid: async () => true,
         sightPayment: honestScan(PREFLIGHT_HEAD + 10),
         payer: PAYER,
-        readPayerNonce: async () => ({ payer: PAYER, nonce: 43, head: PREFLIGHT_HEAD }),
+        payerIsDedicated: true,
+        readPayerNonce: async () => ({ payer: PAYER, nonce: 43, pending: 43, head: PREFLIGHT_HEAD }),
       },
       { now: 1_000_000, maxPasses: 3, lookaheadMs: 120_000 },
     );

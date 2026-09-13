@@ -558,7 +558,11 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
           payerNonce: async () => {
             const payer = payerAddress();
             if (!payer) throw new Error("no payer configured");
-            return (await readPayerNonce(payer, ctx.rpcUrl)).nonce;
+            const reading = await readPayerNonce(payer, ctx.rpcUrl);
+            // Only when nothing is queued is the next broadcast's slot knowable. With a queue the
+            // leak lands somewhere above the mined count and no later reading can say where, so a
+            // number here would be a guess. See src/exclusion.ts.
+            return reading.pending === reading.nonce ? reading.nonce : undefined;
           },
           sourceSaysPaid: async (_requestId: string, txHash: string) => {
             // Not just "the reference appears somewhere": it must be OUR transaction for

@@ -169,6 +169,12 @@ if (releaseTarget) {
       console.error("  Releasing it would authorise a second payment. Moved to EVIDENCE_CONFLICT instead.");
       process.exit(1);
       break;
+    case "REFUSE_CONFLICT":
+      console.error("  REFUSED: a log carrying this reference pays this invoice's token and payee but");
+      console.error("  disagrees about the amount or the fee. That is this deployment's money moving in a");
+      console.error("  plan nobody made, not an unpaid invoice. Investigate it before releasing anything.");
+      process.exit(1);
+      break;
     case "REFUSE_INCONCLUSIVE":
       console.error("  REFUSED: the scan could not reach this invoice's anchor, so it cannot say the invoice is unpaid.");
       console.error("  Set REQKEEPER_RPC_ENDPOINTS to endpoints that answer, and run this again.");

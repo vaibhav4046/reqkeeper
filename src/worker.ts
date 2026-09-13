@@ -19,7 +19,7 @@ import { isTerminal, type State } from "./machine.ts";
 import type { ExecutionProvider } from "./provider.ts";
 import { belowConfirmationDepth, minConfirmations } from "./provider.ts";
 import { amountOrFeeConflict } from "./chain.ts";
-import { excludeByNonce, payerAddress, type PayerReading } from "./exclusion.ts";
+import { excludeByNonce, payerAddress, payerIsDedicated, type PayerReading } from "./exclusion.ts";
 import type { PaymentExpectation, PaymentSighting } from "./chain.ts";
 import type { Fence, Job, Store } from "./store.ts";
 
@@ -54,6 +54,8 @@ export interface WorkerDeps {
    * variable, and so the one place that decides it is visible in the dependency list.
    */
   readonly payer?: string;
+  /** Overrides `REQKEEPER_PAYER_IS_DEDICATED`, so the property can be tested without the env. */
+  readonly payerIsDedicated?: boolean;
   readonly findPaidReference?: (
     reference: string,
     expect?: PaymentExpectation,
@@ -301,6 +303,9 @@ async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Reso
       preflightNonce: obligation.preflightNonce,
       scannedTo: sighting.scannedTo,
       payerConfigured: payer !== undefined,
+      // Asserted by an operator, never inferred: nothing visible from here says whether anything
+      // else broadcasts from that account, and the proof is worthless without it.
+      payerIsDedicated: deps.payerIsDedicated ?? payerIsDedicated(),
     });
     switch (exclusion.kind) {
       case "NONCE_CONSUMED":

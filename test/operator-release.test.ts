@@ -60,6 +60,29 @@ describe("an operator may release a wedged preflight, but not over a payment", (
     assert.equal(d.kind, "REFUSE_INCONCLUSIVE");
   });
 
+  test("a log disagreeing about amount or fee refuses, even though nothing was 'found'", () => {
+    // The worker escalates this shape to EVIDENCE_CONFLICT: a log paying this invoice's token and
+    // payee but the wrong value is this deployment's own money moving in a plan nobody made. It
+    // arrived here as a clean negative — `found` false, `truncated` false — and released, after
+    // which resolve.ts wrote "no payment for this reference on chain" into the audit trail.
+    const d = operatorReleaseDecision({
+      state: "PAYMENT_PREFLIGHT",
+      sighting: { found: false, truncated: false, conflictKinds: ["amount"] },
+    });
+    assert.equal(d.kind, "REFUSE_CONFLICT");
+  });
+
+  test("a conflict about the counterparty is somebody else's payment, and still releases", () => {
+    // The control. A stranger paying a different payee under our public reference does not make
+    // our invoice paid, and treating every conflict as ours would let one junk log wedge any
+    // invoice for ever. This is the same split the worker draws, from the same function.
+    const d = operatorReleaseDecision({
+      state: "PAYMENT_PREFLIGHT",
+      sighting: { found: false, truncated: false, conflictKinds: ["to", "amount"] },
+    });
+    assert.equal(d.kind, "RELEASE");
+  });
+
   test("an obligation that is not waiting on a dry run is refused by state", () => {
     for (const state of ["SETTLED", "PAYMENT_EXECUTING", "EVIDENCE_CONFLICT", "IMPORTED"]) {
       const d = operatorReleaseDecision({ state, sighting: conclusiveNegative });

@@ -32,6 +32,7 @@
  * option and no timeout: an obligation with an unexcluded leak waits for a human. Refusing to
  * move is a liveness cost measured in one operator action; being wrong here is measured in money.
  */
+import { amountOrFeeConflict } from "./chain.js";
 /**
  * The account whose nonce excludes the leak, or undefined when the operator has not named one.
  *
@@ -52,6 +53,16 @@ export function payerAddress(env = process.env) {
         throw new Error(`REQKEEPER_PAYER_ADDRESS is not an address: ${raw.slice(0, 64)}`);
     }
     return raw.toLowerCase();
+}
+/**
+ * Has an operator asserted that nothing else broadcasts from the payer account?
+ *
+ * Undetectable from outside, and the proof is worthless without it, so it is asked for explicitly
+ * and its absence refuses. Default false: a deployment that has not thought about this gets the
+ * safe answer.
+ */
+export function payerIsDedicated(env = process.env) {
+    return (env.REQKEEPER_PAYER_IS_DEDICATED ?? "").trim().toLowerCase() === "true";
 }
 /**
  * Decide whether the leak is excluded, from readings the caller has already taken.
@@ -78,6 +89,14 @@ export function excludeByNonce(input) {
     }
     if (!reading) {
         return { kind: "NOT_PROVEN", code: "NONCE_UNREADABLE", detail: "the payer's nonce could not be read now" };
+    }
+    if (!input.payerIsDedicated) {
+        return {
+            kind: "NOT_PROVEN",
+            code: "PAYER_NOT_DEDICATED",
+            detail: "the payer account is shared, so a transaction mining in some slot says nothing about the " +
+                "slot this deployment's leak would have taken; release it through an operator instead",
+        };
     }
     if (reading.nonce <= preflightNonce) {
         return {
@@ -119,5 +138,8 @@ export function operatorReleaseDecision(input) {
     // that did not say is not a reader that said no.
     if (input.sighting.truncated !== false)
         return { kind: "REFUSE_INCONCLUSIVE" };
+    // The same test the worker applies, from the same function, so the two exits cannot disagree.
+    if (amountOrFeeConflict(input.sighting))
+        return { kind: "REFUSE_CONFLICT" };
     return { kind: "RELEASE" };
 }

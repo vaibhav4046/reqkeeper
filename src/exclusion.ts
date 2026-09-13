@@ -33,6 +33,8 @@
  * move is a liveness cost measured in one operator action; being wrong here is measured in money.
  */
 
+import { amountOrFeeConflict, type ConflictKind } from "./chain.ts";
+
 /** Why the exclusion could not be proven. Each one is "I do not know", never "no". */
 export type ExclusionGap =
   /** No payer account is configured, so there is no nonce to reason about. See `payerAddress`. */
@@ -44,7 +46,14 @@ export type ExclusionGap =
   /** The nonce is where it was. The leak may still be pending and mineable. */
   | "NONCE_UNCHANGED"
   /** The nonce moved, but the scan stopped short of the block that proves it. */
-  | "SCAN_BEHIND_PROOF";
+  | "SCAN_BEHIND_PROOF"
+  /**
+   * The payer is shared, so a moved nonce says nothing about THIS transaction's slot.
+   * See `payerIsDedicated`.
+   */
+  | "PAYER_NOT_DEDICATED"
+  /** The account had transactions queued when the dry run ran, so the leak's slot is unknown. */
+  | "SLOT_UNKNOWN_AT_PREFLIGHT";
 
 export type LeakExclusion =
   | {
@@ -62,6 +71,16 @@ export interface PayerReading {
   readonly payer: string;
   /** `eth_getTransactionCount(payer, "latest")` — mined transactions only, never "pending". */
   readonly nonce: number;
+  /**
+   * `eth_getTransactionCount(payer, "pending")` — mined plus queued.
+   *
+   * The difference is the whole proof. A new broadcast takes the PENDING slot, not the mined one,
+   * so on an account with anything in flight the leak sits above the mined count and an unrelated
+   * transaction mining moves `nonce` past the baseline while the leak is still perfectly
+   * mineable. Reading only the mined count is how the first version of this released an
+   * obligation whose payment was still live.
+   */
+  readonly pending: number;
   /** The head at the moment of that reading. Any consuming transaction is at or below it. */
   readonly head: number;
 }
@@ -88,6 +107,17 @@ export function payerAddress(env: NodeJS.ProcessEnv = process.env): string | und
 }
 
 /**
+ * Has an operator asserted that nothing else broadcasts from the payer account?
+ *
+ * Undetectable from outside, and the proof is worthless without it, so it is asked for explicitly
+ * and its absence refuses. Default false: a deployment that has not thought about this gets the
+ * safe answer.
+ */
+export function payerIsDedicated(env: NodeJS.ProcessEnv = process.env): boolean {
+  return (env.REQKEEPER_PAYER_IS_DEDICATED ?? "").trim().toLowerCase() === "true";
+}
+
+/**
  * Decide whether the leak is excluded, from readings the caller has already taken.
  *
  * Pure, so the decision can be tested without a chain. Every branch that is not a proof returns
@@ -96,8 +126,31 @@ export function payerAddress(env: NodeJS.ProcessEnv = process.env): string | und
 export function excludeByNonce(input: {
   /** Taken before the scan. Undefined when there is no payer, or the read threw. */
   readonly reading: PayerReading | undefined;
-  /** `eth_getTransactionCount(payer, "latest")` as the dry run was about to run. */
+  /**
+   * The slot the leak would have taken, recorded before the dry run — or null when it could not
+   * be pinned down.
+   *
+   * It is only knowable when the account had NOTHING queued at that moment (`pending === latest`),
+   * because then the next broadcast takes exactly that number. With a queue, the leak lands
+   * somewhere above it and no later reading of the mined count can say where.
+   */
   readonly preflightNonce: number | null;
+  /**
+   * Whether this deployment is the only thing broadcasting from the payer account.
+   *
+   * The proof needs it, and the first version of this did not ask. A nonce is spent once, so a
+   * slot mined by another transaction kills anything pending in it — but on a SHARED relayer the
+   * leak's slot is not the baseline. A reviewer put numbers on it: every settlement in this
+   * repository was relayed by one address whose mined nonce went from 25786 to 30078 while this
+   * was being built, so "the nonce moved" on that account is a near-certain automatic yes, and a
+   * leak still in the mempool would have been declared dead. Two physical payments.
+   *
+   * There is no way to detect exclusivity from outside, so it is an operator's assertion
+   * (`REQKEEPER_PAYER_IS_DEDICATED`) and its absence refuses. KeeperHub's relayer is shared, so
+   * this deployment does not get the automatic release and uses the operator path instead —
+   * `docs/RUNBOOK.md` says so and `scripts/resolve.ts` prints it.
+   */
+  readonly payerIsDedicated: boolean;
   /** The scan's own ceiling. Undefined means the reader did not say, which is not a number. */
   readonly scannedTo: number | undefined;
   /** Whether a payer is configured at all, so the gap can name the real cause. */
@@ -123,6 +176,15 @@ export function excludeByNonce(input: {
   }
   if (!reading) {
     return { kind: "NOT_PROVEN", code: "NONCE_UNREADABLE", detail: "the payer's nonce could not be read now" };
+  }
+  if (!input.payerIsDedicated) {
+    return {
+      kind: "NOT_PROVEN",
+      code: "PAYER_NOT_DEDICATED",
+      detail:
+        "the payer account is shared, so a transaction mining in some slot says nothing about the " +
+        "slot this deployment's leak would have taken; release it through an operator instead",
+    };
   }
   if (reading.nonce <= preflightNonce) {
     return {
@@ -172,11 +234,28 @@ export type OperatorRelease =
   | { readonly kind: "RELEASE" }
   | { readonly kind: "REFUSE_PAID"; readonly txHash?: string }
   | { readonly kind: "REFUSE_INCONCLUSIVE" }
+  /** A log paying this invoice's token and payee disagreed about amount or fee. */
+  | { readonly kind: "REFUSE_CONFLICT" }
   | { readonly kind: "REFUSE_STATE"; readonly state: string };
 
 export function operatorReleaseDecision(input: {
   readonly state: string;
-  readonly sighting: { readonly found: boolean; readonly truncated?: boolean; readonly txHash?: string };
+  /**
+   * The WHOLE sighting, not three fields of it.
+   *
+   * This took `{found, truncated, txHash}` — and a sighting the worker escalates to
+   * EVIDENCE_CONFLICT carries neither `found` nor `truncated` set against it, so it arrived here
+   * as a clean negative and this returned RELEASE. `scripts/resolve.ts` then wrote "no payment for
+   * this reference on chain" into the audit trail over a log that was paying this invoice's token
+   * and payee and disagreeing about the amount — which is our own money moving in a plan nobody
+   * made. Two exits from PAYMENT_PREFLIGHT reading one sighting two different ways.
+   */
+  readonly sighting: {
+    readonly found: boolean;
+    readonly truncated?: boolean;
+    readonly txHash?: string;
+    readonly conflictKinds?: readonly ConflictKind[];
+  };
 }): OperatorRelease {
   // Only an obligation actually waiting on a dry run can be released this way. Anything else is
   // either already resolved or in a state whose exit is somewhere else entirely.
@@ -189,6 +268,9 @@ export function operatorReleaseDecision(input: {
   // `truncated` must be an explicit false. Undefined is a reader that did not say, and a reader
   // that did not say is not a reader that said no.
   if (input.sighting.truncated !== false) return { kind: "REFUSE_INCONCLUSIVE" };
+
+  // The same test the worker applies, from the same function, so the two exits cannot disagree.
+  if (amountOrFeeConflict(input.sighting)) return { kind: "REFUSE_CONFLICT" };
 
   return { kind: "RELEASE" };
 }

@@ -468,8 +468,12 @@ export async function currentBlock(rpcUrl = DEFAULT_RPC) {
  */
 export async function readPayerNonce(payer, rpcUrl = DEFAULT_RPC) {
     const nonce = Number(BigInt((await rpcCall(rpcUrl, "eth_getTransactionCount", [payer, "latest"]))));
+    // Both counts, because their DIFFERENCE is what says whether a new broadcast's slot is knowable.
+    // Reading only the mined count was the defect: a queued transaction mining moves `latest` past
+    // the baseline while the leak, which took a pending slot above it, is still mineable.
+    const pending = Number(BigInt((await rpcCall(rpcUrl, "eth_getTransactionCount", [payer, "pending"]))));
     const head = await currentBlock(rpcUrl);
-    return { payer, nonce, head };
+    return { payer, nonce, pending, head };
 }
 /**
  * The one receipt reader, for every transport.

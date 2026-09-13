@@ -221,7 +221,11 @@ for (const inv of payable) {
     payerNonce: async () => {
       const payer = payerAddress();
       if (!payer) throw new Error("no payer configured");
-      return (await readPayerNonce(payer, DEFAULT_RPC)).nonce;
+      const reading = await readPayerNonce(payer, DEFAULT_RPC);
+      // Only when nothing is queued is the next broadcast's slot knowable. With a queue the leak
+      // lands somewhere above the mined count and no later reading can say where, so returning a
+      // number here would be returning a guess. See src/exclusion.ts.
+      return reading.pending === reading.nonce ? reading.nonce : undefined;
     },
     sourceSaysPaid: async (_requestId: string, txHash: string) => {
             // Not just "the reference appears somewhere": it must be OUR transaction for

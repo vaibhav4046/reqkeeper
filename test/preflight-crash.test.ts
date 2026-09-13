@@ -156,7 +156,8 @@ function drain(store: Store, sighting: PaymentSighting) {
       sourceSaysPaid: async () => true,
       sightPayment: async () => sighting,
       payer: PAYER,
-      readPayerNonce: async () => ({ payer: PAYER, nonce: PREFLIGHT_NONCE + 1, head: sighting.scannedTo ?? 0 }),
+      payerIsDedicated: true,
+      readPayerNonce: async () => ({ payer: PAYER, nonce: PREFLIGHT_NONCE + 1, pending: PREFLIGHT_NONCE + 1, head: sighting.scannedTo ?? 0 }),
     },
     { now: 1_000_000, maxPasses: 3, lookaheadMs: 120_000 },
   );
