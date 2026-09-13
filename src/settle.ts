@@ -11,7 +11,7 @@ import { idempotencyKey, obligationId, planHash as hashPlan, policyHash as hashP
 import { checkPolicy, type Policy, type SourceFacts } from "./policy.ts";
 import { toHuman } from "./money.ts";
 import type { ExecutionProvider, SimulateOutcome } from "./provider.ts";
-import { ProviderError, belowConfirmationDepth } from "./provider.ts";
+import { ProviderError, belowConfirmationDepth, minConfirmations } from "./provider.ts";
 import type { Store } from "./store.ts";
 
 export interface SettleInput {
@@ -369,7 +369,7 @@ function refusalForLostRace(e: unknown, store: Store, input: SettleInput): Settl
  * state this system already has for "true, but not yet provable" — the worker re-reads and
  * finishes it. What it must never be is SETTLED.
  */
-const MIN_CONFIRMATIONS = Math.max(1, Number(process.env.REQKEEPER_MIN_CONFIRMATIONS ?? "2") || 2);
+// One definition, shared with the worker. See provider.ts.
 
 /**
  * Does this transaction's OWN receipt contain the payment?
@@ -1033,7 +1033,7 @@ async function settleOrRefuse(deps: SettleDeps, input: SettleInput): Promise<Set
   // Depth. A receipt one block deep is a receipt that can still be reorged away, and this used
   // to settle on it. Not a refusal — the payment is almost certainly real — but not settlement
   // either, so it waits in the state this system already has for "true, not yet provable".
-  if (belowConfirmationDepth(receipt, MIN_CONFIRMATIONS)) {
+  if (belowConfirmationDepth(receipt, minConfirmations())) {
     store.setState(input.obligationId, "RECONCILING", input.now);
     store.setState(input.obligationId, "RECONCILIATION_PENDING", input.now);
     store.enqueue({
@@ -1047,7 +1047,7 @@ async function settleOrRefuse(deps: SettleDeps, input: SettleInput): Promise<Set
       state: "RECONCILIATION_PENDING",
       detail:
         `paid on chain at depth ${receipt.confirmations}, and settlement here needs ` +
-        `${MIN_CONFIRMATIONS}. A receipt that shallow can still be reorged away. Resolving.`,
+        `${minConfirmations()}. A receipt that shallow can still be reorged away. Resolving.`,
       providerWriteIssued: true,
       txHash: receipt.hash,
       planHash,

@@ -218,7 +218,17 @@ for (const checkpoint of CHECKPOINTS) {
   let agentRetryResult: string;
   try {
     const r = await settleObligation(
-      { store, provider: chain, policy: buildPolicy(f), sourceSaysPaid: ask.sourceSaysPaid },
+      {
+        store,
+        provider: chain,
+        policy: buildPolicy(f),
+        // The agent's retry after the crash, standing in for the human the same way the child
+        // does. Without it the two checkpoints that die before the approval is recorded come back
+        // AWAITING_APPROVAL for ever — which is correct behaviour for an unapproved plan, and the
+        // wrong thing for this harness to be measuring.
+        approvalAuthority: "caller" as const,
+        sourceSaysPaid: ask.sourceSaysPaid,
+      },
       {
         namespace: NAMESPACE,
         requestId,

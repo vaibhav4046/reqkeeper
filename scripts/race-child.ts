@@ -59,6 +59,10 @@ try {
       store,
       provider,
       policy: buildPolicy(facts),
+      // These children stand in for the human: the race and the crash matrix are about what the
+      // machinery does under concurrency and SIGKILL, not about who approved. Declared rather
+      // than implied, and the trail records it as an asserted decision.
+      approvalAuthority: "caller" as const,
       // Reconciliation asks the fixture the same three questions the real path asks the chain:
       // our reference, our transaction, our amount.
       sourceSaysPaid: async (_requestId: string, txHash: string) => {

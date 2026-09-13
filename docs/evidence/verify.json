@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-13T05:42:31.725Z",
+  "generatedAt": "2026-09-13T05:47:58.943Z",
   "chainId": 11155111,
   "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
   "credentialsUsed": "none",
@@ -61,7 +61,7 @@
       "id": "artifacts.totals",
       "claim": "every artifact's summary matches its own rows",
       "status": "ok",
-      "detail": "31 summary number(s) recomputed from rows and agreeing, over 8 artifact(s) carrying a summary (9 .json scanned under docs/); 13 summary number(s) name no row field and were NOT recomputed: docs/evidence/mcp-settlements.json:settled · docs/evidence/mcp-settlements.json:withExecutionId · docs/evidence/race-live.json:broadcasts · docs/evidence/race-live.json:postsReachingTheProvider · +9 more"
+      "detail": "32 summary number(s) recomputed from rows and agreeing, over 8 artifact(s) carrying a summary (9 .json scanned under docs/); 12 summary number(s) name no row field and were NOT recomputed: docs/evidence/mcp-settlements.json:settled · docs/evidence/mcp-settlements.json:withExecutionId · docs/evidence/race-live.json:broadcasts · docs/evidence/race-live.json:postsReachingTheProvider · +8 more"
     },
     {
       "id": "race.live",
@@ -169,7 +169,7 @@
       "id": "chain.completeness",
       "claim": "no payment on chain is missing from the evidence",
       "status": "ok",
-      "detail": "46 invoice reference(s) asked of 4 endpoint(s) over 11665964..11693938, from the earliest invoice's own storage anchor; 44 payment(s) found across their union and every one is accounted for by an evidence file"
+      "detail": "46 invoice reference(s) asked of 4 endpoint(s) over 11665964..11693964, from the earliest invoice's own storage anchor; 44 payment(s) found across their union and every one is accounted for by an evidence file"
     }
   ]
 }

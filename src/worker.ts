@@ -17,7 +17,7 @@
 
 import { isTerminal, type State } from "./machine.ts";
 import type { ExecutionProvider } from "./provider.ts";
-import { belowConfirmationDepth } from "./provider.ts";
+import { belowConfirmationDepth, minConfirmations } from "./provider.ts";
 import { amountOrFeeConflict } from "./chain.ts";
 import { excludeByNonce, payerAddress, type PayerReading } from "./exclusion.ts";
 import type { PaymentExpectation, PaymentSighting } from "./chain.ts";
@@ -96,14 +96,6 @@ export interface DrainResult {
   readonly advanced: ReadonlyArray<{ obligationId: string; from: State; to: State }>;
 }
 
-/**
- * Read at call time rather than at import, so a test or an operator can change it without
- * reloading the module. Same default and same env var as the settle path, deliberately: two
- * places deciding depth differently is how one of them quietly stops mattering.
- */
-function minConfirmations(): number {
-  return Math.max(1, Number(process.env.REQKEEPER_MIN_CONFIRMATIONS ?? "2") || 2);
-}
 
 /** How long a job waits before another look. Chain and indexer both need a moment. */
 const RETRY_MS = 15_000;

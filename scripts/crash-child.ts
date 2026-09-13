@@ -130,6 +130,10 @@ try {
       store: crashingStore(store),
       provider,
       policy: buildPolicy(facts),
+      // These children stand in for the human: the race and the crash matrix are about what the
+      // machinery does under concurrency and SIGKILL, not about who approved. Declared rather
+      // than implied, and the trail records it as an asserted decision.
+      approvalAuthority: "caller" as const,
       sourceSaysPaid: async (_requestId: string, txHash: string) => {
         // The receipt is read and confirmed; the independent source has not been asked yet.
         die("after_receipt_before_reconcile");

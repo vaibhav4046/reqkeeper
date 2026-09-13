@@ -38,6 +38,16 @@ export interface TotalSpec {
   readonly sum?: string;
   readonly max?: string;
   readonly distinct?: string;
+  /**
+   * Applied to the aggregate, in this order: subtract `minus`, then raise to `floorAt`.
+   *
+   * For totals that are a function of an aggregate rather than the aggregate itself — a race's
+   * `duplicates` is `max(0, broadcasts - 1)`. Without it that number could not be declared, and a
+   * reviewer changed exactly that field from 0 to 5 and watched `verify:all` exit 0 — the field
+   * README names as its own example of tampering being caught.
+   */
+  readonly minus?: number;
+  readonly floorAt?: number;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -96,18 +106,31 @@ export function evaluateSpec(
   const preds = spec.where === undefined ? [] : Array.isArray(spec.where) ? spec.where : [spec.where];
   const rows = arrayFor(doc, spec.from, fallback).filter((r) => preds.every((p) => matches(r, p)));
   const scope = preds.length === 0 ? describe(undefined, spec.from) : preds.map((p) => describe(p, spec.from)).join(" and ");
-  if (spec.count === true) return { value: rows.length, how: `a count of ${scope}` };
+  const adjust = (v: number, how: string): { value: number; how: string } => {
+    let value = v;
+    let text = how;
+    if (spec.minus !== undefined) {
+      value -= spec.minus;
+      text += ` minus ${spec.minus}`;
+    }
+    if (spec.floorAt !== undefined && value < spec.floorAt) {
+      value = spec.floorAt;
+      text += `, floored at ${spec.floorAt}`;
+    }
+    return { value, how: text };
+  };
+  if (spec.count === true) return adjust(rows.length, `a count of ${scope}`);
   const numbersAt = (path: string) =>
     rows.map((r) => at(r, path)).filter((v): v is number => typeof v === "number");
-  if (spec.sum) return { value: numbersAt(spec.sum).reduce((n, v) => n + v, 0), how: `the sum of ${spec.sum} over ${scope}` };
+  if (spec.sum) return adjust(numbersAt(spec.sum).reduce((n, v) => n + v, 0), `the sum of ${spec.sum} over ${scope}`);
   if (spec.max) {
     const nums = numbersAt(spec.max);
     if (nums.length === 0) return null;
-    return { value: Math.max(...nums), how: `the largest ${spec.max} over ${scope}` };
+    return adjust(Math.max(...nums), `the largest ${spec.max} over ${scope}`);
   }
   if (spec.distinct) {
     const seen = new Set(rows.map((r) => at(r, spec.distinct as string)).filter((v) => v !== undefined && v !== null && v !== ""));
-    return { value: seen.size, how: `distinct ${spec.distinct} over ${scope}` };
+    return adjust(seen.size, `distinct ${spec.distinct} over ${scope}`);
   }
   return null;
 }

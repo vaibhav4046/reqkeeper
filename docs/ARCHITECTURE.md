@@ -295,11 +295,15 @@ What both transports share, and must:
   not a guard, it is a coin flip over which surface the settlement happened to use.
 - **`readReceipt` from `src/chain.ts`, never the provider.** A provider reporting on its own
   success is not evidence of anything.
-- **Unknown means unsafe on simulate.** Both compute
-  `wouldRevert = res.wouldRevert === true || res.success === false || res.error !== undefined`
-  (`keeperhub.ts:178`, `keeperhub-mcp.ts:265`). Without the third term a 200 carrying an error
-  body has neither field, both comparisons are false, and a failure to simulate at all reads as
-  a clean dry run. The next step spends money.
+- **Unknown means unsafe on simulate.** Both transports return a `SimulateOutcome` from one
+  shared `classifySimulateReply` (`provider.ts`), and the caller switches on it exhaustively with
+  a `never` assertion, so a fifth outcome is a compile error rather than a payment. The four arms
+  are `EXECUTED` (a hash came back — #1959, an integrity incident), `WOULD_REVERT`, `WOULD_SUCCEED`
+  and `UNKNOWN`; a timeout, a 4xx, an HTML error page, `{"success": false}` and a body with no
+  verdict all land in `UNKNOWN`. This paragraph used to describe a boolean expression
+  (`wouldRevert = ... || ... || ...`) that no longer exists anywhere: the union replaced it after
+  four duplicate-payment findings whose common shape was a caller reading a flag that could mean
+  "I do not know" as though it meant "no".
 - **Unrecognised statuses map to `pending`, never `completed`** (`keeperhub.ts:236`,
   `keeperhub-mcp.ts:315`), so a response shape this code has not seen cannot be mistaken for a
   finished payment.
@@ -352,8 +356,11 @@ event as proof. `decodePaymentLogFields` (`chain.ts:226`) reads the five non-ind
 the comment there earns its place: an indexed dynamic parameter is *removed* from `data` rather
 than replaced by an offset placeholder, so `amount` is word 2, not word 3.
 
-**The depth gate.** `REQKEEPER_MIN_CONFIRMATIONS`, default 2, read at call time in both places
-(`settle.ts:303`, `worker.ts:66`) so two places cannot decide depth differently. Below it the
+**The depth gate.** `REQKEEPER_MIN_CONFIRMATIONS`, default 2, read at call time from ONE
+definition — `minConfirmations()` in `provider.ts`, which both the settle path and the worker
+import — so two places cannot decide depth differently. They once could: this sentence claimed
+the property while `settle.ts` read the variable at module scope and the worker read it per call,
+so raising the depth changed one of them and not the other. Below it the
 obligation goes to `RECONCILIATION_PENDING` with a queued job, not to a refusal: the payment is
 almost certainly real, it is just not yet provable. A receipt one block deep can still be
 reorged away.

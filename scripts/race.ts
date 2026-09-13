@@ -336,6 +336,10 @@ const artifact = {
           postsReachingTheProvider: { from: "waves", sum: "counters.posts" },
           dedupedByKey: { from: "waves", sum: "counters.dedupedByKey" },
           secondWaveBroadcasts: { from: "waves", sum: "counters.broadcasts", where: { field: "label", equals: "second wave" } },
+          // `max(0, broadcasts - 1)`: a function of an aggregate rather than an aggregate. A
+          // reviewer set this exact field from 0 to 5 and watched verify:all exit 0, on the field
+          // README cites as its example of a tampered summary being caught.
+          duplicates: { from: "waves", sum: "counters.broadcasts", minus: 1, floorAt: 0 },
         }),
   },
   totals: {

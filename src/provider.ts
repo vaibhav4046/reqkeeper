@@ -165,6 +165,19 @@ export interface Receipt {
  *
  * One function, because two spellings of one rule is how the two sites came to disagree.
  */
+/**
+ * Minimum confirmations before a payment may be called settled.
+ *
+ * ONE definition, read at call time, because two places deciding depth differently is how one of
+ * them quietly stops mattering. There were two: `worker.ts` read the environment per call and
+ * `settle.ts` read it once at import, so an operator raising the depth changed the worker's mind
+ * and not the settle path's — and `docs/ARCHITECTURE.md` described the property this now has
+ * rather than the one the code had, which is how a reviewer found it.
+ */
+export function minConfirmations(): number {
+  return Math.max(1, Number(process.env.REQKEEPER_MIN_CONFIRMATIONS ?? "2") || 2);
+}
+
 export function belowConfirmationDepth(
   receipt: Pick<Receipt, "blockNumber" | "confirmations">,
   minConfirmations: number,
