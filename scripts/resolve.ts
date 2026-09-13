@@ -21,6 +21,8 @@ import { obligationId } from "../src/identity.ts";
 import { NAMESPACE } from "../src/plan.ts";
 import { Store } from "../src/store.ts";
 import { drainUntilQuiet } from "../src/worker.ts";
+import { operatorReleaseDecision, payerAddress } from "../src/exclusion.ts";
+import { readPayerNonce } from "../src/chain.ts";
 import type { Receipt } from "../src/provider.ts";
 
 function loadDotEnv(): void {
@@ -111,8 +113,98 @@ async function findPaidReference(reference: string, expect?: PaymentExpectation)
 const sightPayment = (reference: string, expect?: PaymentExpectation, anchorBlock?: number) =>
   findPaymentByReference(reference, { lookbackBlocks: 300_000, rpcUrl, expect, anchorBlock });
 
+// Excluding a leaked dry run needs the payer's nonce, and the resolver is the one command whose
+// whole job is to get stuck obligations moving again. Without this wired in it could never
+// release one: `excludeByNonce` would answer NO_PAYER_CONFIGURED for ever, and the safest
+// possible answer would have become a permanent wedge at zero payments -- which is the failure
+// this project has fixed four times in other disguises. See docs/RUNBOOK.md for how to discover
+// the address, and `--release-preflight` below for the way out when it is not configured.
+const payer = payerAddress();
+if (!payer) {
+  console.log("  note: REQKEEPER_PAYER_ADDRESS is not set, so a dry run that never came back cannot be");
+  console.log("        proven dead and its obligation will wait. See docs/RUNBOOK.md, or release one");
+  console.log("        by hand with --release-preflight <obligationId> --operator <who>.");
+}
+
+// ---- the operator's way out --------------------------------------------------
+//
+// An obligation whose dry run never came back waits until a spent nonce proves the leak can
+// never be mined. That is the right default -- the alternative was a timer, and a timer released
+// obligations whose payment was still sitting in the mempool -- but "waits" must not mean
+// "waits for ever". When no payer address is configured, or the relayer has rotated, or the
+// operator simply knows more than the process does, this is the door.
+//
+// It is deliberately not a flag on the normal run. It names a single obligation, it demands a
+// human's name for the audit trail, and it reads the chain BEFORE it agrees to anything: an
+// operator who releases an obligation whose payment is sitting on chain has authorised paying
+// it twice, and no amount of certainty on their part changes that.
+const releaseTarget = args.get("release-preflight");
+if (releaseTarget) {
+  const operator = args.get("operator");
+  if (!operator) {
+    console.error("  --release-preflight needs --operator <who>: this goes in the audit trail as a human decision");
+    process.exit(2);
+  }
+  const row = store.obligationForRecovery(releaseTarget);
+  if (!row) {
+    console.error(`  no obligation ${releaseTarget}`);
+    process.exit(2);
+  }
+  if (!row.paymentReference) {
+    console.error("  this obligation has no payment reference, so the chain cannot be asked about it");
+    process.exit(2);
+  }
+
+  const seen = await sightPayment(row.paymentReference, row.expectation ?? undefined, row.anchorBlock ?? undefined);
+  const decision = operatorReleaseDecision({ state: row.state, sighting: seen });
+  switch (decision.kind) {
+    case "REFUSE_STATE":
+      console.error(`  ${releaseTarget.slice(0, 14)}… is ${decision.state}, not PAYMENT_PREFLIGHT — nothing to release`);
+      process.exit(2);
+      break;
+    case "REFUSE_PAID":
+      store.setState(releaseTarget, "EVIDENCE_CONFLICT", Date.now());
+      store.audit(releaseTarget, operator, "SIMULATE_LEAKED_EXECUTION", { txHash: decision.txHash ?? null, via: "operator release attempt" });
+      console.error(`  REFUSED: this invoice IS paid, in ${decision.txHash}`);
+      console.error("  Releasing it would authorise a second payment. Moved to EVIDENCE_CONFLICT instead.");
+      process.exit(1);
+      break;
+    case "REFUSE_INCONCLUSIVE":
+      console.error("  REFUSED: the scan could not reach this invoice's anchor, so it cannot say the invoice is unpaid.");
+      console.error("  Set REQKEEPER_RPC_ENDPOINTS to endpoints that answer, and run this again.");
+      process.exit(1);
+      break;
+    case "RELEASE":
+      break;
+    default: {
+      const exhaustive: never = decision;
+      throw new Error(`unhandled decision ${JSON.stringify(exhaustive)}`);
+    }
+  }
+
+  store.setState(releaseTarget, "PREFLIGHT_UNAVAILABLE", Date.now());
+  const heldBy = store.getObligation(releaseTarget)?.reservedByPlan;
+  if (heldBy) store.releaseObligation(releaseTarget, heldBy);
+  store.audit(releaseTarget, operator, "PREFLIGHT_RELEASED_BY_OPERATOR", {
+    reason: "no payment for this reference on chain, across a scan that reached the invoice's anchor",
+    scannedFrom: seen.scannedFrom ?? null,
+    scannedTo: seen.scannedTo ?? null,
+  });
+  console.log(`  released ${releaseTarget.slice(0, 14)}… on ${operator}'s authority; the debt is payable again.`);
+  console.log("  The release is in the audit trail under PREFLIGHT_RELEASED_BY_OPERATOR.");
+  store.close();
+  process.exit(0);
+}
+
 const results = await drainUntilQuiet(
-  { store, provider: { receipt }, sourceSaysPaid, findPaidReference, sightPayment },
+  {
+    store,
+    provider: { receipt },
+    sourceSaysPaid,
+    findPaidReference,
+    sightPayment,
+    ...(payer ? { payer, readPayerNonce: (p: string) => readPayerNonce(p, rpcUrl) } : {}),
+  },
   // Run by hand, this is an operator asking, not a timer polling: look past the retry
   // backoff rather than reporting "nothing moved" for work that is scheduled a moment out.
   { now: Date.now(), maxPasses: passes, stepMs: 0, lookaheadMs: 60_000 },

@@ -154,3 +154,41 @@ export function excludeByNonce(input: {
     provenThroughBlock: reading.head,
   };
 }
+
+/**
+ * What an operator is allowed to do about an obligation whose dry run never came back.
+ *
+ * The automatic path needs a spent nonce, which needs a payer address, which a deployment may
+ * not have configured — and "waits for a proof that can never be made" is a permanent wedge at
+ * zero payments, which is the failure this project has fixed four times in other disguises. So
+ * there is a door, and this is the decision behind it.
+ *
+ * It is a decision, not a switch. The operator's certainty is not evidence: the chain is read
+ * first, and a payment that is actually there turns the request into an integrity incident rather
+ * than a release. Separated from the CLI so the decision can be tested without a database, a
+ * process or a chain.
+ */
+export type OperatorRelease =
+  | { readonly kind: "RELEASE" }
+  | { readonly kind: "REFUSE_PAID"; readonly txHash?: string }
+  | { readonly kind: "REFUSE_INCONCLUSIVE" }
+  | { readonly kind: "REFUSE_STATE"; readonly state: string };
+
+export function operatorReleaseDecision(input: {
+  readonly state: string;
+  readonly sighting: { readonly found: boolean; readonly truncated?: boolean; readonly txHash?: string };
+}): OperatorRelease {
+  // Only an obligation actually waiting on a dry run can be released this way. Anything else is
+  // either already resolved or in a state whose exit is somewhere else entirely.
+  if (input.state !== "PAYMENT_PREFLIGHT") return { kind: "REFUSE_STATE", state: input.state };
+
+  // Checked before the scan's completeness, deliberately: a payment that is visibly there is an
+  // answer no matter how little else the scan managed to cover.
+  if (input.sighting.found) return { kind: "REFUSE_PAID", txHash: input.sighting.txHash };
+
+  // `truncated` must be an explicit false. Undefined is a reader that did not say, and a reader
+  // that did not say is not a reader that said no.
+  if (input.sighting.truncated !== false) return { kind: "REFUSE_INCONCLUSIVE" };
+
+  return { kind: "RELEASE" };
+}

@@ -106,3 +106,18 @@ export function excludeByNonce(input) {
         provenThroughBlock: reading.head,
     };
 }
+export function operatorReleaseDecision(input) {
+    // Only an obligation actually waiting on a dry run can be released this way. Anything else is
+    // either already resolved or in a state whose exit is somewhere else entirely.
+    if (input.state !== "PAYMENT_PREFLIGHT")
+        return { kind: "REFUSE_STATE", state: input.state };
+    // Checked before the scan's completeness, deliberately: a payment that is visibly there is an
+    // answer no matter how little else the scan managed to cover.
+    if (input.sighting.found)
+        return { kind: "REFUSE_PAID", txHash: input.sighting.txHash };
+    // `truncated` must be an explicit false. Undefined is a reader that did not say, and a reader
+    // that did not say is not a reader that said no.
+    if (input.sighting.truncated !== false)
+        return { kind: "REFUSE_INCONCLUSIVE" };
+    return { kind: "RELEASE" };
+}

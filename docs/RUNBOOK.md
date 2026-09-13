@@ -363,6 +363,30 @@ releases the obligation only once that nonce has moved. With no account configur
 nonce to read, the obligation stays in `PAYMENT_PREFLIGHT`, and the resolver reports
 `LEAK_NOT_EXCLUDED:NO_PAYER_CONFIGURED`.
 
+### When it is not set, and an obligation is waiting
+
+`npm run resolve` says so on every run, and there is a door:
+
+```bash
+npm run resolve -- --release-preflight <obligationId> --operator alice@finance
+```
+
+It names one obligation, it demands a human's name for the audit trail, and it reads the chain
+before it agrees to anything. Three refusals are built into it, and all three are cases where
+"release it" would mean paying twice:
+
+- the invoice **is** paid — the obligation is moved to `EVIDENCE_CONFLICT` and the transaction is
+  named, because a payment with no attempt row behind it is an incident, not a settlement;
+- the scan could not reach the invoice's anchor, so it cannot say the invoice is unpaid;
+- the scan did not state whether it was truncated at all — a reader that did not say is not a
+  reader that said no.
+
+The release lands in the audit trail as `PREFLIGHT_RELEASED_BY_OPERATOR` with the block range the
+decision was made over. Nothing about this is a switch: it is a human taking responsibility, with
+the chain checked first.
+
+### Which account
+
 It is the account that **broadcasts**, which is KeeperHub's relayer — not your funding account.
 The payment is a `transferFrom`, so the funding account's tokens move while the relayer's nonce is
 the one spent. Discover it from any settled transaction:
