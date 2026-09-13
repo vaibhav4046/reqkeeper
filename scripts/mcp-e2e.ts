@@ -38,6 +38,7 @@ import { createInterface } from "node:readline";
 import { KeeperHubFixture } from "./fixture-keeperhub.ts";
 import { obligationId } from "../src/identity.ts";
 import { NAMESPACE } from "../src/plan.ts";
+import { fetchInvoice } from "../src/request.ts";
 import { Store } from "../src/store.ts";
 
 const SERVER = new URL("mcp-server.ts", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
@@ -127,6 +128,19 @@ const inv = invoices.invoices[0];
 
 const fx = new KeeperHubFixture();
 await fx.start();
+
+// The server corroborates the invoice's anchor against the receipt of the transaction it names,
+// and every chain read here is pinned to the fixture. So the fixture is told about the create
+// this run is really about, read from the same gateway the server will read: without it the
+// anchor is dropped, every scan comes back truncated, and the run refuses at SOURCE_UNVERIFIABLE
+// over a fixture gap rather than anything the code did.
+try {
+  const live = await fetchInvoice(inv.requestId);
+  if (live.anchor) fx.announceAnchor(live.anchor.transactionHash, live.anchor.blockNumber);
+} catch {
+  // The gateway is unreachable. The server's own fetch will fail the same way and say so; this
+  // is not the place to report it.
+}
 const dir = mkdtempSync(join(tmpdir(), "rk-e2e-"));
 const dbPath = join(dir, "e2e.sqlite");
 
@@ -223,7 +237,11 @@ try {
 } finally {
   await server.stop();
   await fx.stop();
-  rmSync(dir, { recursive: true, force: true });
+  // Windows holds the sqlite file open a moment after the child exits, and a cleanup that
+  // cannot delete a temp directory is not a failed end-to-end run.
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  } catch { /* the OS will reap it */ }
 }
 
 console.log(

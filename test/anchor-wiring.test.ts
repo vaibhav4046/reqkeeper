@@ -29,6 +29,25 @@ const REQUEST_ID = "01b7cd715cfe60ac07f637ed0eb62bf5d1c00c56e3599b8ce6b0a962e8b7
 const REFERENCE = "0x7a3496f145f70a31";
 const ANCHOR_BLOCK = 11_690_123;
 const AMOUNT = toBaseUnits("1", 18).toString();
+const ANCHOR_TX = `0x${"ab".repeat(32)}`;
+
+/**
+ * The anchor's own transaction, mined in the block the anchor claims.
+ *
+ * The anchor is not believed on the gateway's word any more: it is checked against the receipt
+ * of the transaction it names. So every context that proposes against an anchored invoice has
+ * to be able to read that one receipt, and a test that reached a public endpoint to do it would
+ * fail for reasons it is not about.
+ */
+function receiptIn(blockNumber: number | undefined) {
+  return async (_rpc: string, hash: string) => ({
+    hash,
+    verified: blockNumber !== undefined,
+    receiptStatus: (blockNumber === undefined ? "not_found" : "success") as "success" | "not_found",
+    gasUsed: "0",
+    blockNumber,
+  });
+}
 
 /** The invoice as Request's gateway returns it, anchor included. */
 const invoice = {
@@ -42,7 +61,7 @@ const invoice = {
   feeRecipient: FEE_ADDR,
   salt: "0123456789abcdef",
   paymentReference: REFERENCE,
-  anchor: { blockNumber: ANCHOR_BLOCK, transactionHash: `0x${"ab".repeat(32)}` },
+  anchor: { blockNumber: ANCHOR_BLOCK, transactionHash: ANCHOR_TX },
 };
 
 function proposeArgs() {
@@ -67,6 +86,7 @@ describe("the invoice anchor is actually stored, not just accepted", () => {
       // Nothing on chain, so the propose path runs through instead of refusing ALREADY_PAID.
       findPayment: async () => ({ found: false, corroborated: true, scannedBlocks: 1, truncated: false }),
       fetchInvoice: async () => invoice,
+      readReceipt: receiptIn(ANCHOR_BLOCK),
     } as unknown as McpContext;
 
     const reply = await handleRequest(ctx, {
@@ -82,6 +102,64 @@ describe("the invoice anchor is actually stored, not just accepted", () => {
       recovered?.anchorBlock,
       ANCHOR_BLOCK,
       "the anchor Request supplied must survive into the stored facts, or recovery can never conclude",
+    );
+    store.close();
+  });
+
+  test("an anchor whose own transaction is in another block is refused, not stored", async () => {
+    // The attack the check exists for. The anchor is the FLOOR of every payment scan for this
+    // invoice, so moving it forward past a real payment turns a settled invoice into NOT_PAID --
+    // which is the answer that opens the already-paid gate. Nothing else in the system can
+    // notice: the reference still derives, the payee is still right, the amount still matches.
+    // Only the anchor's own transaction disagrees, and until now nothing asked it.
+    const store = new Store();
+    const ctx = {
+      store,
+      provider: new FixtureProvider(),
+      findPayment: async () => ({ found: false, corroborated: true, scannedBlocks: 1, truncated: false }),
+      fetchInvoice: async () => invoice,
+      readReceipt: receiptIn(ANCHOR_BLOCK + 50_000),
+    } as unknown as McpContext;
+
+    const reply = await handleRequest(ctx, {
+      id: 1,
+      method: "tools/call",
+      params: { name: "propose_payment", arguments: proposeArgs() },
+    });
+    const body = JSON.parse(((reply?.result as { content: Array<{ text: string }> }).content[0].text));
+    assert.equal(body.refusal, "REQUEST_UNREADABLE", `expected a refusal, got ${JSON.stringify(body).slice(0, 300)}`);
+    assert.equal(body.providerWriteIssued, false);
+    assert.match(body.detail, new RegExp(String(ANCHOR_BLOCK)), "the refusal must name the anchor it was handed");
+    assert.match(body.detail, new RegExp(String(ANCHOR_BLOCK + 50_000)), "and the block the transaction is really in");
+    store.close();
+  });
+
+  test("an anchor whose transaction cannot be read is dropped, not believed and not fatal", async () => {
+    // The other direction, and the reason the refusal above is not simply "no receipt, no
+    // proposal". An endpoint that will not answer has disproved nothing. Refusing there would
+    // hand every unreachable RPC a veto over proposing at all; believing it would hand a forged
+    // anchor the same trust as a corroborated one. So the anchor is left UNSET, which makes
+    // later scans inconclusive rather than wrongly bounded -- the safe direction.
+    const store = new Store();
+    const ctx = {
+      store,
+      provider: new FixtureProvider(),
+      findPayment: async () => ({ found: false, corroborated: true, scannedBlocks: 1, truncated: false }),
+      fetchInvoice: async () => invoice,
+      readReceipt: async () => { throw new Error("rpc unreachable"); },
+    } as unknown as McpContext;
+
+    const reply = await handleRequest(ctx, {
+      id: 1,
+      method: "tools/call",
+      params: { name: "propose_payment", arguments: proposeArgs() },
+    });
+    const body = JSON.parse(((reply?.result as { content: Array<{ text: string }> }).content[0].text));
+    assert.ok(body.refusal == null, `an unreadable anchor must not refuse the proposal: ${JSON.stringify(body).slice(0, 300)}`);
+    assert.equal(
+      store.obligationForRecovery(obligationId(NAMESPACE, REQUEST_ID))?.anchorBlock,
+      null,
+      "an anchor nothing corroborated must not be stored",
     );
     store.close();
   });

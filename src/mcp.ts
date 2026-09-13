@@ -17,7 +17,7 @@
  * An agent calling it before a human has decided gets `AWAITING_APPROVAL` and no send.
  */
 
-import { currentBlock, findPaymentByReference, readPayerNonce, verdictFor, type PaymentExpectation } from "./chain.ts";
+import { DEFAULT_RPC, currentBlock, findPaymentByReference, readPayerNonce, readReceipt, verdictFor, type PaymentExpectation } from "./chain.ts";
 import { payerAddress } from "./exclusion.ts";
 import { assertReferenceMatches, fetchInvoice } from "./request.ts";
 import { obligationId } from "./identity.ts";
@@ -44,6 +44,12 @@ export interface McpContext {
    * are a claim; facts Request serves are the invoice.
    */
   readonly fetchInvoice?: typeof fetchInvoice;
+  /**
+   * Read one receipt. Injectable for the same reason `findPayment` is: the anchor check below
+   * is a chain read on the propose path, and a test that has to reach a public endpoint to
+   * propose is a test that fails for reasons it is not about.
+   */
+  readonly readReceipt?: typeof readReceipt;
   /**
    * Set false ONLY for offline work, and expect the evidence to be tagged TEST.
    *
@@ -231,6 +237,7 @@ function toInvoiceFacts(a: Record<string, unknown>): InvoiceFacts {
 
 async function callTool(ctx: McpContext, name: string, args: Record<string, unknown>): Promise<unknown> {
   const findPayment = ctx.findPayment ?? findPaymentByReference;
+  const receiptOf = ctx.readReceipt ?? readReceipt;
 
   switch (name) {
     case "refusal_codes":
@@ -429,7 +436,39 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
           );
         }
 
-        anchorBlock = invoice.anchor?.blockNumber;
+        // The anchor is corroborated against its own transaction before it is believed.
+        //
+        // It arrives as `{ blockNumber, transactionHash }` and only the block was ever used; the
+        // hash — the one value that can check it — was read and consumed nowhere. The anchor is
+        // the floor of every payment scan for this invoice, so a gateway that moves it moves the
+        // window: a reviewer set it past a real payment and watched an invoice that was already
+        // settled come back NOT_PAID, which is what opens the already-paid gate.
+        //
+        // One receipt read settles it. A hash whose receipt sits in a different block is a
+        // fabricated anchor and the proposal stops; a read that fails leaves the anchor unset,
+        // which makes scans inconclusive rather than wrongly bounded — the safe direction.
+        anchorBlock = undefined;
+        const claimedAnchor = invoice.anchor;
+        const anchorTx = claimedAnchor?.transactionHash;
+        if (claimedAnchor && typeof anchorTx === "string" && anchorTx.length > 0) {
+          try {
+            const anchorReceipt = await receiptOf(ctx.rpcUrl ?? DEFAULT_RPC, anchorTx);
+            if (anchorReceipt.blockNumber === claimedAnchor.blockNumber) {
+              anchorBlock = claimedAnchor.blockNumber;
+            } else if (anchorReceipt.blockNumber !== undefined) {
+              return refusedBeforeWrite(
+                oid,
+                "REQUEST_UNREADABLE",
+                `the invoice claims it was anchored at block ${claimedAnchor.blockNumber}, but the ` +
+                  `transaction it names is in block ${anchorReceipt.blockNumber}. The anchor bounds every ` +
+                  "search for a payment on this invoice, so a wrong one hides payments that exist.",
+              );
+            }
+          } catch {
+            // Unread, not disproved. Left unset, so scans stay inconclusive instead of bounded by
+            // a number nothing corroborated.
+          }
+        }
         amountChangedBy = invoice.amountChangedBy;
         // Learned now, and kept. An obligation created before the gateway was reachable — or fed
         // by the watcher from a file that carries no anchors — has no floor, so every scan for it

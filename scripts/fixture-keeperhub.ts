@@ -73,6 +73,8 @@ function paymentLogData(to: string, amount: string): string {
 }
 
 export class KeeperHubFixture {
+  /** Create transactions this chain contains, hash -> block. See `announceAnchor`. */
+  #anchors = new Map<string, number>();
   #server: Server | null = null;
   #port = 0;
   #seq = 0;
@@ -105,6 +107,18 @@ export class KeeperHubFixture {
       simulates: this.#simulates,
       distinctKeys: this.#byKey.size,
     };
+  }
+
+  /**
+   * Put a create transaction on this chain.
+   *
+   * The invoices this fixture pairs itself with are real ones on Sepolia, and their anchors name
+   * real transactions it has never heard of. Announcing one says "this chain contains that
+   * transaction, in that block" — which is true of the chain being imitated, and is the whole
+   * reason HEAD_BLOCK sits above them.
+   */
+  announceAnchor(transactionHash: string, blockNumber: number): void {
+    this.#anchors.set(transactionHash.toLowerCase(), blockNumber);
   }
 
   async start(): Promise<void> {
@@ -230,7 +244,15 @@ export class KeeperHubFixture {
       case "eth_getTransactionReceipt": {
         const hash = String(call.params?.[0] ?? "").toLowerCase();
         const e = this.#executions.find((x) => x.transactionHash.toLowerCase() === hash);
-        if (!e) return reply(null);
+        if (!e) {
+          // The invoice's own create transaction, if the caller announced it. Same rule as
+          // HEAD_BLOCK above: the anchor is now corroborated against the receipt of the
+          // transaction it names, so a fixture chain that does not contain the creates of the
+          // invoices it serves discards every anchor and makes every scan inconclusive.
+          const anchored = this.#anchors.get(hash);
+          if (anchored === undefined) return reply(null);
+          return reply({ status: "0x1", gasUsed: "0x0", blockNumber: `0x${anchored.toString(16)}`, logs: [] });
+        }
         return reply({
           status: "0x1",
           gasUsed: "0x123da",

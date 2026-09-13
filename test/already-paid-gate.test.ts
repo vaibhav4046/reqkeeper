@@ -55,7 +55,22 @@ const invoice = {
 async function propose(findPayment: McpContext["findPayment"]) {
   const store = new Store();
   const provider = new FixtureProvider();
-  const ctx = { store, provider, findPayment, fetchInvoice: async () => invoice } as unknown as McpContext;
+  const ctx = {
+    store,
+    provider,
+    findPayment,
+    fetchInvoice: async () => invoice,
+    // The anchor is corroborated against its own transaction before it is believed, so an
+    // anchored invoice now costs one receipt read. Injected, because a unit test that reaches a
+    // public endpoint to propose fails for reasons it is not about.
+    readReceipt: async (_rpc: string, hash: string) => ({
+      hash,
+      verified: true,
+      receiptStatus: "success" as const,
+      gasUsed: "0",
+      blockNumber: invoice.anchor.blockNumber,
+    }),
+  } as unknown as McpContext;
   const reply = (await handleRequest(ctx, {
     id: 1,
     method: "tools/call",
