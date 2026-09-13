@@ -52,11 +52,11 @@ describe("verdictFor turns a sighting into one of four answers", () => {
       found: false,
       truncated: false,
       conflicts: ["0xdead: pays a fee of 1, the plan fee is 0"],
-      conflictingLogs: [["fee"]],
+      conflictingLogs: [{ kinds: ["fee"] }],
       negativeCorroborations: 2,
     } as PaymentSighting);
     assert.equal(v.kind, "CONFLICT_OURS");
-    assert.deepEqual(v.kind === "CONFLICT_OURS" ? v.conflictingLogs.map((l) => [...l]) : null, [["fee"]]);
+    assert.deepEqual(v.kind === "CONFLICT_OURS" ? v.conflictingLogs.map((l) => [...l.kinds]) : null, [["fee"]]);
   });
 
   test("a log that paid SOMEBODY ELSE is NOT_PAID, with the log reported alongside", () => {
@@ -70,7 +70,7 @@ describe("verdictFor turns a sighting into one of four answers", () => {
       found: false,
       truncated: false,
       conflicts: ["0xdead: pays 0xdeadbeef, not our payee"],
-      conflictingLogs: [["to"]],
+      conflictingLogs: [{ kinds: ["to"] }],
       negativeCorroborations: 2,
     } as PaymentSighting);
     assert.equal(v.kind, "NOT_PAID");
@@ -133,7 +133,7 @@ describe("verdictFor turns a sighting into one of four answers", () => {
       { found: false, truncated: false,
     conflictingLogs: [],
     negativeCorroborations: 2, conflicts: ["x"] } as PaymentSighting,
-      { found: false, truncated: false, conflictingLogs: [["amount"]], negativeCorroborations: 2 } as PaymentSighting,
+      { found: false, truncated: false, conflictingLogs: [{ kinds: ["amount"] }], negativeCorroborations: 2 } as PaymentSighting,
       { found: false, truncated: false, negativeCorroborations: 2 },
       null,
     ];
@@ -177,7 +177,7 @@ describe("one stranger's log cannot speak for ours", () => {
       truncated: false,
       negativeCorroborations: 2,
       conflicts: ["0xleak: pays 1 wei, the invoice is 1 FAU", "0xjunk: pays 0xdeadbeef, not our payee"],
-      conflictingLogs: [[...OURS_WRONG_AMOUNT], [...A_STRANGERS_LOG]],
+      conflictingLogs: [{ kinds: [...OURS_WRONG_AMOUNT] }, { kinds: [...A_STRANGERS_LOG] }],
     } as PaymentSighting);
     assert.equal(v.kind, "CONFLICT_OURS", "a stranger's log masked our own");
   });
@@ -187,7 +187,7 @@ describe("one stranger's log cannot speak for ours", () => {
       found: false,
       truncated: false,
       negativeCorroborations: 2,
-      conflictingLogs: [[...A_STRANGERS_LOG], [...OURS_WRONG_AMOUNT]],
+      conflictingLogs: [{ kinds: [...A_STRANGERS_LOG] }, { kinds: [...OURS_WRONG_AMOUNT] }],
     } as PaymentSighting);
     assert.equal(v.kind, "CONFLICT_OURS");
   });
@@ -200,7 +200,7 @@ describe("one stranger's log cannot speak for ours", () => {
       found: false,
       truncated: false,
       negativeCorroborations: 2,
-      conflictingLogs: [["to", "amount"]],
+      conflictingLogs: [{ kinds: ["to", "amount"] }],
     } as PaymentSighting);
     assert.equal(v.kind, "NOT_PAID");
   });
@@ -210,7 +210,7 @@ describe("one stranger's log cannot speak for ours", () => {
       found: false,
       truncated: false,
       negativeCorroborations: 2,
-      conflictingLogs: [["to"], ["token"], ["emitter"], ["to", "amount"]],
+      conflictingLogs: [{ kinds: ["to"] }, { kinds: ["token"] }, { kinds: ["emitter"] }, { kinds: ["to", "amount"] }],
     } as PaymentSighting);
     assert.equal(v.kind, "NOT_PAID");
   });

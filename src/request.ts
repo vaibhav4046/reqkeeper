@@ -392,9 +392,36 @@ export async function fetchInvoice(
   }
   assertSepolia(id, "currency.network", asString(dig(p, "currency", "network")));
 
-  const extension = asArray(dig(p, "extensionsData")).find(
+  // The extension's CREATE entry, and only one of them.
+  //
+  // This took the first entry with the right id, whatever action it carried. Request applies
+  // `extensionsData` as an ordered reduce and its own abstract extension throws "The extension
+  // should be created before receiving any other action" -- so a channel carrying
+  // `addPaymentAddress` before `create` is a channel Request rejects, and this reader accepted,
+  // taking the payee and the payment reference from the attacker's entry. Demonstrated on
+  // identical bytes.
+  //
+  // Two entries with the same id is the same hazard wearing a second hat: which one is the
+  // invoice? Refused rather than answered by array order.
+  const feeProxyEntries = asArray(dig(p, "extensionsData")).filter(
     (e) => asString(dig(e, "id")) === FEE_PROXY_EXTENSION_ID,
   );
+  if (feeProxyEntries.length > 1) {
+    throw new RequestError(
+      "NO_FEE_PROXY_EXTENSION",
+      `invoice ${id} carries ${feeProxyEntries.length} ${FEE_PROXY_EXTENSION_ID} entries. Which one ` +
+        "states the payment address decides where the money goes, and array order is not an answer.",
+    );
+  }
+  const extension = feeProxyEntries.find((e) => asString(dig(e, "action")) === "create") ?? undefined;
+  if (feeProxyEntries.length === 1 && extension === undefined) {
+    throw new RequestError(
+      "NO_FEE_PROXY_EXTENSION",
+      `invoice ${id} carries a ${FEE_PROXY_EXTENSION_ID} entry whose action is ` +
+        `${asString(dig(feeProxyEntries[0], "action")) ?? "unstated"}, not "create". Request applies ` +
+        "these in order and refuses any other action before the create; so does this.",
+    );
+  }
   if (!extension) {
     const found = asArray(dig(p, "extensionsData")).map((e) => asString(dig(e, "id")) ?? "?");
     throw new RequestError(

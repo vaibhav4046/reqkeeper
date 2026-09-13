@@ -190,7 +190,7 @@ export function conflictVerdict(sighting) {
     //
     // The repair is the shape, not the predicate. With one entry per log the question "was any log
     // ours and wrong" is answerable again, and a flattened list can no longer be handed in.
-    return logs.some(isOursAndWrong) ? "OURS_AND_WRONG" : "NOT_OURS";
+    return logs.some((log) => isOursAndWrong(log.kinds)) ? "OURS_AND_WRONG" : "NOT_OURS";
 }
 /** Our payee, our token, our reference -- and the wrong amount or fee. Nobody else's mistake. */
 function isOursAndWrong(kinds) {
@@ -447,7 +447,7 @@ async function scanForReference(reference, rpcUrl, head, floor, expect) {
             // pretend it was never there: the caller has to hear about it.
             conflicts.push(`${log.transactionHash}: ${verdict.conflicts.join("; ")}`);
             // One entry per log, never a union across the scan. See `conflictVerdict`.
-            conflictingLogs.push(verdict.kinds);
+            conflictingLogs.push({ txHash: log.transactionHash, kinds: verdict.kinds });
         }
         if (from === floor)
             break;

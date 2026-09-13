@@ -22,6 +22,7 @@
  */
 
 import { matchPaymentLog, verdictFor, type PaymentExpectation, type PaymentSighting } from "./chain.ts";
+import { fetchInvoice } from "./request.ts";
 import { obligationId } from "./identity.ts";
 import type { State } from "./machine.ts";
 import { buildPolicy, buildSourceFacts, buildSteps, FAU, NAMESPACE, type InvoiceFacts } from "./plan.ts";
@@ -42,6 +43,8 @@ export interface WatchInvoice {
   readonly amountBaseUnits: string;
   readonly feeAmount?: string;
   readonly feeAddress?: string;
+  /** The token this invoice is denominated in, as Request states it. FAU when unstated. */
+  readonly tokenAddress?: string;
   /**
    * Where Request anchored this invoice on Sepolia, when the caller knows it.
    *
@@ -62,7 +65,7 @@ export interface WatchRow {
   readonly paymentReference: string;
   /** What the ERC20FeeProxy log says, not what any API or local row claims. */
   readonly chainSaysPaid: boolean;
-  readonly state: State | "PAID_ON_CHAIN";
+  readonly state: State | "PAID_ON_CHAIN" | "UNREAD";
   readonly refusal: string | null;
   readonly detail: string;
   readonly planHash: string | null;
@@ -74,6 +77,15 @@ export interface WatchRow {
 
 export interface WatchDeps {
   readonly store: Store;
+  /**
+   * Read one invoice from Request. Injectable so a test never touches the gateway.
+   *
+   * The facts a proposal is built from come from HERE, not from the caller's list. The list is a
+   * list of request ids; everything that decides money -- the reference, the payee, the amount
+   * with every signed channel action applied, the token, the bound anchor -- is re-derived from
+   * what Request serves.
+   */
+  readonly fetchInvoice?: typeof fetchInvoice;
   /**
    * Injected so a test never touches the network, and so the caller decides which RPC and
    * how far back to look. A read that fails is not evidence of anything and must throw
@@ -154,6 +166,7 @@ function factsFor(inv: WatchInvoice): InvoiceFacts {
     feeAmount: fee,
     feeAddress: inv.feeAddress ?? `0x${"0".repeat(40)}`,
     maxTotalDebitBaseUnits: (BigInt(inv.amountBaseUnits) + BigInt(fee)).toString(),
+    ...(inv.tokenAddress === undefined ? {} : { tokenAddress: inv.tokenAddress }),
     ...(inv.anchorBlock === undefined ? {} : { anchorBlock: inv.anchorBlock }),
   };
 }
@@ -161,7 +174,10 @@ function factsFor(inv: WatchInvoice): InvoiceFacts {
 /** What paying this invoice has to look like. One statement, used by the scan and the check. */
 function expectationFor(f: InvoiceFacts): PaymentExpectation {
   return {
-    tokenAddress: FAU,
+    // The invoice's token, with FAU only as the fallback for a caller that names none. It was
+    // hardcoded, so a scan for a payment in any other token matched on everything but the token
+    // and then compared FAU against FAU -- a check comparing a constant with itself.
+    tokenAddress: f.tokenAddress ?? FAU,
     to: f.payee,
     amount: f.amountBaseUnits,
     feeAmount: f.feeAmount,
@@ -236,7 +252,45 @@ export async function watchPass(
   const provider = deps.provider ?? NO_DISPATCH_PROVIDER;
   const rows: WatchRow[] = [];
 
-  for (const inv of invoices) {
+  for (const listed of invoices) {
+    // The invoice comes from Request, not from the file.
+    //
+    // This path read `docs/live-invoices.json` verbatim -- reference, payee, amount, fee -- and
+    // never asked Request anything, while its own docblock said Request's state is what causes a
+    // proposal to exist. `src/request.ts` exists because "a single wrong paymentReference in a
+    // local file does not break the machine; it aims it", and this was the one caller aiming it.
+    //
+    // The file is a list of request ids now. Everything else is re-derived: the reference against
+    // the invoice's own salt and payment address, the amount with every signed channel action
+    // applied, the anchor bound to the transaction that stored it. A gateway that will not answer
+    // means this invoice is skipped this pass, which costs a poll, never a payment.
+    let inv: WatchInvoice;
+    try {
+      const read = await (deps.fetchInvoice ?? fetchInvoice)(listed.requestId);
+      inv = {
+        requestId: read.requestId,
+        paymentReference: read.paymentReference,
+        payee: read.payee,
+        amountBaseUnits: read.invoiceBaseUnits,
+        feeAmount: read.feeBaseUnits,
+        feeAddress: read.feeRecipient,
+        tokenAddress: read.tokenAddress,
+        ...(read.anchor === undefined ? {} : { anchorBlock: read.anchor.blockNumber }),
+      };
+    } catch (e) {
+      rows.push({
+        requestId: listed.requestId,
+        paymentReference: listed.paymentReference,
+        chainSaysPaid: false,
+        state: "UNREAD",
+        refusal: "REQUEST_UNREADABLE",
+        detail: `Request did not answer for this invoice (${(e as Error).message.slice(0, 140)}); nothing proposed`,
+        planHash: null,
+        providerWriteIssued: false,
+        approvalCommand: null,
+      });
+      continue;
+    }
     const facts = factsFor(inv);
     const sighting = await deps.findPayment(inv.paymentReference, expectationFor(facts));
     // Through the shared verdict, with corroboration required. Reading `sighting.found` directly

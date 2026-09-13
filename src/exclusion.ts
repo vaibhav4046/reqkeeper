@@ -236,8 +236,16 @@ export type OperatorRelease =
   | { readonly kind: "RELEASE" }
   | { readonly kind: "REFUSE_PAID"; readonly txHash?: string }
   | { readonly kind: "REFUSE_INCONCLUSIVE" }
-  /** A log paying this invoice's token and payee disagreed about amount or fee. */
-  | { readonly kind: "REFUSE_CONFLICT" }
+  /**
+   * A log paying this invoice's token and payee disagreed about amount or fee.
+   *
+   * `transactions` is what an operator has to go and look at, and what they have to name back to
+   * release. Payment references are public and the fee proxy is permissionless, so one transfer
+   * of a single unit to the invoice's own payee under its own reference reaches this branch --
+   * permanently, because the log never goes away. Escalation with no exit is a denial of service
+   * priced at one transaction, which is why `acknowledgedConflicts` exists.
+   */
+  | { readonly kind: "REFUSE_CONFLICT"; readonly transactions: readonly string[] }
   /** Only one endpoint returned this negative, and one endpoint's silence is not absence. */
   | { readonly kind: "REFUSE_UNCORROBORATED" }
   /**
@@ -294,10 +302,42 @@ export function operatorReleaseDecision(input: {
    * acknowledgement into the audit trail.
    */
   readonly acknowledgedMempoolRisk?: boolean;
+  /**
+   * Transactions a human has looked at and says do not settle this invoice.
+   *
+   * Named individually, never a blanket "ignore conflicts": a release is only as good as the
+   * logs it accounted for, and a flag that waves away whatever the scan happens to find would
+   * wave away the #1959 leak this branch exists to catch. Each hash goes in the audit trail
+   * beside the operator who typed it.
+   */
+  readonly acknowledgedConflicts?: readonly string[];
 }): OperatorRelease {
   // Only an obligation actually waiting on a dry run can be released this way. Anything else is
   // either already resolved or in a state whose exit is somewhere else entirely.
   if (input.state !== "PAYMENT_PREFLIGHT") return { kind: "REFUSE_STATE", state: input.state };
+
+  /**
+   * The last question, asked once for both answers that reach it.
+   *
+   * The scan read blocks; a leaked dry run sitting in the mempool is in no block. So "nothing was
+   * paid" is never "nothing WILL be paid", and the nonce proof is what closes that -- exactly as
+   * it does for the worker. When it cannot be made, a named human may take the risk explicitly
+   * rather than the door quietly pretending the question was answered.
+   */
+  const releaseOrRefuse = (): OperatorRelease => {
+    switch (input.exclusion.kind) {
+      case "NONCE_CONSUMED":
+        return { kind: "RELEASE" };
+      case "NOT_PROVEN":
+        return input.acknowledgedMempoolRisk === true
+          ? { kind: "RELEASE" }
+          : { kind: "REFUSE_LEAK_NOT_EXCLUDED", code: input.exclusion.code };
+      default: {
+        const exhaustive: never = input.exclusion;
+        return exhaustive;
+      }
+    }
+  };
 
   const verdict = verdictFor(input.sighting);
   switch (verdict.kind) {
@@ -307,8 +347,20 @@ export function operatorReleaseDecision(input: {
 
     // Our token, our payee, our reference, the wrong amount or fee. A human releasing here would
     // be signing off "no payment on chain" over our own money moving in a plan nobody made.
-    case "CONFLICT_OURS":
-      return { kind: "REFUSE_CONFLICT" };
+    case "CONFLICT_OURS": {
+      const seen = verdict.conflictingLogs.map((l) => l.txHash).filter((h): h is string => typeof h === "string");
+      const acknowledged = new Set((input.acknowledgedConflicts ?? []).map((h) => h.toLowerCase()));
+      const unreviewed = seen.filter((h) => !acknowledged.has(h.toLowerCase()));
+      // Every conflicting log has to have been looked at, and a log with no transaction to name
+      // cannot be acknowledged at all -- so an unnamed one keeps the refusal rather than being
+      // covered by a hash that happens to be listed.
+      if (seen.length !== verdict.conflictingLogs.length || unreviewed.length > 0 || seen.length === 0) {
+        return { kind: "REFUSE_CONFLICT", transactions: seen };
+      }
+      // Every conflicting log has been named by a human who says it does not settle this
+      // invoice. What is left is the same question a clean negative leaves.
+      return releaseOrRefuse();
+    }
 
     // Every way of not having concluded: a window that stopped short, a scan that never said
     // what conflicting logs it saw, and a negative nobody else confirmed. The last one is kept
@@ -327,20 +379,11 @@ export function operatorReleaseDecision(input: {
     // in the mempool is in no block. So the nonce proof decides, exactly as it does for the
     // worker -- and when it cannot be made, a named human may take the risk explicitly rather
     // than the door quietly pretending the question was answered.
-    case "NOT_PAID": {
-      switch (input.exclusion.kind) {
-        case "NONCE_CONSUMED":
-          return { kind: "RELEASE" };
-        case "NOT_PROVEN":
-          return input.acknowledgedMempoolRisk === true
-            ? { kind: "RELEASE" }
-            : { kind: "REFUSE_LEAK_NOT_EXCLUDED", code: input.exclusion.code };
-        default: {
-          const exhaustive: never = input.exclusion;
-          return exhaustive;
-        }
-      }
-    }
+    //
+    // A CONFLICT_OURS whose every log a human has named falls through to here too: they have
+    // said those transactions do not settle this invoice, which leaves the same question.
+    case "NOT_PAID":
+      return releaseOrRefuse();
 
     default: {
       const exhaustive: never = verdict;

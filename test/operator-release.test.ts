@@ -91,7 +91,7 @@ describe("an operator may release a wedged preflight, but not over a payment", (
     const d = operatorReleaseDecision({
       state: "PAYMENT_PREFLIGHT",
       exclusion: proven,
-      sighting: { found: false, truncated: false, conflictingLogs: [["amount"]] },
+      sighting: { found: false, truncated: false, conflictingLogs: [{ kinds: ["amount"] }] },
     });
     assert.equal(d.kind, "REFUSE_CONFLICT");
   });
@@ -103,7 +103,7 @@ describe("an operator may release a wedged preflight, but not over a payment", (
     const d = operatorReleaseDecision({
       state: "PAYMENT_PREFLIGHT",
       exclusion: proven,
-      sighting: { found: false, truncated: false, conflictingLogs: [["to", "amount"]], negativeCorroborations: 2 },
+      sighting: { found: false, truncated: false, conflictingLogs: [{ kinds: ["to", "amount"] }], negativeCorroborations: 2 },
     });
     assert.equal(d.kind, "RELEASE");
   });
@@ -193,7 +193,7 @@ describe("a scan cannot see the mempool, and the door has to say so", () => {
     // It is permission to accept an UNPROVABLE risk, not permission to ignore evidence. Every
     // other refusal outranks it.
     const paid = { found: true, truncated: false, conflictingLogs: [], negativeCorroborations: 2, txHash: "0xabc" };
-    for (const sighting of [paid, { found: false, truncated: true }, { found: false, truncated: false, conflictingLogs: [["fee" as const]], negativeCorroborations: 2 }]) {
+    for (const sighting of [paid, { found: false, truncated: true }, { found: false, truncated: false, conflictingLogs: [{ kinds: ["fee" as const] }], negativeCorroborations: 2 }]) {
       const d = operatorReleaseDecision({
         state: "PAYMENT_PREFLIGHT",
         exclusion: notProven,
@@ -209,5 +209,97 @@ describe("a scan cannot see the mempool, and the door has to say so", () => {
     // been excluded teaches them to click through the ones that have not.
     const d = operatorReleaseDecision({ state: "PAYMENT_PREFLIGHT", exclusion: proven, sighting: conclusiveNegative });
     assert.equal(d.kind, "RELEASE");
+  });
+});
+
+describe("a stranger's log cannot wedge an invoice for ever", () => {
+  /**
+   * The mirror of the masking attack, and the same primitive.
+   *
+   * Payment references are public and the ERC20FeeProxy is permissionless, so one transfer of a
+   * single unit to the invoice's OWN payee, in its own token, under its own reference, is
+   * classified OURS_AND_WRONG -- correctly, because that is also exactly what a leaked dry run
+   * executing with different fields looks like. Propose refuses, the worker escalates, and the
+   * operator door refused too. The log is on chain permanently, so every future pass reached the
+   * same verdict: the debt could never be paid and never be written off.
+   *
+   * Escalation with no exit is a denial of service priced at one transaction. The exit is a human
+   * naming the transactions they have read -- never a blanket flag, which would wave away the
+   * leak the branch exists to catch.
+   */
+  const TX = `0x${"9c".repeat(32)}`;
+  const oursAndWrong = {
+    found: false,
+    truncated: false,
+    negativeCorroborations: 2,
+    conflicts: [`${TX}: pays 1, the invoice is 1000000000000000000`],
+    conflictingLogs: [{ txHash: TX, kinds: ["amount" as const] }],
+  };
+
+  test("it refuses, and names the transaction to go and read", () => {
+    const d = operatorReleaseDecision({ state: "PAYMENT_PREFLIGHT", exclusion: proven, sighting: oursAndWrong });
+    assert.equal(d.kind, "REFUSE_CONFLICT");
+    assert.deepEqual(d.kind === "REFUSE_CONFLICT" ? [...d.transactions] : null, [TX]);
+  });
+
+  test("a human who has read that transaction can release", () => {
+    const d = operatorReleaseDecision({
+      state: "PAYMENT_PREFLIGHT",
+      exclusion: proven,
+      sighting: oursAndWrong,
+      acknowledgedConflicts: [TX],
+    });
+    assert.equal(d.kind, "RELEASE");
+  });
+
+  test("naming a DIFFERENT transaction releases nothing", () => {
+    const d = operatorReleaseDecision({
+      state: "PAYMENT_PREFLIGHT",
+      exclusion: proven,
+      sighting: oursAndWrong,
+      acknowledgedConflicts: [`0x${"11".repeat(32)}`],
+    });
+    assert.equal(d.kind, "REFUSE_CONFLICT");
+  });
+
+  test("acknowledging one of two conflicting logs releases nothing", () => {
+    // A release is only as good as the logs it accounted for.
+    const other = `0x${"7d".repeat(32)}`;
+    const d = operatorReleaseDecision({
+      state: "PAYMENT_PREFLIGHT",
+      exclusion: proven,
+      sighting: {
+        ...oursAndWrong,
+        conflictingLogs: [
+          { txHash: TX, kinds: ["amount" as const] },
+          { txHash: other, kinds: ["fee" as const] },
+        ],
+      },
+      acknowledgedConflicts: [TX],
+    });
+    assert.equal(d.kind, "REFUSE_CONFLICT");
+  });
+
+  test("a conflicting log with no transaction to name cannot be acknowledged at all", () => {
+    // Otherwise a hash that happens to be listed would cover a log nobody could have read.
+    const d = operatorReleaseDecision({
+      state: "PAYMENT_PREFLIGHT",
+      exclusion: proven,
+      sighting: { ...oursAndWrong, conflictingLogs: [{ kinds: ["amount" as const] }] },
+      acknowledgedConflicts: [TX],
+    });
+    assert.equal(d.kind, "REFUSE_CONFLICT");
+  });
+
+  test("and acknowledging a conflict does not skip the leak-exclusion proof", () => {
+    // It says "those transactions are not this invoice's settlement". It says nothing about a dry
+    // run still sitting in the mempool, and the two refusals are independent.
+    const d = operatorReleaseDecision({
+      state: "PAYMENT_PREFLIGHT",
+      exclusion: notProven,
+      sighting: oursAndWrong,
+      acknowledgedConflicts: [TX],
+    });
+    assert.equal(d.kind, "REFUSE_LEAK_NOT_EXCLUDED");
   });
 });

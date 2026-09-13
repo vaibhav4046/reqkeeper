@@ -108,7 +108,7 @@ export interface PaymentSighting extends Partial<PaymentLogFields> {
      * obligation to be paid again -- and a stranger's log could contribute a kind that cancelled
      * ours. Absent means the reader never looked; `[]` means it looked and saw none.
      */
-    readonly conflictingLogs?: readonly (readonly ConflictKind[])[];
+    readonly conflictingLogs?: readonly ConflictingLog[];
     /**
      * The highest block this scan covered.
      *
@@ -139,6 +139,17 @@ export interface PaymentExpectation {
  * misconfiguration and a rounding bug.
  */
 export type ConflictKind = "emitter" | "token" | "to" | "amount" | "fee" | "feeAddress";
+/**
+ * One log that carried this reference and did not pay this invoice.
+ *
+ * The transaction is part of it, not decoration: a human reviewing a conflict has to be able to
+ * name which transaction they reviewed, and the operator release door records exactly that. A
+ * bare list of kinds can only be argued with, never acknowledged.
+ */
+export interface ConflictingLog {
+    readonly txHash?: string;
+    readonly kinds: readonly ConflictKind[];
+}
 export declare function matchPaymentLog(log: PaymentLogFields & {
     readonly emitter?: string;
 }, expect: PaymentExpectation): {
@@ -169,7 +180,7 @@ export declare function matchPaymentLog(log: PaymentLogFields & {
  */
 export type ConflictVerdict = "OURS_AND_WRONG" | "NOT_OURS" | "UNKNOWN";
 export declare function conflictVerdict(sighting: {
-    readonly conflictingLogs?: readonly (readonly ConflictKind[])[];
+    readonly conflictingLogs?: readonly ConflictingLog[];
 }): ConflictVerdict;
 /**
  * What a chain read ESTABLISHED about a payment, as three mutually exclusive answers.
@@ -225,7 +236,7 @@ export type PaymentVerdict =
     readonly kind: "CONFLICT_OURS";
     readonly detail: string;
     readonly conflicts: readonly string[];
-    readonly conflictingLogs: readonly (readonly ConflictKind[])[];
+    readonly conflictingLogs: readonly ConflictingLog[];
     readonly txHash?: string;
 }
 /**

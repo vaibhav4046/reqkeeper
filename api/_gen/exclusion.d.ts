@@ -165,9 +165,18 @@ export type OperatorRelease = {
 } | {
     readonly kind: "REFUSE_INCONCLUSIVE";
 }
-/** A log paying this invoice's token and payee disagreed about amount or fee. */
+/**
+ * A log paying this invoice's token and payee disagreed about amount or fee.
+ *
+ * `transactions` is what an operator has to go and look at, and what they have to name back to
+ * release. Payment references are public and the fee proxy is permissionless, so one transfer
+ * of a single unit to the invoice's own payee under its own reference reaches this branch --
+ * permanently, because the log never goes away. Escalation with no exit is a denial of service
+ * priced at one transaction, which is why `acknowledgedConflicts` exists.
+ */
  | {
     readonly kind: "REFUSE_CONFLICT";
+    readonly transactions: readonly string[];
 }
 /** Only one endpoint returned this negative, and one endpoint's silence is not absence. */
  | {
@@ -231,4 +240,13 @@ export declare function operatorReleaseDecision(input: {
      * acknowledgement into the audit trail.
      */
     readonly acknowledgedMempoolRisk?: boolean;
+    /**
+     * Transactions a human has looked at and says do not settle this invoice.
+     *
+     * Named individually, never a blanket "ignore conflicts": a release is only as good as the
+     * logs it accounted for, and a flag that waves away whatever the scan happens to find would
+     * wave away the #1959 leak this branch exists to catch. Each hash goes in the audit trail
+     * beside the operator who typed it.
+     */
+    readonly acknowledgedConflicts?: readonly string[];
 }): OperatorRelease;

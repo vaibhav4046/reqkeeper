@@ -70,6 +70,21 @@ function bench(sighting: PaymentSighting, standing: StandingPolicy = NO_STANDING
     store,
     provider,
     standing,
+    // The facts come from Request now, not from the list. The list is request ids; this stub is
+    // the gateway, and it serves exactly the invoice the fixture describes -- so the test still
+    // states its own facts, and the code under test still gets them from where it must.
+    fetchInvoice: async () => ({
+      requestId: INVOICE.requestId,
+      chainId: 11155111,
+      tokenAddress: FAU,
+      payee: INVOICE.payee,
+      payeeOfRecord: INVOICE.payee,
+      invoiceBaseUnits: INVOICE.amountBaseUnits,
+      feeBaseUnits: INVOICE.feeAmount ?? "0",
+      feeRecipient: INVOICE.feeAddress ?? `0x${"0".repeat(40)}`,
+      salt: "094a62d8a5188270",
+      paymentReference: INVOICE.paymentReference,
+    }),
     findPayment: async (_reference: string, expect: PaymentExpectation): Promise<PaymentSighting> => {
       asked.push(expect);
       return sighting;

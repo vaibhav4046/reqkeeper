@@ -224,6 +224,12 @@ if (releaseTarget) {
     sighting: seen,
     // Typed by a human, on the command line, naming the risk. See the refusal below.
     acknowledgedMempoolRisk: args.has("accept-mempool-risk"),
+    // And the transactions they have actually looked at, by hash. Comma-separated, never a
+    // blanket flag: a release is only as good as the logs it accounted for.
+    acknowledgedConflicts: (args.get("reviewed-tx") ?? "")
+      .split(",")
+      .map((h) => h.trim())
+      .filter((h) => h.length > 0),
   });
   switch (decision.kind) {
     case "REFUSE_STATE":
@@ -241,6 +247,24 @@ if (releaseTarget) {
       console.error("  REFUSED: a log carrying this reference pays this invoice's token and payee but");
       console.error("  disagrees about the amount or the fee. That is this deployment's money moving in a");
       console.error("  plan nobody made, not an unpaid invoice. Investigate it before releasing anything.");
+      console.error("");
+      if (decision.transactions.length > 0) {
+        console.error("  The transaction(s) to look at:");
+        for (const tx of decision.transactions) console.error(`    ${tx}`);
+        console.error("");
+        console.error("  If you have read them and they do NOT settle this invoice — a stranger can emit a");
+        console.error("  log against a public reference for the price of one transfer — name them back:");
+        console.error("");
+        console.error(`    npm run resolve -- --release-preflight <id> --operator <who> \\`);
+        console.error(`                       --reviewed-tx ${decision.transactions.join(",")}`);
+        console.error("");
+        console.error("  Each hash goes in the audit trail beside your name. A blanket flag is deliberately");
+        console.error("  not offered: it would wave away the leaked dry run this refusal exists to catch.");
+      } else {
+        console.error("  The scan named no transaction for the conflicting log, so there is nothing to");
+        console.error("  review by hash and nothing to acknowledge. Re-run against an endpoint that");
+        console.error("  returns transaction hashes with its logs.");
+      }
       process.exit(1);
       break;
     case "REFUSE_UNCORROBORATED":
@@ -289,6 +313,7 @@ if (releaseTarget) {
     // What the machine could prove, and what a human took on instead. An audit trail that
     // records only the release cannot tell the two apart later, and they are not the same event.
     leakExclusion: exclusion.kind,
+    reviewedTransactions: (args.get("reviewed-tx") ?? "").split(",").map((h) => h.trim()).filter(Boolean),
     leakExclusionGap: exclusion.kind === "NOT_PROVEN" ? exclusion.code : null,
     mempoolRiskAcceptedBy: exclusion.kind === "NOT_PROVEN" ? operator : null,
   });

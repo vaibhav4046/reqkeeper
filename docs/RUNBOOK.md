@@ -408,6 +408,25 @@ before it agrees to anything. Five refusals are built into it, and every one is 
   than it sounds, because on a shared relayer the automatic path can never release and this door
   is the only exit.
 
+#### When a conflicting log is somebody else's
+
+```bash
+npm run resolve -- --release-preflight <obligationId> --operator alice@finance \
+                   --reviewed-tx 0xabc…,0xdef…
+```
+
+Payment references are public — they derive from data anchored openly on Sepolia — and the
+ERC20FeeProxy is permissionless. So anyone can emit a log carrying this invoice's reference, to
+this invoice's payee, in this invoice's token, for one unit instead of the invoice amount. That
+reaches the refusal above, and the log never goes away: without a door the invoice is unpayable
+for ever, for the price of one transfer.
+
+The door is naming the transactions. The refusal prints them; you read them; if they do not settle
+this invoice you list them back and each hash is written into the audit trail beside your name.
+There is deliberately no blanket "ignore conflicts" flag: it would wave away the leaked dry run
+this refusal exists to catch, which looks exactly the same from here and is this deployment's own
+money.
+
 #### When the leak cannot be excluded
 
 ```bash
