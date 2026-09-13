@@ -267,6 +267,12 @@ just here.
 
 ## 5. Routes
 
+**Superseded.** This section specified five server-rendered routes. None was built: the console
+that shipped is one hash-routed page (`web/index.html`, six views — see section 11) plus the
+hosted MCP at `api/mcp.ts`. Kept for the reasoning, which still holds — anything a reader cannot
+act on is dead navigation — and marked rather than quietly left reading like a description of
+what exists.
+
 Five. Anything else is dead navigation.
 
 | Route | Contents |

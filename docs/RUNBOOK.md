@@ -126,7 +126,10 @@ you no way to change it without editing it.
 npm run gate-a
 ```
 
-Real output from this tree, 2026-09-13:
+Real output from this tree, 2026-09-13, **with a `KEEPERHUB_API_KEY` in `.env`**. A clone with no
+credential gets `9 ok · 0 failed · 3 blocked` — step 2b becomes BLOCKED, because there is no key
+to accept — and still exits 0. Both tallies are stated because the second is what a reader
+reproducing this will actually see.
 
 ```
   ok   1a chain is Ethereum Sepolia — chainId 11155111
@@ -139,6 +142,8 @@ Real output from this tree, 2026-09-13:
 BLOCKED 4  invoice created via the hosted REST API — optional: …
 BLOCKED 5  payment calldata fetched from the hosted REST API — optional: …
   ok   6  land payment through KeeperHub — tx 0xb90a077185858154… relayed via 0x5af5194b4b0909eb978e3cf1e25333852277f07d
+          (this step LANDS nothing: it re-derives the RECORDED settlement in docs/refusals-live.json
+           against a public RPC. The label is the script's and reads as a live send; it is not one.)
   ok   7  eth_getTransactionReceipt says success — gasUsed 74618
   ok   8  the fee-proxy event carries this reference — 0x050562a52ec69fa2 in the fee-proxy log, same tx
 
