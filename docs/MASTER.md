@@ -433,8 +433,21 @@ Test it first. Everything built before this passes is waste if it fails.
 **Funding:**
 
 3. No Sepolia ETH needed. **Superseded 2026-09-09:** KeeperHub sponsors gas on Sepolia too —
-   a relayer paid 0.000119 ETH for tx `0x5b722787…` from a zero-balance payer. The earlier
-   note that sponsorship is mainnet-only was wrong. See the README.
+   the relayer `0x809d8252aa4f9b8f7d9be7213855b289fe7d0444` is the `from` of every settlement
+   this project has made, and the payer wallet spends only its FAU allowance. Measured from the
+   chain on 2026-09-13, re-readable by anyone:
+
+   | transaction | gasUsed | gas paid by the relayer |
+   |---|---|---|
+   | [`0xb90a0771…d9f7f6`](https://sepolia.etherscan.io/tx/0xb90a0771858581547abeb9310777f4430f892be130765eda1096202b9dd9f7f6) | 74,618 | 0.000084410722456496 ETH |
+   | [`0x41b01a14…e353f52`](https://sepolia.etherscan.io/tx/0x41b01a14cbdb8dd65c41eeb13285bfe9d47e1dc95990e33b0486ca5e5e353f52) | 74,606 | 0.000078852162515546 ETH |
+
+   This line used to read "a relayer paid 0.000119 ETH for tx `0x5b722787…`" — a hash truncated
+   past the point of resolving and a figure no artifact in this repository holds. Neither could be
+   checked by a reader, which is the only thing that makes a number worth printing. (publicnode
+   answers `null` for the first receipt above and tenderly returns it in full; that is the pruning
+   behaviour `src/chain.ts` cross-checks every negative against, seen here in passing.)
+   The earlier note that sponsorship is mainnet-only was wrong. See the README.
 4. FAU: call `mint(address,uint256)` on `0x370DE27fdb7D1Ff1e1BaA7D11c5820a324Cf623C` from
    Etherscan's Write Contract tab. `value = 10000000000000000000000` for 10,000 FAU.
 

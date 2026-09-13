@@ -42,7 +42,10 @@ this run cannot make it.
 ### Both KeeperHub surfaces, both with money behind them
 
 38 settlements through the REST direct-execution API, and **3 through KeeperHub's own MCP
-server** — `execute_contract_call` with `simulate: true` first, then with `idempotency_key`, then
+server**. The difference in what those two sets evidence is worth stating: every REST row carries
+a transaction hash that `verify:all` re-derives from the chain, but none carries a KeeperHub
+execution id, so the transport for those is a fact about how that harness ran rather than
+something each row states. The MCP rows below carry one each — `execute_contract_call` with `simulate: true` first, then with `idempotency_key`, then
 `get_direct_execution_status` called once for each execution id. That status is recorded, not
 trusted: settlement is decided by an independently read receipt and the fee-proxy event for the
 same transaction and amount. Each MCP row carries the KeeperHub execution id that produced it:

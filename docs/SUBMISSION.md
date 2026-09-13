@@ -161,8 +161,11 @@ re-encodes it locally, and requires byte identity before anything is dispatched.
 Nothing here rests on this codebase reporting on itself. `npm run verify:all` re-derives every
 figure below from `docs/evidence/*.json` and public Sepolia RPCs, **with no credentials**, and
 writes `docs/TRUTH.md` — where every row names what it was proved against: `LIVE`, `RECORDED`,
-`FIXTURE` or `DERIVED`. Two of the figures below are **FIXTURE** runs and say so. They prove the
-logic across real processes; no chain saw them, and their transaction hashes are synthetic.
+`FIXTURE` or `DERIVED`. Three of the figures below are **FIXTURE** runs and say so: the race, the
+crash matrix, and the fault-injection harness. They prove the logic across real processes; no chain
+saw them, and their transaction hashes are synthetic. (This paragraph said "two" while three rows
+below were labelled FIXTURE — the labels were right and the count was not, which is exactly the
+drift that makes a summary less trustworthy than the rows it summarises.)
 
 - **38 real payments on Sepolia. 38 replays refused. 0 sends by those replays.**
 - **45 live refusals before any provider write**, 83 rows in total, at zero gas.
@@ -180,8 +183,9 @@ logic across real processes; no chain saw them, and their transaction hashes are
   duplicate payments. **FIXTURE**, for the same reason and with the same value: sends are counted
   out of process so the count survives the kill.
 - **46 of 46 payment references** re-derive from `last8Bytes(keccak256(lowercase(requestId + salt + paymentAddress)))`.
-- `npm run harness` — 26 fault-injection cases, asserted against a provider that counts physical
-  sends rather than reporting a status string.
+- `npm run harness` — 30 fault-injection cases, asserted against a provider that counts physical
+  sends rather than reporting a status string. **FIXTURE**: the provider is that counter, and the
+  transaction hashes in `docs/refusals.json` are synthetic.
 - 680 unit tests, `tsc --noEmit` clean, CI runs typecheck, tests and a build with a clean-tree
   check on every push.
 

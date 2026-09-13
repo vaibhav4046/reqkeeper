@@ -365,11 +365,18 @@ Flags: `--passes=N` (default 5), `--db=.data/live.sqlite`.
 
 ```bash
 node tools/invoice/check-paid.mjs     # Request's own SDK verdict, no credential
-npm run verify:all                    # re-derives every recorded claim from the chain
+npm run verify:all                    # checks every recorded claim; the chain ones against the chain
 ```
 
 `settle:live` already prints the Etherscan link and the fee-proxy log it found. The point of
 these two is that neither reads back the file that reported the payment.
+
+What `verify:all` actually does, since "re-derives every claim from the chain" was overstating it:
+the payment claims ARE re-read from public Sepolia endpoints — emitter, token, payee, amount and
+fee, in the transaction each row names — and the fixture claims (the race, the crash matrix, the
+fault-injection harness) are re-derived from their artifacts, which no chain ever saw. Both kinds
+are checked; only one kind is checked against the chain, and `docs/TRUTH.md` labels every row with
+which it was.
 
 ---
 
@@ -548,7 +555,8 @@ commands below take had no documented source. `--status` is that source.
 **Reproducible by anyone, with no credential:** steps 0, 1, 2, 3, 9, and every refusal in
 `docs/refusals.json`. You can create a real Request invoice on Sepolia, read it back out of
 Request's node unauthenticated, re-derive its payment reference, and re-derive every recorded
-settlement from the chain. `npm run verify:all` is the whole of that and it needs nothing.
+settlement from the chain. `npm run verify:all` is the whole of that and it needs nothing — with
+the distinction above: the fixture rows in it are re-derived from artifacts, not from Sepolia.
 
 **Needs your own KeeperHub account:** the live settlement. There is no shared key, and there
 should not be. You will need to:
