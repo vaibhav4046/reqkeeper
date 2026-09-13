@@ -164,6 +164,13 @@ console.log(`rpc      : ${rpcUrl}`);
 console.log(`policy   : ${describeStandingPolicy(standing)}`);
 console.log(once ? "mode     : single pass" : `mode     : every ${intervalMs / 1000}s, Ctrl-C to stop`);
 
+/** What a pass that could not read the chain means, and what fixes it. One text, both modes. */
+function passFailed(e: unknown): void {
+  console.error(`pass failed: ${(e as Error).message}`);
+  console.error("  An endpoint that will not answer says nothing about these invoices. Set");
+  console.error("  SEPOLIA_RPC, and REQKEEPER_RPC_ENDPOINTS for the corroboration quorum.");
+}
+
 if (once) {
   // The same try/catch the loop has. Without it an endpoint that refuses -- a free tier saying
   // "chain is not available on free plan", which one of the built-in fallbacks does -- ended this
@@ -172,20 +179,27 @@ if (once) {
   try {
     report(await watchPass(deps, invoices));
   } catch (e) {
-    console.error(`pass failed: ${(e as Error).message}`);
-    console.error("  An endpoint that will not answer says nothing about these invoices. Set");
-    console.error("  SEPOLIA_RPC, and REQKEEPER_RPC_ENDPOINTS for the corroboration quorum.");
+    passFailed(e);
     store.close();
     process.exit(1);
   }
 } else {
+  let consecutiveFailures = 0;
   while (!stopping) {
     try {
       report(await watchPass(deps, invoices));
+      consecutiveFailures = 0;
     } catch (e) {
       // A public RPC having a bad minute must not end a poller whose entire job is to keep
       // asking. The next pass re-reads the chain from scratch, so nothing is carried over.
-      console.error(`pass failed: ${(e as Error).message}`);
+      //
+      // Not exiting and not saying what is wrong are two different decisions, and this branch
+      // used to conflate them: the loop form -- the documented one -- printed a third party's
+      // rate-limit text every sixty seconds, for ever, while the `--once` form named the fix.
+      // The hint prints on the first failure and every tenth after it.
+      consecutiveFailures++;
+      if (consecutiveFailures === 1 || consecutiveFailures % 10 === 0) passFailed(e);
+      else console.error(`pass failed: ${(e as Error).message} (${consecutiveFailures} in a row)`);
     }
     if (stopping) break;
     await sleep(intervalMs);
