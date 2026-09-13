@@ -390,6 +390,13 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
       // It fails CLOSED: a gateway that cannot be read is not permission to proceed on the
       // agent's word. Offline callers opt out explicitly with `verifyAgainstRequest: false`,
       // and that is a TEST-tagged path by policy.
+      // Hoisted out of the verification block below so it survives into the stored facts. A
+      // payment cannot predate its invoice, so this block is the floor that lets the recovery
+      // scan return a CONCLUSIVE negative; without it every negative is truncated, the worker
+      // refuses to conclude from a truncated scan, and an obligation whose dry run failed is
+      // wedged for ever. Absent while Request has not confirmed the create, and omitted rather
+      // than defaulted -- a zero floor would claim a scan to genesis that never happened.
+      let anchorBlock: number | undefined;
       if (ctx.verifyAgainstRequest !== false) {
         const read = ctx.fetchInvoice ?? fetchInvoice;
         let invoice;
@@ -403,6 +410,8 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
               "Facts supplied by a caller are a claim, not an invoice, so nothing is proposed on them.",
           );
         }
+
+        anchorBlock = invoice.anchor?.blockNumber;
 
         try {
           assertReferenceMatches(facts.paymentReference, invoice.paymentReference);
@@ -455,13 +464,17 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
           // satisfy this invoice, and treating it as settlement lets anyone who can read a
           // reference off-chain refuse payment of that invoice permanently. References are
           // public: they derive from data anchored openly on Sepolia.
-          const sighting = await findPayment(facts.paymentReference, { expect: expectation });
+          const sighting = await findPayment(facts.paymentReference, { expect: expectation, anchorBlock });
           alreadyPaid = sighting?.found === true;
         } catch {
           alreadyPaid = false;
         }
       }
-      const sourceFacts = buildSourceFacts({ ...facts, hasBeenPaid: alreadyPaid });
+      const sourceFacts = buildSourceFacts({
+        ...facts,
+        hasBeenPaid: alreadyPaid,
+        ...(anchorBlock === undefined ? {} : { anchorBlock }),
+      });
 
       // propose_payment deliberately passes no approval, so settleObligation stops at the
       // human-authority check. settle_obligation reads whatever a human actually wrote.

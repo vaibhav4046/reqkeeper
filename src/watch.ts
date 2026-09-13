@@ -42,6 +42,19 @@ export interface WatchInvoice {
   readonly amountBaseUnits: string;
   readonly feeAmount?: string;
   readonly feeAddress?: string;
+  /**
+   * Where Request anchored this invoice on Sepolia, when the caller knows it.
+   *
+   * A payment cannot predate its invoice, so this is the floor that lets a negative chain scan be
+   * CONCLUSIVE rather than merely unobserved -- which is what the recovery path needs before it
+   * may release an obligation whose dry run never answered. The watcher is handed a list rather
+   * than reading the gateway itself, so whether an anchor exists depends on the feed:
+   * `docs/live-invoices.json` records none, so obligations proposed from that list carry none and
+   * their recovery needs an anchor from a resolver that has read the invoice. That is a gap in
+   * the feed, not a hole in the guard -- with no anchor the negative stays inconclusive and
+   * nothing is released.
+   */
+  readonly anchorBlock?: number;
 }
 
 export interface WatchRow {
@@ -141,6 +154,7 @@ function factsFor(inv: WatchInvoice): InvoiceFacts {
     feeAmount: fee,
     feeAddress: inv.feeAddress ?? `0x${"0".repeat(40)}`,
     maxTotalDebitBaseUnits: (BigInt(inv.amountBaseUnits) + BigInt(fee)).toString(),
+    ...(inv.anchorBlock === undefined ? {} : { anchorBlock: inv.anchorBlock }),
   };
 }
 
