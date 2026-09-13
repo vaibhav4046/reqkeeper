@@ -210,9 +210,14 @@ describe("the whole channel decides what is owed", () => {
     assert.equal((await read(id)).amountChangedBy, undefined);
   });
 
-  test("a reduction below zero refuses rather than guessing", async () => {
-    const id = serve([CREATE, { name: "reduceExpectedAmount", parameters: { deltaAmount: "9000000000000000000" } }]);
-    assert.equal(await refusalCode(() => read(id)), "MALFORMED_TRANSACTION");
+  test("a reduction below zero is dropped and the amount kept, as Request keeps it", async () => {
+    // `utils/src/amount.ts#reduceAmount` throws on a negative result and
+    // `computeRequestFromTransactions` ignores the action, carrying the previous amount forward.
+    // This used to refuse the whole invoice as malformed.
+    const invoice = await read(serve([CREATE, { name: "reduceExpectedAmount", parameters: { deltaAmount: "9000000000000000000" } }]));
+    assert.equal(invoice.invoiceBaseUnits, ONE);
+    assert.equal(invoice.amountChangedBy, undefined);
+    assert.match(String(invoice.ignoredActions?.[0]?.reason), /below zero/, JSON.stringify(invoice.ignoredActions));
   });
 
   test("a delta placed before the create refuses", async () => {
@@ -379,5 +384,146 @@ describe("an invoice older than this reader is still an invoice", () => {
     // ... and the data-only id is NOT accepted for it.
     serveUnder(idForOldShape(signed), signed);
     assert.equal(await refusalCode(() => read(idForOldShape(signed))), "REQUEST_ID_MISMATCH");
+  });
+});
+
+
+describe("the channel is read the way Request reads it", () => {
+  /**
+   * Each divergence here was found by building a channel shape the corpus does not contain: every
+   * one of this deployment's 46 live invoices is a single payee-signed `ecdsa` create with an
+   * explicit fee and a `paymentNetworkName`, made by one generator. Fidelity to Request was being
+   * measured against Request-shaped data this repository had produced itself.
+   */
+  function serveRaw(transactions: Array<{ signed: unknown; state?: string; timestamp?: number }>, id: string): string {
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          result: {
+            transactions: transactions.map((t, i) => ({
+              transaction: { data: JSON.stringify(t.signed) },
+              state: t.state ?? "confirmed",
+              blockNumber: 11_690_000,
+              timestamp: t.timestamp ?? 1_700_000_000 + i,
+            })),
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )) as typeof fetch;
+    return id;
+  }
+
+  test("deltas apply one step at a time: create 100, reduce 150, increase 100 owes 200", async () => {
+    // Summed and sign-checked once at the end this read 50 -- a fourfold underpayment on a channel
+    // where every signature and every role was right. Request drops the reduce that would go
+    // negative and applies the increase to the original figure.
+    const hundred = { name: "create", parameters: { ...CREATE.parameters, expectedAmount: "100" } } as Action;
+    const invoice = await read(
+      serve([
+        hundred,
+        { name: "reduceExpectedAmount", parameters: { deltaAmount: "150" } },
+        { name: "increaseExpectedAmount", parameters: { deltaAmount: "100" } },
+      ]),
+    );
+    assert.equal(invoice.invoiceBaseUnits, "200");
+    assert.equal(invoice.amountChangedBy?.actions, 1);
+    assert.equal(invoice.ignoredActions?.length, 1);
+  });
+
+  test("a PENDING increase is not applied, and is named", async () => {
+    // Not anchored on Sepolia, free to post, and kept out of Request's confirmed state. A reader
+    // that applies it hands the approver a number the chain has never seen.
+    const create = signedBy(CREATE);
+    const pending = signAction({ name: "increaseExpectedAmount", parameters: { deltaAmount: "9000" } }, PAYER_KEY);
+    const id = serveRaw([{ signed: create }, { signed: pending, state: "pending" }], channelIdFor(create));
+    const invoice = await read(id);
+    assert.equal(invoice.invoiceBaseUnits, ONE);
+    assert.match(String(invoice.ignoredActions?.[0]?.reason), /pending, not confirmed/, JSON.stringify(invoice.ignoredActions));
+  });
+
+  test("a PENDING cancel does not cancel", async () => {
+    const create = signedBy(CREATE);
+    const cancel = signAction({ name: "cancel", parameters: {} }, PAYEE_KEY);
+    const id = serveRaw([{ signed: create }, { signed: cancel, state: "pending" }], channelIdFor(create));
+    assert.equal((await read(id)).invoiceBaseUnits, ONE);
+  });
+
+  test("actions apply in timestamp order, not array order", async () => {
+    // The same three actions as the 200 case, served with the increase FIRST in the array but
+    // later by timestamp. Request sorts on timestamp; with per-step arithmetic the order changes
+    // the answer, so array order gave 200 - 150 = 50 here.
+    const hundred = signAction({ name: "create", parameters: { ...CREATE.parameters, expectedAmount: "100" } }, PAYEE_KEY);
+    const reduce = signAction({ name: "reduceExpectedAmount", parameters: { deltaAmount: "150" } }, PAYEE_KEY);
+    const increase = signAction({ name: "increaseExpectedAmount", parameters: { deltaAmount: "100" } }, PAYER_KEY);
+    const id = serveRaw(
+      [
+        { signed: hundred, timestamp: 1 },
+        { signed: increase, timestamp: 3 },
+        { signed: reduce, timestamp: 2 },
+      ],
+      channelIdFor(hundred),
+    );
+    assert.equal((await read(id)).invoiceBaseUnits, "200");
+  });
+
+  test("a stranger's create served ahead of the genuine one does not wedge the invoice", async () => {
+    // The create is the one that hashes to the channel id, wherever it sits in the array.
+    const genuine = signedBy(CREATE);
+    const strangers = signAction({ name: "create", parameters: { ...CREATE.parameters, expectedAmount: "5" } }, PAYEE_KEY);
+    const id = serveRaw([{ signed: strangers }, { signed: genuine }], channelIdFor(genuine));
+    assert.equal((await read(id)).invoiceBaseUnits, ONE);
+  });
+
+  test("a payer cannot cancel a request the payer created, because it starts ACCEPTED", async () => {
+    // `create.ts`: a payer-created request starts in state ACCEPTED; `cancel.ts`: "A payer cancel
+    // need to be done on a request with the state created". Request ignores it; so does this.
+    const id = serve([CREATE, { name: "cancel", parameters: {} }], { 0: PAYER_KEY, 1: PAYER_KEY });
+    const invoice = await read(id);
+    assert.equal(invoice.invoiceBaseUnits, ONE, "a payer cancel from ACCEPTED cancelled the invoice");
+    assert.match(String(invoice.ignoredActions?.[0]?.reason), /ACCEPTED/, JSON.stringify(invoice.ignoredActions));
+  });
+
+  test("but the payee may cancel from any state, and a payer may cancel from CREATED", async () => {
+    // Payer-created (ACCEPTED), payee cancels: honoured.
+    assert.equal(await refusalCode(() => read(serve([CREATE, { name: "cancel" }], { 0: PAYER_KEY, 1: PAYEE_KEY }))), "INVOICE_CANCELLED");
+    // Payee-created (CREATED), payer cancels: honoured.
+    assert.equal(await refusalCode(() => read(serve([CREATE, { name: "cancel" }], { 0: PAYEE_KEY, 1: PAYER_KEY }))), "INVOICE_CANCELLED");
+  });
+
+  test("an accept by the payee is ignored; by the payer from CREATED it is applied", async () => {
+    const byPayee = await read(serve([CREATE, { name: "accept", parameters: {} }], { 0: PAYEE_KEY, 1: PAYEE_KEY }));
+    assert.match(String(byPayee.ignoredActions?.[0]?.reason), /only allows payer to take it/, JSON.stringify(byPayee.ignoredActions));
+    const byPayer = await read(serve([CREATE, { name: "accept", parameters: {} }], { 0: PAYEE_KEY, 1: PAYER_KEY }));
+    assert.equal(byPayer.ignoredActions, undefined, JSON.stringify(byPayer.ignoredActions));
+  });
+
+  test("an addFee on a later action stops the settlement rather than stiffing the fee recipient", async () => {
+    // `requestLogicCore` reduces `extensionsData` for EVERY action, so a payee-signed `addFee`
+    // changes the fee the invoice declares. This reader applies the create's entry only; it used
+    // to drop the later one silently and pay a fee of 0 to nobody.
+    const id = serve(
+      [
+        CREATE,
+        {
+          name: "reduceExpectedAmount",
+          parameters: {
+            deltaAmount: "0",
+            extensionsData: [
+              { id: "pn-erc20-fee-proxy-contract", action: "addFee", parameters: { feeAddress: `0x${"fe".repeat(20)}`, feeAmount: "50" } },
+            ],
+          },
+        },
+      ],
+      { 1: PAYEE_KEY },
+    );
+    assert.equal(await refusalCode(() => read(id)), "EXTENSION_ACTION_UNSUPPORTED");
+  });
+
+  test("a create without the optional paymentNetworkName is an invoice", async () => {
+    const params = JSON.parse(JSON.stringify(CREATE.parameters)) as Record<string, unknown>;
+    const ext = (params.extensionsData as Array<Record<string, unknown>>)[0] as Record<string, unknown>;
+    delete (ext.parameters as Record<string, unknown>).paymentNetworkName;
+    const invoice = await read(serve([{ name: "create", parameters: params }]));
+    assert.equal(invoice.invoiceBaseUnits, ONE);
   });
 });

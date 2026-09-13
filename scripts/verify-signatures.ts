@@ -17,7 +17,6 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 
-import { keccak256 } from "../src/keccak.ts";
 import { fetchInvoice, recoverActionSigner } from "../src/request.ts";
 
 const GATEWAY = process.env.REQUEST_GATEWAY_URL ?? "https://sepolia.gateway.request.network";
@@ -45,8 +44,8 @@ function deepSort(value: unknown): unknown {
   return value;
 }
 
-const digestOf = (data: unknown): Uint8Array =>
-  keccak256(new TextEncoder().encode(JSON.stringify(deepSort(data)).toLowerCase()));
+/** Request's normalisation, the text the signature is over -- hashed for `ecdsa`, EIP-191-prefixed for `ecdsa-ethereum`. */
+const normalizedOf = (data: unknown): string => JSON.stringify(deepSort(data)).toLowerCase();
 
 const invoices = JSON.parse(readFileSync("docs/live-invoices.json", "utf8")) as {
   invoices: Array<{ requestId: string }>;
@@ -105,10 +104,7 @@ for (const invoice of invoices.invoices) {
     // added to one of them.
     const signer =
       (method === "ecdsa" || method === "ecdsa-ethereum") && value
-        ? recoverActionSigner(method, digestOf(action.data), value, {
-            ...(payee === null ? {} : { payee }),
-            ...(payer === null ? {} : { payer }),
-          })
+        ? recoverActionSigner(method, normalizedOf(action.data), value)
         : null;
     const role = signer !== null && signer === payee ? "payee" : signer !== null && signer === payer ? "payer" : null;
     rows.push({

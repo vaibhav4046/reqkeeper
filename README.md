@@ -122,7 +122,7 @@ dependencies. `typecheck` and `build` call `tsc`, so those two want `npm install
 ```bash
 npm install           # only for typecheck and build; everything above runs without it
 
-npm test              # 685 tests, 136 suites
+npm test              # 714 tests, 141 suites
 npm run typecheck     # tsc --noEmit
 npm run build         # console + api; the tree must stay clean afterwards
 npm run gate-a        # Request <-> KeeperHub <-> Sepolia end to end
@@ -174,7 +174,7 @@ read-only and imports no store and no provider at all — the payment tools are 
 |---|---|---|
 | Invoice facts: payee, amount, fee, token, salt | Request's Sepolia gateway, unauthenticated | [`src/request.ts`](src/request.ts) |
 | Payment reference | **Derived**, `last8Bytes(keccak256(lowercase(requestId + salt + paymentAddress)))` | [`src/request.ts`](src/request.ts) |
-| Obligation identity | `sha256("reqkeeper.obligation.v1:" + ns + requestId)` | [`src/identity.ts`](src/identity.ts) |
+| Obligation identity | `sha256("reqkeeper.obligation.v1:" + len(ns) + ":" + ns + ":" + len(requestId) + ":" + requestId)` — length-prefixed so `("a","b:c")` and `("a:b","c")` cannot collide | [`src/identity.ts`](src/identity.ts) |
 | Payment calldata | Encoded locally, proved byte-identical to KeeperHub's encoder | [`src/abi.ts`](src/abi.ts), `npm run verify:seam` |
 | Execution | `POST /api/execute/contract-call` with an `Idempotency-Key` | [`src/keeperhub.ts`](src/keeperhub.ts) |
 | Settlement evidence | An independently read receipt **and** the fee-proxy event for the same transaction and amount | [`src/chain.ts`](src/chain.ts) |
@@ -237,8 +237,11 @@ honestly open — never duplicates. `npm run crash`.
 
 ```bash
 cp .env.example .env   # KEEPERHUB_API_KEY is the only credential the settle path needs
+cd tools/invoice && pnpm install && pnpm run create && cd ../..   # the invoice (docs/RUNBOOK.md §2)
 npm run gate-a         # prove the three systems line up before spending anything
-npm run settle:live    # propose -> approve -> settle
+npm run settle:live    # proposes, prints the plan hash, stops at AWAITING_APPROVAL
+npm run approve -- --requestId <id> --reference <ref> --payee <addr>                    --amount <baseUnits> --max <baseUnits> --approver you@example.com
+npm run settle:live    # a decision exists for this plan now; it dispatches once
 npm run resolve        # drain the outbox; depth is checked before SETTLED
 ```
 

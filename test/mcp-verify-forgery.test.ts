@@ -195,7 +195,7 @@ describe("verify_payment will not call a forged log a payment", () => {
     assert.equal(answer.paid, false, JSON.stringify(answer));
     assert.equal(answer.corroboratedBy, null);
     assert.equal(answer.referenceSeen, true, "the sighting itself is not hidden");
-    assert.match(String(answer.caveat), /nothing here corroborates/);
+    assert.match(String(answer.caveat), /nothing here corroborates|no other confirmed it/);
     assert.deepEqual(chain.asked, [undefined], "there were no imported facts to match against");
     (c.store as Store).close();
   });

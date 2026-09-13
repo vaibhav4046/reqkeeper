@@ -55,7 +55,9 @@ export type RequestErrorCode =
   /** One signature, served twice. A signature authorises one action. */
   | "ACTION_REPLAYED"
   /** A genuinely signed action, lifted from another invoice onto this one. */
-  | "ACTION_FOREIGN";
+  | "ACTION_FOREIGN"
+  /** A party really took an extension action (addFee, addPaymentAddress) this reader cannot apply. */
+  | "EXTENSION_ACTION_UNSUPPORTED";
 
 export class RequestError extends Error {
   // See MoneyError: Node's strip-only TypeScript mode rejects constructor parameter
@@ -133,6 +135,8 @@ export type ReceiptReader = (
   rpcUrl?: string,
 ) => Promise<{
   blockNumber?: number;
+  /** Unix seconds of the block, when the reader could learn it. See `bindAnchor`. */
+  blockTimestamp?: number;
   logs?: ReadonlyArray<{ address?: string; data?: string }>;
 }>;
 
@@ -296,7 +300,12 @@ export async function fetchInvoice(
       // The whole signed action is kept, not just its `data`. The channel id is a hash OVER the
       // signed action, so verifying it needs the signature and every other field exactly as
       // served. See `assertChannelIdBindsCreate`.
-      return { index, data: dig(signed, "data"), signed };
+      // The transaction's own state and timestamp travel with it. Request splits a channel into
+      // CONFIRMED actions, reduced from nothing, and PENDING ones reduced on top -- and exposes
+      // the two separately. A pending action is not anchored on Sepolia and costs nothing to post.
+      const state = asString(dig(tx, "state")) ?? "confirmed";
+      const at = dig(tx, "timestamp");
+      return { index, data: dig(signed, "data"), signed, state, timestamp: typeof at === "number" ? at : null };
     } catch (e) {
       throw new RequestError(
         "MALFORMED_TRANSACTION",
@@ -305,11 +314,26 @@ export async function fetchInvoice(
     }
   });
 
-  const create = actions.find((a) => asString(dig(a.data, "name")) === "create");
-  if (!create) {
+  // The create is the one whose bytes hash to the channel id -- not the first one in the array.
+  //
+  // Selecting by position and then checking the hash meant a stranger's create appended to a real
+  // channel and served ahead of the genuine one made the whole invoice REQUEST_ID_MISMATCH: the
+  // refusal that says "substituted in transit", about an invoice that was fine, for ever. The
+  // comment on the cancel check below says position must not matter; this made it matter.
+  const creates = actions.filter((a) => asString(dig(a.data, "name")) === "create");
+  if (creates.length === 0) {
     throw new RequestError(
       "NO_CREATE_ACTION",
       `channel ${id} has no create action (${actions.length} transaction(s)); there is no invoice to read`,
+    );
+  }
+  const create = creates.find((c) => channelIdOf(c.signed) === id);
+  if (!create) {
+    throw new RequestError(
+      "REQUEST_ID_MISMATCH",
+      `channel ${id} served ${creates.length} create action(s) and none hashes to ${id}. The request id is a ` +
+        "hash of the signed create action, so these are not the bytes that id refers to — the invoice has " +
+        "been substituted somewhere between Request and here.",
     );
   }
 
@@ -339,8 +363,6 @@ export async function fetchInvoice(
   // It binds the CREATE, which is where the payee, the payment address, the amount, the token and
   // the salt live — everything the payment reference derives from. Later actions are bound by
   // their own signatures, immediately below.
-  assertChannelIdBindsCreate(id, create.signed);
-
   // And every action is checked against the signature it carries.
   //
   // The id binding above covers the CREATE and nothing else. Everything after it -- a cancel, an
@@ -360,13 +382,33 @@ export async function fetchInvoice(
   // Only what authenticated. Everything else is ignored exactly as Request ignores it, counted,
   // and named to the human below -- rather than refusing the invoice, which let any stranger wedge
   // a real debt for ever by appending junk to a public channel.
+  const ignored: IgnoredAction[] = [...authentication.ignored];
   const everyAction = actions
     .filter((a) => authentication.applicable.has(a.index))
+    .filter((a) => {
+      // The create is read whatever its state -- an unconfirmed create is exactly the unanchored
+      // invoice, handled by the absent anchor. A pending LATER action is not applied to the
+      // figures a human approves: Request keeps it out of the confirmed state, and it is not
+      // anchored anywhere. It is named, so the approver hears that a change is on its way.
+      if (a.index === create.index || a.state === "confirmed") return true;
+      ignored.push({
+        index: a.index,
+        name: asString(dig(a.data, "name")) ?? "unnamed",
+        reason: `action ${a.index} is ${a.state}, not confirmed: Request has not anchored it and does not apply it to the confirmed invoice yet`,
+      });
+      return false;
+    })
     .map((a) => ({
       index: a.index,
       name: asString(dig(a.data, "name")),
       parameters: dig(a.data, "parameters"),
-    }));
+      timestamp: a.timestamp,
+      role: authentication.applicable.get(a.index) ?? null,
+    }))
+    // Request orders a channel by timestamp before applying it (`computeRequestFromRequestId`
+    // sorts on `timestamp`), and with per-step arithmetic the order changes the answer. The array
+    // index breaks ties, which is the order Request falls back to as well.
+    .sort((x, y) => (x.timestamp ?? 0) - (y.timestamp ?? 0) || x.index - y.index);
   const later = everyAction.filter((a) => a.index > create.index);
 
   // Refuse a name this reader does not understand, rather than skipping it.
@@ -398,7 +440,31 @@ export async function fetchInvoice(
   // replaying a real channel with the actions reordered. The code was already refusing to assume
   // the create comes first — and then assumed everything before it was irrelevant, which is the
   // same assumption wearing a different hat. There is no un-cancelling, so position cannot matter.
-  const cancelled = everyAction.find((a) => a.name === "cancel");
+  // With Request's preconditions. A payer-created request starts ACCEPTED; a payer may cancel
+  // only from CREATED and accept only from CREATED; a payee may cancel from anything but
+  // CANCELED (`request-logic/src/actions/{create,cancel,accept}.ts`). An action a party really
+  // signed outside those rules is one Request ignores, so it is ignored here and named.
+  const payerCreated = (authentication.applicable.get(create.index) ?? null) === "payer";
+  let requestState: "CREATED" | "ACCEPTED" | "CANCELED" = payerCreated ? "ACCEPTED" : "CREATED";
+  let cancelled: (typeof everyAction)[number] | undefined;
+  for (const a of everyAction) {
+    if (a.index === create.index) continue;
+    if (a.name === "accept") {
+      if (requestState !== "CREATED" || a.role !== "payer") {
+        ignored.push({ index: a.index, name: "accept", reason: `accept at action ${a.index} by the ${a.role} while the request is ${requestState}; Request allows it only by the payer from CREATED` });
+        continue;
+      }
+      requestState = "ACCEPTED";
+    } else if (a.name === "cancel") {
+      const allowed = a.role === "payee" ? requestState !== "CANCELED" : a.role === "payer" && requestState === "CREATED";
+      if (!allowed) {
+        ignored.push({ index: a.index, name: "cancel", reason: `cancel at action ${a.index} by the ${a.role} while the request is ${requestState}; Request allows a payer to cancel only from CREATED` });
+        continue;
+      }
+      requestState = "CANCELED";
+      cancelled ??= a;
+    }
+  }
   if (cancelled) {
     throw new RequestError(
       "INVOICE_CANCELLED",
@@ -456,7 +522,12 @@ export async function fetchInvoice(
     );
   }
   const ep = dig(extension, "parameters");
-  assertSepolia(id, "paymentNetworkName", asString(dig(ep, "paymentNetworkName")));
+  // Optional on the extension (`pn-any-reference-based-types.ts`: `paymentNetworkName?`), and used
+  // by Request only as a cross-check against `currency.network`, which is checked above and is the
+  // authority. Requiring it refused every ERC20FeeProxy invoice from a client that omits it; every
+  // invoice this deployment made carried it only because its own generator hardcodes the field.
+  const paymentNetworkName = asString(dig(ep, "paymentNetworkName"));
+  if (paymentNetworkName !== undefined) assertSepolia(id, "paymentNetworkName", paymentNetworkName);
 
   const tokenAddress = assertAddress("currency.value", asString(dig(p, "currency", "value")));
   const payee = assertAddress("paymentAddress", asString(dig(ep, "paymentAddress")));
@@ -490,13 +561,18 @@ export async function fetchInvoice(
     throw new RequestError(
       "MALFORMED_TRANSACTION",
       `invoice ${id} states ${statedFeeAddress === undefined ? "a feeAmount with no feeAddress" : "a feeAddress with no feeAmount"}. ` +
-        "Request refuses that pairing when the invoice is created (fee-reference-based.ts: " +
-        '"feeAmount requires feeAddress"), so half a fee is not something this reader will complete.',
+        "Request's own builder refuses that pairing (fee-reference-based.ts#createCreationAction: " +
+        '"feeAmount requires feeAddress"); its reader would accept the half. This one does not: a fee ' +
+        "with no recipient, or a recipient with no fee, is not a fee this reader will complete by guessing.",
     );
   }
   const feeRecipient =
     statedFeeAddress === undefined ? `0x${"0".repeat(40)}` : assertAddress("feeAddress", statedFeeAddress);
   const salt = assertBareHex("salt", asString(dig(ep, "salt")));
+  // Request's read path (`reference-based.ts#applyCreation`) requires `/[0-9a-f]{16,}/`.
+  if (!/^[0-9a-f]{16,}$/.test(salt)) {
+    throw new RequestError("BAD_IDENTIFIER", `salt must be at least 16 lowercase hex characters, got ${JSON.stringify(salt)}`);
+  }
   // The amount as the channel stands now: the create's expectedAmount with every later
   // increase and reduction applied, in order. Request states deltas, not new totals.
   let amount = BigInt(assertBaseUnits("expectedAmount", asString(dig(p, "expectedAmount"))));
@@ -515,19 +591,38 @@ export async function fetchInvoice(
   const raisedAt = amount;
   let changingActions = 0;
   for (const a of later) {
+    // Each delta is its own step, and a step that would go below zero is DROPPED and the previous
+    // amount carried forward -- `utils/src/amount.ts#reduceAmount` throws on a negative result and
+    // `computeRequestFromTransactions` ignores the action. This used to sum every delta and check
+    // the sign once at the end: `create 100 → reduce 150 → increase 100` read 50 here and 200 on
+    // Request, a fourfold underpayment on a channel where every signature and role was right.
     if (a.name === "increaseExpectedAmount") {
       amount += BigInt(assertBaseUnits(`action ${a.index} deltaAmount`, asString(dig(a.parameters, "deltaAmount"))));
       changingActions++;
     } else if (a.name === "reduceExpectedAmount") {
-      amount -= BigInt(assertBaseUnits(`action ${a.index} deltaAmount`, asString(dig(a.parameters, "deltaAmount"))));
+      const delta = BigInt(assertBaseUnits(`action ${a.index} deltaAmount`, asString(dig(a.parameters, "deltaAmount"))));
+      if (delta > amount) {
+        ignored.push({ index: a.index, name: a.name, reason: `reduce of ${delta} at action ${a.index} would take the amount below zero; Request ignores that step and keeps ${amount}` });
+        continue;
+      }
+      amount -= delta;
       changingActions++;
     }
-  }
-  if (amount < 0n) {
-    throw new RequestError(
-      "MALFORMED_TRANSACTION",
-      `invoice ${id} reduces below zero across its channel; refusing rather than guessing at the debt`,
+    // An extension action on a later transaction -- `addFee`, `addPaymentAddress` -- changes what
+    // the invoice declares, and this reader applies extensions from the create only. A party
+    // really signed it, so it is neither applied nor quietly dropped: the settlement stops and
+    // says which action, rather than paying a fee recipient nothing and calling the invoice paid.
+    const laterExtensions = asArray(dig(a.parameters, "extensionsData")).filter(
+      (e) => asString(dig(e, "id")) === FEE_PROXY_EXTENSION_ID,
     );
+    if (laterExtensions.length > 0) {
+      throw new RequestError(
+        "EXTENSION_ACTION_UNSUPPORTED",
+        `invoice ${id} carries a ${FEE_PROXY_EXTENSION_ID} action (${asString(dig(laterExtensions[0], "action")) ?? "unstated"}) ` +
+          `on action ${a.index}, signed by the ${a.role}. This reader applies the extension's create entry only; a ` +
+          "fee or payment address changed afterwards is not something it will guess at.",
+      );
+    }
   }
   const invoiceBaseUnits = amount.toString();
   // Carried so the sentence a human approves can name it. The action is authenticated now --
@@ -555,8 +650,8 @@ export async function fetchInvoice(
     // Deliberately NOT part of the facts a plan hashes. Anyone can append to a public channel, so
     // hashing this would let a stranger invalidate a human's approval on demand -- the wedge this
     // change removes, rebuilt one layer up. It reaches the approval sentence instead.
-    ...(authentication.ignored.length > 0 ? { ignoredActions: authentication.ignored } : {}),
-    ...(await boundAnchorFor(id, body, create.index, opts)),
+    ...(ignored.length > 0 ? { ignoredActions: ignored } : {}),
+    ...(await boundAnchorFor(id, body, create.index, opts, asNumber(dig(create.data, "parameters", "timestamp")))),
   };
 }
 
@@ -621,11 +716,12 @@ async function boundAnchorFor(
   body: unknown,
   index: number,
   opts: FetchInvoiceOptions,
+  createdAt?: number,
 ): Promise<{ anchor?: { blockNumber: number; transactionHash: string } }> {
   const claimed = storageAnchor(body, index).anchor;
   if (!claimed) return {};
   const cid = asString(asArray(dig(body, "meta", "transactionsStorageLocation"))[index]);
-  const bound = await bindAnchor(id, claimed, cid, opts.readReceipt ?? defaultReceiptReader, opts.rpcUrl);
+  const bound = await bindAnchor(id, claimed, cid, opts.readReceipt ?? defaultReceiptReader, opts.rpcUrl, createdAt);
   return bound ? { anchor: bound } : {};
 }
 
@@ -664,12 +760,20 @@ const REQUEST_STORAGE = "0xd6c085a4d14e9e171f4af58f7f48bd81173f167e";
  *   - disproved    -> REFUSED. A receipt in another block, or one that stored other bytes, is a
  *                     fabricated anchor, and the invoice around it is not to be acted on.
  */
+/**
+ * How long after a create's signed timestamp its anchoring transaction may be mined. Request
+ * batches to Sepolia within minutes; a day is generous. What it rules out is the attack: an anchor
+ * moved forward by months.
+ */
+const ANCHOR_LAG_SECONDS = 24 * 3600;
+
 async function bindAnchor(
   id: string,
   anchor: { blockNumber: number; transactionHash: string },
   cid: string | undefined,
   readReceipt: ReceiptReader,
   rpcUrl?: string,
+  createdAt?: number,
 ): Promise<{ blockNumber: number; transactionHash: string } | undefined> {
   let receipt: Awaited<ReturnType<ReceiptReader>>;
   try {
@@ -687,6 +791,30 @@ async function bindAnchor(
     );
   }
   if (!cid) return undefined; // nothing to bind it to; unproven rather than disproved
+
+  // The CID check below proves the named transaction stored SOME Request bytes identified by the
+  // CID the gateway served -- and the CID comes from the same untrusted blob as the block and the
+  // hash, so a gateway that lies can hand over any real storage transaction and its real CID,
+  // months after this invoice, and the triple is self-consistent. The anchor is the floor of every
+  // scan and decides whether a negative is conclusive; moved forward, "paid 460,000 blocks ago"
+  // reads as NOT_PAID and the invoice is paid again. Reproduced by a red-team pass.
+  //
+  // The create's own timestamp is signed and hash-bound to the channel id, so it cannot be moved.
+  // Its anchoring transaction cannot sit in a block mined long after it. A block whose time the
+  // reader could not learn binds nothing -- unread, not disproved, and no floor is the safe
+  // direction: every scan for this invoice stays truncated until a reader that can say answers.
+  if (createdAt !== undefined) {
+    if (receipt.blockTimestamp === undefined) return undefined;
+    if (receipt.blockTimestamp > createdAt + ANCHOR_LAG_SECONDS) {
+      throw new RequestError(
+        "ANCHOR_UNBOUND",
+        `invoice ${id} was created at ${createdAt} (its own signed timestamp) but names an anchoring ` +
+          `transaction in a block mined at ${receipt.blockTimestamp}, ${Math.round((receipt.blockTimestamp - createdAt) / 3600)} hours later. ` +
+          "An anchor that late is a floor somebody chose, and it decides whether a scan that found no payment " +
+          "means the invoice is unpaid.",
+      );
+    }
+  }
 
   const wanted = Buffer.from(cid, "utf8").toString("hex").toLowerCase();
   const stored = (receipt.logs ?? []).some(
@@ -768,28 +896,19 @@ const SIGNER_ROLES: Readonly<Record<string, ReadonlyArray<"payee" | "payer">>> =
  */
 export function recoverActionSigner(
   method: string,
-  digest: Uint8Array,
+  normalized: string,
   value: string,
-  parties: { payee?: string; payer?: string },
 ): string | null {
-  const named = new Set([parties.payee, parties.payer].filter((p): p is string => p !== undefined));
-  const candidates: Uint8Array[] =
-    method === "ecdsa"
-      ? [digest]
-      : [
-          personalSignDigest(digest),
-          personalSignDigest(new TextEncoder().encode(`0x${Buffer.from(digest).toString("hex")}`)),
-        ];
-  let first: string | null = null;
-  for (const candidate of candidates) {
-    const recovered = recoverAddress(candidate, value)?.toLowerCase() ?? null;
-    if (recovered === null) continue;
-    if (first === null) first = recovered;
-    // A party's own signature settles which encoding this client used; anything else is reported
-    // as-is so the refusal can name the address it actually saw.
-    if (named.has(recovered)) return recovered;
-  }
-  return first;
+  // `ecdsa` signs keccak256 of the normalised text. `ecdsa-ethereum` is `personal_sign` over the
+  // normalised TEXT ITSELF -- `utils/src/signature.ts`: `ethers.utils.hashMessage(normalize(data))`,
+  // produced by `signMessage(Buffer.from(normalize(data)))` -- so the EIP-191 message is the JSON
+  // string, not its hash and not the hex of its hash. A previous version of this function tried
+  // both of those, which are encodings no Request client has ever used, and a real wallet-signed
+  // action recovered to a stranger: a genuine cancel was dropped and the dead invoice read as
+  // payable. One candidate now, the right one, and no guessing.
+  const bytes = new TextEncoder().encode(normalized);
+  const digest = method === "ecdsa" ? keccak256(bytes) : personalSignDigest(bytes);
+  return recoverAddress(digest, value)?.toLowerCase() ?? null;
 }
 
 /**
@@ -837,7 +956,7 @@ function authenticateActions(
   actions: ReadonlyArray<{ index: number; data: unknown; signed: unknown }>,
   createIndex: number,
   parties: { payee?: string; payer?: string },
-): { applicable: ReadonlySet<number>; ignored: IgnoredAction[] } {
+): { applicable: ReadonlyMap<number, "payee" | "payer">; ignored: IgnoredAction[] } {
   const payee = parties.payee?.toLowerCase();
   const payer = parties.payer?.toLowerCase();
   /**
@@ -849,14 +968,14 @@ function authenticateActions(
    * reviewer measured it: one authorised increase of 500 became 2,500.
    */
   const seen = new Set<string>();
-  const applicable = new Set<number>();
+  const applicable = new Map<number, "payee" | "payer">();
   const ignored: IgnoredAction[] = [];
 
   for (const action of actions) {
     const name = asString(dig(action.data, "name")) ?? "unnamed";
     const failure = failureFor(id, action, name, { payee, payer }, seen);
-    if (failure === null) {
-      applicable.add(action.index);
+    if (failure.role !== undefined) {
+      applicable.set(action.index, failure.role);
       continue;
     }
     // The create is the one action whose failure is the invoice's, not an intruder's: the channel
@@ -871,7 +990,7 @@ function authenticateActions(
 }
 
 /**
- * One action, checked. `null` means it authenticates and may be applied.
+ * One action, checked. A `role` means it authenticates and may be applied, by that party.
  *
  * Every check here answers "did a party this invoice names really take this action, once, on this
  * invoice, in a role Request allows" -- and each returns rather than throws, because the caller
@@ -883,7 +1002,7 @@ function failureFor(
   name: string,
   parties: { payee?: string; payer?: string },
   seen: Set<string>,
-): { code: RequestErrorCode; message: string } | null {
+): { code: RequestErrorCode; message: string; role?: undefined } | { role: "payee" | "payer"; code?: undefined; message?: undefined } {
   const { payee, payer } = parties;
   const method = asString(dig(action.signed, "signature", "method"));
   const value = asString(dig(action.signed, "signature", "value"));
@@ -907,11 +1026,9 @@ function failureFor(
     };
   }
 
-  const digest = keccak256(new TextEncoder().encode(JSON.stringify(normalizeForHash(action.data)).toLowerCase()));
-  const signer = recoverActionSigner(method, digest, value, {
-    ...(payee === undefined ? {} : { payee }),
-    ...(payer === undefined ? {} : { payer }),
-  });
+  const normalized = JSON.stringify(normalizeForHash(action.data)).toLowerCase();
+  const digest = keccak256(new TextEncoder().encode(normalized));
+  const signer = recoverActionSigner(method, normalized, value);
   if (signer === null) {
     return {
       code: "ACTION_SIGNATURE_INVALID",
@@ -981,7 +1098,7 @@ function failureFor(
     };
   }
   seen.add(authorised);
-  return null;
+  return { role };
 }
 
 /**
@@ -1001,37 +1118,19 @@ function versionAtMost(version: string | undefined, ceiling: string): boolean {
   return true;
 }
 
-function assertChannelIdBindsCreate(id: string, signedCreate: unknown): void {
-  if (signedCreate === undefined) {
-    throw new RequestError("MALFORMED_TRANSACTION", `channel ${id} served a create this reader could not re-read`);
-  }
-  /**
-   * What Request hashes, which is not always the whole envelope.
-   *
-   * `request-logic/src/action.ts#getActionHash` says it in one line: "Before the version 2.0.0,
-   * the hash was computed without the signature". This reader always hashed the envelope, so every
-   * invoice whose create states 2.0.0 or older -- real invoices, still on the network, whose ids
-   * are perfectly correct -- came back REQUEST_ID_MISMATCH: the refusal that means "the invoice has
-   * been substituted somewhere between Request and here". A reader that calls old invoices forged
-   * is wrong in the way that costs a creditor their money.
-   *
-   * The signature is authenticated separately either way, against the parties the create names, so
-   * taking Request's older shape here does not take a weaker check with it.
-   */
+/**
+ * The channel id these bytes hash to, the way Request derives it.
+ *
+ * `request-logic/src/action.ts#getActionHash` says it in one line: "Before the version 2.0.0, the
+ * hash was computed without the signature". So a create stating 2.0.0 or older hashes over its
+ * `data` alone and a later one over the whole signed envelope. An ABSENT version is not an old
+ * one: Request stamps every action it makes, and reading "no version" as "older than 2.0.0" would
+ * hand an attacker the weaker binding by deleting a field.
+ */
+function channelIdOf(signedCreate: unknown): string {
   const version = asString(dig(signedCreate, "data", "version"));
-  // An ABSENT version is not an old one. Request stamps every action it makes, so a create with no
-  // version is a shape nobody produced -- and reading it as "older than 2.0.0" would hand an
-  // attacker the weaker binding by deleting a field.
   const hashed = version !== undefined && versionAtMost(version, "2.0.0") ? dig(signedCreate, "data") : signedCreate;
-  const derived = `01${keccak256Hex(JSON.stringify(normalizeForHash(hashed)).toLowerCase()).replace(/^0x/, "")}`;
-  if (derived !== id) {
-    throw new RequestError(
-      "REQUEST_ID_MISMATCH",
-      `channel ${id} served a create that hashes to ${derived}. The request id is a hash of the ` +
-        "signed create action, so these are not the bytes that id refers to — the invoice has been " +
-        "substituted somewhere between Request and here.",
-    );
-  }
+  return `01${keccak256Hex(JSON.stringify(normalizeForHash(hashed)).toLowerCase()).replace(/^0x/, "")}`;
 }
 
 function assertSepolia(id: string, field: string, network: string | undefined): void {
@@ -1066,6 +1165,8 @@ function assertBaseUnits(field: string, value: string | undefined): string {
     `${field} must be a base-unit decimal string, got ${JSON.stringify(value)}`,
   );
 }
+
+const asNumber = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
 
 /** Walk a path through unknown JSON without trusting any level of it to be an object. */
 function dig(value: unknown, ...path: string[]): unknown {

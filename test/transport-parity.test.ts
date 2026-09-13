@@ -18,7 +18,7 @@ import assert from "node:assert/strict";
 import { afterEach, describe, test } from "node:test";
 
 import { encodeCall } from "../src/abi.ts";
-import { KeeperHubProvider } from "../src/keeperhub.ts";
+import { KeeperHubProvider, retryAfterSeconds } from "../src/keeperhub.ts";
 import { KeeperHubMcpProvider } from "../src/keeperhub-mcp.ts";
 import { PAY_SIGNATURE } from "../src/plan.ts";
 
@@ -136,6 +136,15 @@ const CASES: Array<{ name: string; status: number; body: unknown; headers?: Reco
   { name: "409 that says neither thing", status: 409, body: {} },
   { name: "500", status: 500, body: { error: "boom" } },
   { name: "503", status: 503, body: { error: "unavailable" } },
+  // Bodies that are not JSON. Every case above parsed, which is how the REST transport threw
+  // `bad_response` before any status branch ran and nobody noticed: an HTML 429 from an edge
+  // rate limiter lost its Retry-After and came back non-retryable, an empty 409 never reached the
+  // branch written for it, and the two transports disagreed on identical bytes while this file
+  // said they could not.
+  { name: "429 as an HTML page, carrying Retry-After", status: 429, body: "<html>Too Many Requests</html>", headers: { "retry-after": "120" } },
+  { name: "409 as an HTML page", status: 409, body: "<html>Conflict</html>" },
+  { name: "409 with an empty body", status: 409, body: "" },
+  { name: "503 as an HTML page", status: 503, body: "<html>Service Unavailable</html>" },
 ];
 
 describe("both KeeperHub transports answer the same way", () => {
@@ -178,5 +187,99 @@ describe("both KeeperHub transports answer the same way", () => {
     // operator debugging a revoked key absolutely nothing.
     platformAnswers(401, { error: "invalid api key" });
     await assert.rejects(mcp.execute(STEP, "key-parity"), /401/);
+  });
+});
+
+
+describe("what the platform's answer means, whatever the body looks like", () => {
+  test("an HTML 429 keeps its Retry-After on REST", async () => {
+    const d = await dispositionOf(rest, 429, "<html>Too Many Requests</html>", { "retry-after": "120" });
+    assert.equal(d.code, "rate_limited");
+    assert.equal(d.retryable, true);
+    assert.equal(d.retryAfterSeconds, 120);
+  });
+
+  test("an empty 409 is the unlabelled case, and retryable, on REST", async () => {
+    const d = await dispositionOf(rest, 409, "");
+    assert.equal(d.code, "idempotency_unlabelled", JSON.stringify(d));
+    assert.equal(d.retryable, true);
+  });
+
+  test("Retry-After in the HTTP-date form is honoured, and a long one is not shortened to five minutes", () => {
+    const now = Date.parse("2026-09-13T12:00:00Z");
+    assert.equal(retryAfterSeconds("Sun, 13 Sep 2026 12:02:00 GMT", now), 120);
+    assert.equal(retryAfterSeconds("3600", now), 3600);
+    assert.equal(retryAfterSeconds("Sun, 13 Sep 2026 11:00:00 GMT", now), undefined, "a date in the past is no hint");
+    assert.equal(retryAfterSeconds("soon", now), undefined);
+  });
+});
+
+describe("a streamable-HTTP reply is one JSON-RPC message among several frames", () => {
+  /**
+   * The old reader took the first `data:` line of the whole text. A notification frame ahead of
+   * the reply, an `id:` line first, or a `:ping` heartbeat turned a payment that had SUCCEEDED
+   * into a non-retryable transport failure. Fail-closed, and recovered later from the chain, but
+   * a transport that works only when the server sends exactly one frame works by luck.
+   */
+  const result = (id: number) =>
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id,
+      result: { content: [{ type: "text", text: JSON.stringify({ executionId: "e1", status: "completed", transactionHash: "0xdead" }) }] },
+    });
+  const notification = JSON.stringify({ jsonrpc: "2.0", method: "notifications/message", params: { level: "info", data: "working" } });
+
+  function mcpAnswersStream(streamFor: (requestId: number) => string) {
+    let ids = 0;
+    globalThis.fetch = (async (_url: unknown, init?: { body?: string }) => {
+      const req = JSON.parse(String(init?.body ?? "{}")) as { method?: string; id?: number };
+      if (req.method !== "tools/call") {
+        return {
+          status: 200,
+          ok: true,
+          headers: { get: (k: string) => (k.toLowerCase() === "mcp-session-id" ? `s-${++ids}` : null) },
+          text: async () => JSON.stringify({ jsonrpc: "2.0", id: req.id ?? 1, result: { protocolVersion: "2024-11-05" } }),
+          json: async () => ({}),
+        };
+      }
+      return {
+        status: 200,
+        ok: true,
+        headers: { get: () => null },
+        text: async () => streamFor(req.id ?? 0),
+        json: async () => ({}),
+      };
+    }) as unknown as typeof fetch;
+  }
+
+  const fresh = () => new KeeperHubMcpProvider({ apiKey: "kh_test", chainId: 11155111, rpcUrl: "http://127.0.0.1:1" });
+
+  const shapes: Array<[string, (id: number) => string]> = [
+    ["a single data frame", (id) => `event: message\ndata: ${result(id)}\n\n`],
+    ["a notification frame before the reply", (id) => `event: message\ndata: ${notification}\n\nevent: message\ndata: ${result(id)}\n\n`],
+    ["an id line first", (id) => `id: 7\nevent: message\ndata: ${result(id)}\n\n`],
+    ["a ping heartbeat first", (id) => `:ping\n\nevent: message\ndata: ${result(id)}\n\n`],
+    // Split where a newline is whitespace to JSON: between two members, never inside a string.
+    ["a multi-line data frame", (id) => {
+      const r = result(id);
+      const cut = r.indexOf('"id"');
+      return `data: ${r.slice(0, cut)}
+data: ${r.slice(cut)}
+
+`;
+    }],    ["bare JSON, no stream at all", (id) => result(id)],
+  ];
+  for (const [name, stream] of shapes) {
+    test(`${name}: the successful execution is read as completed`, async () => {
+      mcpAnswersStream(stream);
+      const out = (await fresh().execute(STEP, "key-sse")) as { status?: string; executionId?: string | null };
+      assert.equal(out.status, "completed", JSON.stringify(out));
+      assert.equal(out.executionId, "e1");
+    });
+  }
+
+  test("a frame answering a DIFFERENT request id is not this request's answer", async () => {
+    mcpAnswersStream((id) => `event: message\ndata: ${result(id + 100)}\n\n`);
+    await assert.rejects(fresh().execute(STEP, "key-sse-other"), (e: { code?: string }) => e.code === "bad_response");
   });
 });

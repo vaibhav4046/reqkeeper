@@ -8,7 +8,7 @@ still breaks or is unfinished?" and the last section is the source for that answ
 
 Reproduce any probe with `node --experimental-strip-types hackathon/audit/probes/<probe>.ts`.
 
-Gates: `npm test` 685 pass / 0 fail / 136 suites · `npm run typecheck` clean · `npm run build`
+Gates: `npm test` 714 pass / 0 fail / 141 suites · `npm run typecheck` clean · `npm run build`
 clean, and reproducible from a bare clone: the page is a function of the committed evidence and
 reads no environment at all, so `git diff --exit-code web api/_gen` passes on a machine that has
 never had a `.env` · `npm run gate-a` 10 ok / 0 failed / 2 blocked here, 9 ok / 0 failed / 3
@@ -231,7 +231,7 @@ Nothing here is a duplicate-payment path. Each was checked for that specifically
 
 8. **CLOSED for the MCP rows, still open for the REST ones.** `docs/evidence/mcp-settlements.json` carries a `keeperhubExecutionId` on all three of its rows. The original finding stands for `docs/refusals-live.json`: `docs/refusals-live.json`
    has `tx_hash` and `payment_reference` on all 38 settled rows but no `keeperhub_execution_id`,
-   which `CLAUDE.md` specifies for LIVE rows. The console's proof strip therefore shows `—` at
+   which this project's own evidence rule requires of LIVE rows (every LIVE row carries `txHash`, `block`, `explorer`, `keeperhubExecutionId` and `transport`). The console's proof strip therefore shows `—` at
    the KeeperHub step and says why, rather than borrowing the fixture race's id. Closing it means
    re-running `npm run harness:live` with credentials against fresh invoices — real money on
    Sepolia — so it is recorded rather than faked.

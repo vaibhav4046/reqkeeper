@@ -485,24 +485,29 @@ describe("a wallet signature is a signature", () => {
    * refused. Refusing a real invoice is the same defect as accepting a forged one, pointed the
    * other way: the debt goes unpaid and the system reports a forgery.
    *
-   * Clients differ on what they hand the wallet, the 32 digest bytes or the `0x…` text of them,
-   * so both are recognised. Honest limit: every invoice this deployment knows uses `ecdsa`, so
-   * these two encodings are pinned by this file and by `src/secp256k1.ts#personalSignDigest`,
-   * NOT by a live `ecdsa-ethereum` invoice. A third encoding would be refused, which is the safe
-   * direction -- a wrong guess recovers to a stranger and the role check below refuses it.
+   * The message a wallet signs is the normalised JSON TEXT -- `utils/src/signature.ts`:
+   * `ethers.utils.hashMessage(normalize(signedData.data))`, produced by
+   * `signMessage(Buffer.from(normalize(data)))`. Not its hash, and not the hex of its hash: a
+   * previous version of this reader tried both of those, which no Request client has ever
+   * produced, and a real wallet-signed cancel recovered to a stranger, was ignored, and the dead
+   * invoice read as payable. Honest limit: every invoice this deployment knows uses `ecdsa`, so
+   * this branch is pinned by Request's source and by this file, not by a live wallet invoice.
    */
-  test("a create signed with personal_sign over the digest bytes is read", async () => {
-    const id = serveCreatePersonal(signActionPersonal(CREATE, PAYEE_KEY, "bytes"));
+  test("a create signed with personal_sign over the normalised text is read", async () => {
+    const id = serveCreatePersonal(signActionPersonal(CREATE, PAYEE_KEY));
     assert.equal((await read(id)).invoiceBaseUnits, ONE);
   });
 
-  test("and one signed over the 0x text of the same digest is read too", async () => {
-    const id = serveCreatePersonal(signActionPersonal(CREATE, PAYEE_KEY, "hex"));
-    assert.equal((await read(id)).invoiceBaseUnits, ONE);
+  test("and the SAME bytes signed over the digest instead of the text are somebody else's", async () => {
+    // The encoding this reader used to accept, and no Request client has ever produced. If it
+    // still recovered to the payee, the reader would be agreeing with an invented spelling.
+    const signed = signAction(CREATE, PAYEE_KEY);
+    const mislabelled = { data: CREATE, signature: { method: "ecdsa-ethereum", value: signed.signature.value } };
+    assert.equal(await refusalFrom(serveCreatePersonal(mislabelled)), "ACTION_SIGNATURE_INVALID");
   });
 
   test("but a stranger's personal_sign is still a stranger's", async () => {
-    const id = serveCreatePersonal(signActionPersonal(CREATE, STRANGER_KEY, "bytes"));
+    const id = serveCreatePersonal(signActionPersonal(CREATE, STRANGER_KEY));
     assert.equal(await refusalFrom(id), "ACTION_SIGNATURE_INVALID");
   });
 

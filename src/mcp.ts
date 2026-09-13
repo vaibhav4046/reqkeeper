@@ -357,7 +357,7 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
         reference,
         // Only ever true on corroboration. "A log carries this reference" is a sighting, not a
         // settlement, and must not be handed to an agent as one.
-        paid: corroboratedBy !== null,
+        paid: corroboratedBy !== null && conflicts.length === 0,
         corroboratedBy,
         referenceSeen: sighting.found === true,
         txHash: sighting.txHash ?? null,
@@ -375,7 +375,7 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
         // all produced "scanned to genesis; no payment matching this obligation was found" -- the
         // strongest sentence this surface can say, over three different kinds of not-knowing. It
         // is also the sentence an agent reads before deciding to pay.
-        caveat: caveatFor(verdictFor(sighting), corroboratedBy),
+        caveat: caveatFor(verdictFor(sighting, { requireCorroboration: true }), corroboratedBy),
       };
     }
 

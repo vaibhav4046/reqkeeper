@@ -143,14 +143,14 @@ try {
   );
   const body = (await res.json()) as {
     meta?: {
-      storageMeta?: Array<{ ethereum?: { blockNumber?: number; transactionHash?: string } }>;
+      storageMeta?: Array<{ ethereum?: { blockNumber?: number; transactionHash?: string; blockTimestamp?: number } }>;
       transactionsStorageLocation?: string[];
     };
   };
   const eth = body.meta?.storageMeta?.[0]?.ethereum;
   const cid = body.meta?.transactionsStorageLocation?.[0];
   if (eth?.transactionHash && eth.blockNumber !== undefined && cid) {
-    fx.announceAnchor(eth.transactionHash, eth.blockNumber, cid);
+    fx.announceAnchor(eth.transactionHash, eth.blockNumber, cid, eth.blockTimestamp);
   }
 } catch {
   // The gateway is unreachable. The server's own fetch will fail the same way and say so; this

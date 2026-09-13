@@ -158,7 +158,7 @@ describe("what the approver is told about the channel itself", () => {
     });
     assert.equal(body.state, "AWAITING_APPROVAL", JSON.stringify(body).slice(0, 300));
     assert.ok(body.approvalSentence);
-    assert.match(body.approvalSentence, /1 action\(s\).*could not be\s+authenticated|could not be authenticated/i, body.approvalSentence);
+    assert.match(body.approvalSentence, /1 action\(s\).*were NOT applied/i, body.approvalSentence);
     // And the amount is the create's, untouched.
     assert.match(body.approvalSentence, /Pay 1 FAU/, body.approvalSentence);
   });
@@ -166,6 +166,6 @@ describe("what the approver is told about the channel itself", () => {
   test("a clean channel says nothing about ignored actions", async () => {
     const { body } = await propose({});
     assert.ok(body.approvalSentence);
-    assert.doesNotMatch(body.approvalSentence, /could not be authenticated/i, body.approvalSentence);
+    assert.doesNotMatch(body.approvalSentence, /were NOT applied/i, body.approvalSentence);
   });
 });

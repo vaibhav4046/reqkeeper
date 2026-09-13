@@ -106,15 +106,20 @@ export function signDigest(digest: Uint8Array, privateKey: bigint): string {
   }
 }
 
-/** The digest Request signs: keccak256 over the action's data, keys deep-sorted, all lowercased. */
-export function actionDigest(data: unknown): Uint8Array {
+/** Request's normalisation: keys deep-sorted, then the whole JSON string lowercased. */
+export function normalizedText(data: unknown): string {
   const sort = (v: unknown): unknown =>
     Array.isArray(v)
       ? v.map(sort)
       : v !== null && typeof v === "object"
         ? Object.fromEntries(Object.keys(v as Record<string, unknown>).sort().map((k) => [k, sort((v as Record<string, unknown>)[k])]))
         : v;
-  return keccak256(new TextEncoder().encode(JSON.stringify(sort(data)).toLowerCase()));
+  return JSON.stringify(sort(data)).toLowerCase();
+}
+
+/** The digest Request signs under `ecdsa`: keccak256 over the normalised text. */
+export function actionDigest(data: unknown): Uint8Array {
+  return keccak256(new TextEncoder().encode(normalizedText(data)));
 }
 
 /** The signed envelope the gateway serves, for an action and the key that took it. */
@@ -138,11 +143,12 @@ export const STRANGER_KEY = 0x00000000000000000000000000000000000000000000000000
 export function signActionPersonal(
   data: unknown,
   privateKey: bigint,
-  encoding: "bytes" | "hex" = "bytes",
 ): { data: unknown; signature: { method: string; value: string } } {
-  const digest = actionDigest(data);
-  const message =
-    encoding === "bytes" ? digest : new TextEncoder().encode(`0x${Buffer.from(digest).toString("hex")}`);
+  // What Request's web3 signature provider does: `signMessage(Buffer.from(normalize(data)))` --
+  // the EIP-191 message is the normalised JSON TEXT, not its hash. A previous version of this
+  // helper signed the hash and the hex of the hash, and the reader under test accepted both, so
+  // the test proved only that two pieces of this repository agreed with each other.
+  const message = new TextEncoder().encode(normalizedText(data));
   return {
     data,
     signature: { method: "ecdsa-ethereum", value: signDigest(personalSignDigest(message), privateKey) },

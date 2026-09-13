@@ -55,6 +55,7 @@ const STRANGER = "0xdEAdBeef00000000000000000000000000000001";
 const REQUEST_STORAGE = "0xd6c085a4d14e9e171f4af58f7f48bd81173f167e";
 const anchorReceipt = (blockNumber: number, cid: string) => async () => ({
   blockNumber,
+  blockTimestamp: 1788932300 + 60,
   logs: [{ address: REQUEST_STORAGE, data: `0x${Buffer.from(cid, "utf8").toString("hex")}` }],
 });
 const WITH_ANCHOR = { readReceipt: anchorReceipt(11665964, "QmFixtureCid") };

@@ -133,6 +133,8 @@ async function startChain(): Promise<string> {
       let result: unknown = [];
       if (method === "eth_chainId") result = `0x${EXPECTED_CHAIN_ID.toString(16)}`;
       else if (method === "eth_blockNumber") result = `0x${HEAD.toString(16)}`;
+      // The anchor binding asks when the block was mined; shortly after the create's timestamp.
+      else if (method === "eth_getBlockByNumber") result = { timestamp: `0x${(1788932300 + 60).toString(16)}` };
       else if (method === "eth_getTransactionReceipt") {
         const hash = String((params as string[])[0] ?? "").toLowerCase();
         result =

@@ -111,7 +111,7 @@ function serve(claimedBlock: number, cid: string): string {
 
 /** The real anchoring transaction: Request's storage contract, this block, these bytes. */
 const honestReceipt = async () => ({
-  blockNumber: ANCHOR_BLOCK,
+  blockNumber: ANCHOR_BLOCK, blockTimestamp: 1788932300 + 60,
   logs: [{ address: REQUEST_STORAGE, data: hexOf(CID) }],
 });
 
@@ -147,7 +147,7 @@ describe("an anchor is believed only when its own transaction stored this invoic
     // receipt, it is in the block claimed, it is simply not the transaction that stored this
     // invoice. The block-number comparison passes it; the CID does not.
     const code = await refusalFrom(ANCHOR_BLOCK + 450_000, CID, async () => ({
-      blockNumber: ANCHOR_BLOCK + 450_000,
+      blockNumber: ANCHOR_BLOCK + 450_000, blockTimestamp: 1788932300 + 60,
       logs: [{ address: REQUEST_STORAGE, data: hexOf("QmSomeOtherChannelsBytesEntirely") }],
     }));
     assert.equal(code, "ANCHOR_UNBOUND");
@@ -156,7 +156,7 @@ describe("an anchor is believed only when its own transaction stored this invoic
   test("a transaction that stored nothing at all is refused", async () => {
     // An ordinary transfer, say. It has a receipt and it is in the right block; it emitted nothing
     // from Request's storage contract, so it anchored no invoice.
-    const code = await refusalFrom(ANCHOR_BLOCK, CID, async () => ({ blockNumber: ANCHOR_BLOCK, logs: [] }));
+    const code = await refusalFrom(ANCHOR_BLOCK, CID, async () => ({ blockNumber: ANCHOR_BLOCK, blockTimestamp: 1788932300 + 60, logs: [] }));
     assert.equal(code, "ANCHOR_UNBOUND");
   });
 
@@ -164,7 +164,7 @@ describe("an anchor is believed only when its own transaction stored this invoic
     // Anyone can emit an event carrying any data. Only Request's storage contract emitting it
     // means Request stored it.
     const code = await refusalFrom(ANCHOR_BLOCK, CID, async () => ({
-      blockNumber: ANCHOR_BLOCK,
+      blockNumber: ANCHOR_BLOCK, blockTimestamp: 1788932300 + 60,
       logs: [{ address: `0x${"11".repeat(20)}`, data: hexOf(CID) }],
     }));
     assert.equal(code, "ANCHOR_UNBOUND");
@@ -172,7 +172,7 @@ describe("an anchor is believed only when its own transaction stored this invoic
 
   test("a receipt in a different block from the one claimed is refused", async () => {
     const code = await refusalFrom(ANCHOR_BLOCK, CID, async () => ({
-      blockNumber: ANCHOR_BLOCK + 1,
+      blockNumber: ANCHOR_BLOCK + 1, blockTimestamp: 1788932300 + 60,
       logs: [{ address: REQUEST_STORAGE, data: hexOf(CID) }],
     }));
     assert.equal(code, "ANCHOR_UNBOUND");
@@ -192,6 +192,36 @@ describe("an anchor is believed only when its own transaction stored this invoic
 
   test("a gateway that serves no CID gets no anchor, rather than an unbound one", async () => {
     const invoice = await invoiceWith(ANCHOR_BLOCK, "", honestReceipt);
+    assert.equal(invoice.anchor, undefined);
+  });
+});
+
+describe("the anchor is bound to the create's own signed timestamp", () => {
+  /**
+   * The CID check proves the named transaction stored SOME Request bytes identified by the CID
+   * the gateway served -- and the CID comes from the same untrusted blob as the block and the
+   * hash. A gateway that lies hands over any real storage transaction with its real CID, months
+   * after this invoice, and the triple is self-consistent. Moved forward, the floor turns "paid
+   * 460,000 blocks ago" into NOT_PAID. Reproduced by a red-team pass with block and CID moved
+   * together; the existing test above moved only the block.
+   *
+   * The create's timestamp is signed and hash-bound to the channel id, so it cannot be moved.
+   */
+  test("a self-consistent anchor months after the create is refused", async () => {
+    const code = await refusalFrom(ANCHOR_BLOCK + 792_000, CID, async () => ({
+      blockNumber: ANCHOR_BLOCK + 792_000,
+      blockTimestamp: 1788932300 + 110 * 24 * 3600,
+      logs: [{ address: REQUEST_STORAGE, data: `0x${Buffer.from(CID, "utf8").toString("hex")}` }],
+    }));
+    assert.equal(code, "ANCHOR_UNBOUND");
+  });
+
+  test("a reader that cannot say when the block was mined binds nothing", async () => {
+    // Unread, not disproved: no floor is the safe direction.
+    const invoice = await invoiceWith(ANCHOR_BLOCK, CID, async () => ({
+      blockNumber: ANCHOR_BLOCK,
+      logs: [{ address: REQUEST_STORAGE, data: `0x${Buffer.from(CID, "utf8").toString("hex")}` }],
+    }));
     assert.equal(invoice.anchor, undefined);
   });
 });

@@ -249,4 +249,11 @@ export declare function operatorReleaseDecision(input: {
      * beside the operator who typed it.
      */
     readonly acknowledgedConflicts?: readonly string[];
+    /**
+     * Whether any attempt under this obligation was ever sent. An EVIDENCE_CONFLICT reached from
+     * the preflight observation -- a leaked dry run, or a conflicting log -- has none, and used to
+     * have no door either: the release refused on state, re-proposal refused ALREADY_DISPATCHED, and
+     * nothing would ever look again. With no send there is nothing this release could double.
+     */
+    readonly hasSentAttempt?: boolean;
 }): OperatorRelease;

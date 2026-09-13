@@ -153,7 +153,13 @@ const facts: InvoiceFacts = {
   ...(invoice.payeeDiffersFromRecord ? { payeeDiffersFromRecord: true } : {}),
 };
 
-const reject = args.has("reject");
+/**
+ * A flag's VALUE, not its presence. `--yes=false` skipped the human prompt and `--reject=false`
+ * recorded a rejection, on the one command in this repository that can authorise money: the
+ * parser keeps `--key=value` verbatim, and `args.has` read every spelling of "no" as "yes".
+ */
+const truthy = (flag: string): boolean => args.has(flag) && !/^(false|0|no|off)$/i.test(args.get(flag) ?? "true");
+const reject = truthy("reject");
 const approver = args.get("approver") ?? "owner@reqkeeper.local";
 
 if (!existsSync(".data")) mkdirSync(".data");
@@ -161,7 +167,9 @@ if (!existsSync(".data")) mkdirSync(".data");
 // prints a ready-to-run approve command and takes --db itself; without the same flag here that
 // command would record an approval in a different database from the one holding the plan, and
 // the approval would silently apply to nothing.
-const dbPath = args.get("db") ?? ".data/live.sqlite";
+// The same workspace every other script honours. This was the one DB-touching script that
+// ignored REQKEEPER_DB, so an approval could land in a database the operator was not looking at.
+const dbPath = args.get("db") ?? process.env.REQKEEPER_DB ?? ".data/live.sqlite";
 const store = new Store(dbPath);
 
 const policy = buildPolicy(facts);
@@ -273,7 +281,7 @@ console.log(`\n  recomputed from the invoice you typed, not from what the agent 
 console.log("=".repeat(78) + "\n");
 
 async function confirm(): Promise<boolean> {
-  if (args.has("yes")) {
+  if (truthy("yes")) {
     console.log("--yes supplied, recording the decision without prompting.\n");
     return true;
   }

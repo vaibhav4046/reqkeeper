@@ -76,7 +76,7 @@ function paymentLogData(to: string, amount: string): string {
 
 export class KeeperHubFixture {
   /** Create transactions this chain contains, hash -> block. See `announceAnchor`. */
-  #anchors = new Map<string, { blockNumber: number; storageCid: string }>();
+  #anchors = new Map<string, { blockNumber: number; storageCid: string; blockTimestamp?: number }>();
   #server: Server | null = null;
   #alt: Server | null = null;
   #port = 0;
@@ -137,8 +137,8 @@ export class KeeperHubFixture {
    * transaction, in that block" — which is true of the chain being imitated, and is the whole
    * reason HEAD_BLOCK sits above them.
    */
-  announceAnchor(transactionHash: string, blockNumber: number, storageCid: string): void {
-    this.#anchors.set(transactionHash.toLowerCase(), { blockNumber, storageCid });
+  announceAnchor(transactionHash: string, blockNumber: number, storageCid: string, blockTimestamp?: number): void {
+    this.#anchors.set(transactionHash.toLowerCase(), { blockNumber, storageCid, ...(blockTimestamp === undefined ? {} : { blockTimestamp }) });
   }
 
   async start(): Promise<void> {
@@ -256,6 +256,15 @@ export class KeeperHubFixture {
         return reply(SEPOLIA_HEX);
       case "eth_blockNumber":
         return reply(`0x${HEAD_BLOCK.toString(16)}`);
+      case "eth_getBlockByNumber": {
+        // The anchor binding asks when the anchoring block was mined and refuses one long after the
+        // create's own signed timestamp. An announced create carries the gateway's blockTimestamp;
+        // a block this fixture knows nothing about answers null, which binds no anchor -- the safe
+        // direction, and the same answer a pruning endpoint gives.
+        const wanted = Number(BigInt(String(call.params?.[0] ?? "0x0")));
+        const known = [...this.#anchors.values()].find((a) => a.blockNumber === wanted && a.blockTimestamp !== undefined);
+        return reply(known ? { number: `0x${wanted.toString(16)}`, timestamp: `0x${(known.blockTimestamp as number).toString(16)}` } : null);
+      }
       case "eth_getLogs": {
         // Request's own detection, served from what this fixture actually executed. Filtered
         // the way the real scan filters — emitter, event topic, and the keccak of the reference

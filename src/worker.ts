@@ -294,6 +294,22 @@ async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Reso
         // own funds. A log that pays somebody ELSE is junk and does not land here, because
         // escalating on those would let anyone who can read a public reference wedge any
         // invoice for ever with one log.
+        //
+        // Unless a human has read that transaction and said it does not settle this invoice.
+        // The propose gate and the operator door both consult `reviewedConflicts`; this third
+        // reader of the same verdict did not, and escalated a REVIEWED conflict into
+        // EVIDENCE_CONFLICT -- a state neither door accepted -- with zero jobs owed. A stranger's
+        // one-wei log plus one ordinary rate limit was a permanent, doorless wedge, triggered by
+        // the system's own advice to call resolve_pending. One reading, at every reader.
+        const reviewed = store.reviewedConflicts(job.obligationId);
+        const named = (verdict.conflictingLogs ?? []).map((log) => log.txHash);
+        const hashes = named.filter((h): h is string => typeof h === "string");
+        const allReviewed =
+          hashes.length > 0 && named.every((h) => typeof h === "string") && hashes.every((h) => reviewed.has(h.toLowerCase()));
+        if (allReviewed) {
+          store.audit(job.obligationId, "worker", "CONFLICT_CLEARED_BY_REVIEW", { transactions: hashes });
+          break; // a reviewed conflict is a covered negative; the leak exclusion below still decides
+        }
         move("EVIDENCE_CONFLICT");
         store.audit(job.obligationId, "worker", "PAYMENT_FIELDS_DISAGREE", {
           conflicts: verdict.conflicts,

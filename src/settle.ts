@@ -268,10 +268,11 @@ export function restate(
         " its Request channel. The signatures check out; confirm the figure with the creditor anyway."
       : "") +
     (identity?.ignoredActions
-      ? ` NOTE: ${identity.ignoredActions} action(s) on this invoice's Request channel could not be` +
-        " authenticated and were ignored, exactly as Request ignores them. They changed none of the" +
-        " figures above. Anyone can append to a public channel, so this is not evidence of anything" +
-        " by itself — but if you were not expecting it, ask the creditor before approving."
+      ? ` NOTE: ${identity.ignoredActions} action(s) on this invoice's Request channel were NOT applied to` +
+        " the figures above — because they did not authenticate, are still pending on Request, or" +
+        " would take the amount below zero, which are the actions Request itself does not apply." +
+        " Anyone can append to a public channel, so this is not evidence of anything by itself — but" +
+        " if you were not expecting it, ask the creditor before approving."
       : "")
   );
 }
@@ -1047,7 +1048,10 @@ async function settleOrRefuse(
     planHash,
     stepIndex,
     idempotencyKey: idempotencyKey(input.obligationId, planHash, stepIndex),
-    endpoint: "/api/execute/contract-call",
+    // The surface that carried this attempt, read from the provider rather than assumed: every
+    // attempt used to record the REST path, MCP dispatches included, so "settled via MCP" was an
+    // operator's statement and not a read-back.
+    endpoint: deps.provider.transport === "mcp" ? "mcp:execute_contract_call" : "/api/execute/contract-call",
     bodyJson: JSON.stringify(body),
     now: input.now,
   });

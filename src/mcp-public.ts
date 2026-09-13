@@ -231,7 +231,7 @@ async function callTool(name: string, args: Record<string, unknown>, deps: Publi
       const sameTx = ourTx !== null && seen.txHash?.toLowerCase() === ourTx;
       const corroboratedBy = seen.found ? (expect ? "expectation" : sameTx ? "project-evidence" : null) : null;
 
-      const verdict = verdictFor(seen);
+      const verdict = verdictFor(seen, { requireCorroboration: true });
       const conflicts = [
         ...(seen.conflicts ?? []),
         ...(ourTx !== null && seen.txHash !== undefined && !sameTx
@@ -244,7 +244,10 @@ async function callTool(name: string, args: Record<string, unknown>, deps: Publi
         // Only ever true on corroboration. A reference is derived from data anchored openly on
         // Sepolia and the ERC20FeeProxy is permissionless, so "a log carries this reference" is
         // a sighting, not a settlement, and must not be handed to an agent as one.
-        paid: corroboratedBy !== null,
+        // And never over a contradiction this reply itself reports: a sighting that disagrees with
+        // the transaction this project recorded as the payment was affirmed as `paid` with the
+        // refutation sitting two fields below it.
+        paid: corroboratedBy !== null && conflicts.length === 0,
         corroboratedBy,
         referenceSeen: seen.found === true,
         txHash: seen.txHash ?? null,

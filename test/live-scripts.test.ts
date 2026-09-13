@@ -337,6 +337,8 @@ async function startChain(): Promise<{ url: string; ranges: Array<{ from: number
             : null;
       }
       else if (method === "eth_blockNumber") result = `0x${HEAD.toString(16)}`;
+      // The anchor binding asks when the block was mined; shortly after the create's timestamp.
+      else if (method === "eth_getBlockByNumber") result = { timestamp: `0x${(1788932300 + 60).toString(16)}` };
       else if (method === "eth_getLogs") {
         const filter = params[0] as { fromBlock: string; toBlock: string };
         const from = Number(BigInt(filter.fromBlock));

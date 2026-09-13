@@ -89,13 +89,65 @@ function labelFrom(body: string): string {
     const fields = [parsed.code, parsed.error, parsed.message].filter((v) => typeof v === "string");
     if (fields.length > 0) return fields.join(" ");
   } catch {
-    // Not JSON. Fall through: an unparseable 409 is exactly the unlabelled case, and
-    // `idempotencyVerdict` now has a third answer for it.
+    // Not JSON. An unparseable 409 is exactly the unlabelled case, and `idempotencyVerdict` has a
+    // third answer for it. Returning the page text here made an edge's generic "<html>Conflict"
+    // read as a labelled conflict on this transport and unlabelled on REST -- the parity this
+    // file exists to keep.
   }
-  return body.slice(0, 300);
+  return "";
+}
+
+/**
+ * One JSON-RPC reply out of whatever a streamable-HTTP server sent back.
+ *
+ * The server may answer with bare JSON, or with an SSE stream: frames separated by blank lines,
+ * each frame zero or more `event:` / `id:` / `:comment` lines and one or more `data:` lines whose
+ * values join with newlines. The previous reader took the FIRST `data:` line of the whole text and
+ * nothing else -- so a `notifications/message` frame ahead of the reply, an `id:` line first, or
+ * a `:ping` heartbeat made a payment that had SUCCEEDED come back as a non-retryable transport
+ * failure. Fail-closed, and recovered later from the chain, but a transport that works only when
+ * the server sends exactly one frame is a transport that works by luck.
+ *
+ * The reply is selected by the request id it answers. On a shared session another request's
+ * frame was accepted as this one's answer, which is the wrong money moved for the wrong reason.
+ * `null` means no frame answered this id, which the caller reports as unparseable.
+ */
+export function parseReply(text: string, requestId: number): JsonRpcReply | null {
+  const trimmed = text.trim();
+  const looksLikeStream = /^(event:|data:|id:|:)/m.test(trimmed) && !trimmed.startsWith("{");
+  const candidates: string[] = [];
+  if (!looksLikeStream) {
+    candidates.push(trimmed);
+  } else {
+    for (const frame of trimmed.split(/\r?\n\r?\n/)) {
+      const data = frame
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).replace(/^ /, ""));
+      if (data.length > 0) candidates.push(data.join("\n"));
+    }
+  }
+  let fallback: JsonRpcReply | null = null;
+  for (const candidate of candidates) {
+    let reply: JsonRpcReply;
+    try {
+      reply = JSON.parse(candidate) as JsonRpcReply;
+    } catch {
+      continue;
+    }
+    if (typeof reply !== "object" || reply === null) continue;
+    const id = (reply as { id?: unknown }).id;
+    if (id === requestId || String(id) === String(requestId)) return reply;
+    // A frame with no id is a notification, never a reply. A frame with ANOTHER id is somebody
+    // else's reply. Neither answers this request; only a bare JSON body with no id at all is
+    // taken on trust, and only when nothing better was in the text.
+    if (!looksLikeStream && id === undefined && fallback === null) fallback = reply;
+  }
+  return fallback;
 }
 
 export class KeeperHubMcpProvider implements ExecutionProvider {
+  readonly transport = "mcp" as const;
   readonly #cfg: KeeperHubMcpConfig;
   readonly #endpoint: string;
   readonly #timeout: number;
@@ -147,9 +199,10 @@ export class KeeperHubMcpProvider implements ExecutionProvider {
   async #handshake(): Promise<void> {
     if (this.#session) return;
 
+    const initializeId = this.#nextId++;
     const { res, text } = await this.#post({
       jsonrpc: "2.0",
-      id: this.#nextId++,
+      id: initializeId,
       method: "initialize",
       params: {
         protocolVersion: PROTOCOL_VERSION,
@@ -158,6 +211,15 @@ export class KeeperHubMcpProvider implements ExecutionProvider {
       },
     });
 
+    // The status first. Every failed handshake used to be reported as "the API key was not
+    // accepted", because the only test was whether a session header arrived -- so a transient
+    // 429 or 503 on `initialize` became a permanent, wrongly diagnosed credential failure, and a
+    // handshake the server REJECTED with a JSON-RPC error (an unsupported protocol version, say)
+    // was indistinguishable from one it accepted, because the reply body was never read.
+    if (res.status === 429) throw rateLimitVerdict(res.headers);
+    if (res.status >= 500) {
+      throw new ProviderError("provider_error", `initialize: HTTP ${res.status}: ${text.slice(0, 200)}`, true);
+    }
     // A rejected key still answers 200 here. The missing session header is the tell.
     if (!this.#session) {
       throw new ProviderError(
@@ -166,17 +228,37 @@ export class KeeperHubMcpProvider implements ExecutionProvider {
         false,
       );
     }
+    const reply = parseReply(text, initializeId);
+    if (reply === null) {
+      this.#session = null;
+      throw new ProviderError("bad_response", `unparseable initialize reply: ${text.slice(0, 200)}`, false);
+    }
+    if (reply.error) {
+      // A session was issued and then the handshake was refused. The session is not usable.
+      this.#session = null;
+      throw new ProviderError("mcp_error", `initialize: ${reply.error.code}: ${reply.error.message}`, false);
+    }
 
-    await this.#post({ jsonrpc: "2.0", method: "notifications/initialized" });
+    const initialized = await this.#post({ jsonrpc: "2.0", method: "notifications/initialized" });
+    if (initialized.res.status === 429) throw rateLimitVerdict(initialized.res.headers);
+    if (!initialized.res.ok && initialized.res.status !== 202) {
+      this.#session = null;
+      throw new ProviderError(
+        "bad_response",
+        `notifications/initialized: HTTP ${initialized.res.status}: ${initialized.text.slice(0, 200)}`,
+        initialized.res.status >= 500,
+      );
+    }
   }
 
   /** Parse the tool result, which arrives as JSON inside a text content block. */
   async #callTool(name: string, args: Record<string, unknown>): Promise<ExecutePayload> {
     await this.#handshake();
 
+    const requestId = this.#nextId++;
     const { res, text } = await this.#post({
       jsonrpc: "2.0",
-      id: this.#nextId++,
+      id: requestId,
       method: "tools/call",
       params: { name, arguments: args },
     });
@@ -210,14 +292,8 @@ export class KeeperHubMcpProvider implements ExecutionProvider {
       throw new ProviderError("bad_response", `HTTP ${res.status}: ${text.slice(0, 200)}`, false);
     }
 
-    let reply: JsonRpcReply;
-    try {
-      // A streamable-HTTP reply may arrive as an SSE frame rather than bare JSON.
-      const payload = text.startsWith("event:") || text.startsWith("data:")
-        ? (/^data:\s*(.*)$/m.exec(text)?.[1] ?? "")
-        : text;
-      reply = JSON.parse(payload) as JsonRpcReply;
-    } catch {
+    const reply = parseReply(text, requestId);
+    if (reply === null) {
       throw new ProviderError("bad_response", `unparseable MCP reply: ${text.slice(0, 200)}`, false);
     }
 
@@ -245,11 +321,22 @@ export class KeeperHubMcpProvider implements ExecutionProvider {
     // arrive as text rather than as an HTTP status. Routed through the same verdict as the REST
     // path: without this, `idempotency_in_progress` — an ordinary wait — was thrown
     // non-retryable, which is exactly the collapse the REST transport was fixed for.
-    if (reply.result?.isError && /idempotenc/i.test(body)) {
-      const verdict = idempotencyVerdict(labelFrom(body));
-      const named = priorExecutionFrom(body);
-      if (named) verdict.executionId = named;
-      throw verdict;
+    if (reply.result?.isError) {
+      // A tool's refusal is prose more often than JSON, so the text itself is the label here.
+      const label = labelFrom(body) || body;
+      // A rate limit reported the MCP way: HTTP 200, `isError`, the words in the body. The
+      // headers are still the platform's, so the backoff hint is still there to honour.
+      if (/rate.?limit|too many requests/i.test(label)) throw rateLimitVerdict(res.headers);
+      // "already in progress" and "different body for this key" arrive as prose here, not as a
+      // 409 -- and only a body containing the literal "idempotenc" used to reach the verdict, so
+      // `{"error":"a request for this key is already in progress"}` became a non-retryable error
+      // whose CODE was that whole sentence, and every downstream branch keyed on a code missed it.
+      if (/idempotenc|in progress|already (started|running|exists)|conflict/i.test(label)) {
+        const verdict = idempotencyVerdict(label);
+        const named = priorExecutionFrom(body);
+        if (named) verdict.executionId = named;
+        throw verdict;
+      }
     }
 
     let parsed: ExecutePayload;
@@ -264,8 +351,12 @@ export class KeeperHubMcpProvider implements ExecutionProvider {
     }
 
     if (reply.result?.isError) {
-      // insufficient_scope is a credential problem and will not fix itself on a retry.
-      const code = typeof parsed.error === "string" ? parsed.error : "tool_error";
+      // A code is an identifier, not a sentence. `parsed.error` is free text from the tool, and
+      // it used to become the ProviderError CODE verbatim -- so `settle.ts`, which keys branches
+      // on literal codes, was comparing against English. Known identifiers pass through; anything
+      // else is `tool_error` with the text kept in the message where a human reads it.
+      const raw = typeof parsed.error === "string" ? parsed.error : "";
+      const code = /^[a-z][a-z0-9_]{2,40}$/.test(raw) ? raw : "tool_error";
       throw new ProviderError(code, body.slice(0, 300), false);
     }
     return parsed;

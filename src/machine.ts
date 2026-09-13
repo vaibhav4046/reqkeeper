@@ -148,7 +148,11 @@ const TRANSITIONS: Readonly<Record<State, readonly State[]>> = {
 
   // A conflict is resolved by evidence, and the chain outranks every other source: a
   // receipt that says reverted closes it, whatever the provider or the indexer claim.
-  EVIDENCE_CONFLICT: ["RECONCILING", "SETTLED", "EXECUTION_REVERTED"],
+  // PREFLIGHT_UNAVAILABLE is the operator door: an EVIDENCE_CONFLICT entered from the preflight
+  // observation has no sent attempt, and a named human who has reviewed the conflicting
+  // transaction may release it back to replannable. `operatorReleaseDecision` gates that edge on
+  // "no attempt was ever sent"; the machine only makes it expressible.
+  EVIDENCE_CONFLICT: ["RECONCILING", "SETTLED", "EXECUTION_REVERTED", "PREFLIGHT_UNAVAILABLE"],
 
   SETTLED: [],
   POLICY_DENIED: [],

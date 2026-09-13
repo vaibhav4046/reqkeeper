@@ -308,7 +308,9 @@
 
   @media (prefers-reduced-motion: reduce) { *, *::before { animation: none !important; transition: none !important } }
   @media (max-width: 760px) {
-    .app { grid-template-columns: 1fr }
+    /* minmax(0,1fr): a bare 1fr track has min-width auto, so one wide child in main widened the
+       page to 548px and it scrolled sideways. The .g2 grid already used the idiom. */
+    .app { grid-template-columns: minmax(0, 1fr) }
     /* The nav is a tab strip at the top on a phone, not a column and not a footer.
        Three attempts live in this comment because each fixed the previous one's damage. Stacked,
        the mark plus six nav items ate roughly 400px before the first sentence about what this is
@@ -327,7 +329,9 @@
       border-top: 1px solid var(--line);
     }
     nav::-webkit-scrollbar { display: none }
-    nav button { flex: none; border-left: 0; border-bottom: 2px solid transparent; padding: 7px 10px }
+    /* `width: auto`: the base rule says 100%, and six tabs each claiming the strip's full width
+       made a 3,211px row with one tab visible and the scrollbar hidden. Measured at 375px. */
+    nav button { flex: none; width: auto; border-left: 0; border-bottom: 2px solid transparent; padding: 7px 10px }
     nav button[aria-current="true"] { border-left-color: transparent; border-bottom-color: var(--signal) }
     /* A phone-sized mark. The desktop one is 136x120 and pushed the first sentence about what
        this is off the screen on its own, which is what started the nav being moved in the first

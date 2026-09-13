@@ -123,11 +123,11 @@ first_send_at IS NULL` and send only if `changes === 1`.
 15 of 80 racing children in the run above produced no JSON at all. Raw output:
 
 ```
-A: file:///D:`/project/reqkeeper/src/store.ts#migrate`
+A: file:///D:/project/reqkeeper/src/store.ts:14
        this.#db.exec(SCHEMA);
               ^
    Error: database is locked
-       at new Store (file:///D:`/project/reqkeeper/src/store.ts#migrate`:14)
+       at new Store (file:///D:/project/reqkeeper/src/store.ts:14)
 B: {"state":"SETTLED","refusal":null,"executeCalls":1,"providerWriteIssued":true}
 ```
 

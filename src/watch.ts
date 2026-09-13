@@ -357,7 +357,15 @@ export async function watchPass(
     // damage this row exists to prevent, and it fails safe on money, which is exactly why it
     // survived so long. Foreign logs fall through to the proposal below, named in the detail.
     const foreignPositive = sighting.found === true && !paysThisInvoice(sighting, facts).ok;
-    if (!foreignPositive && (verdict.kind === "UNKNOWN" || verdict.kind === "CONFLICT_OURS")) {
+    // A conflict a human has already read and cleared, hash by hash, is not a conflict here
+    // either -- the same reading the propose gate and the worker take.
+    const clearedConflict = (() => {
+      if (verdict.kind !== "CONFLICT_OURS") return false;
+      const reviewed = deps.store.reviewedConflicts(obligationId(NAMESPACE, inv.requestId));
+      const named = (verdict.conflictingLogs ?? []).map((log) => log.txHash);
+      return named.length > 0 && named.every((h) => typeof h === "string" && reviewed.has(h.toLowerCase()));
+    })();
+    if (!foreignPositive && !clearedConflict && (verdict.kind === "UNKNOWN" || verdict.kind === "CONFLICT_OURS")) {
       rows.push({
         requestId: inv.requestId,
         paymentReference: inv.paymentReference,

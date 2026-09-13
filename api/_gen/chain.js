@@ -38,6 +38,15 @@ const DEFAULT_RPC_FALLBACKS = [
 ];
 const rpcFallbacks = () => (RPC_FALLBACKS.length > 0 ? RPC_FALLBACKS : DEFAULT_RPC_FALLBACKS);
 /**
+ * The same endpoint, spelled differently. `alt === rpcUrl` let a trailing slash count the primary
+ * as its own second opinion -- one physical host, `negativeCorroborations: 2` -- which is the
+ * single-endpoint negative this module exists to reject.
+ */
+function sameEndpoint(a, b) {
+    const norm = (u) => u.trim().toLowerCase().replace(/\/+$/, "");
+    return norm(a) === norm(b);
+}
+/**
  * The endpoints a negative has to be put to before it counts, exported so that anything drawing a
  * conclusion from silence uses the same set this module does.
  *
@@ -129,7 +138,7 @@ export async function rpcCall(rpcUrl, method, params, timeoutMs = 30_000) {
     // The endpoint disclaimed knowledge of a transaction. Ask the others before
     // concluding it does not exist; only agreement across endpoints is evidence.
     for (const alt of rpcFallbacks()) {
-        if (alt === rpcUrl)
+        if (sameEndpoint(alt, rpcUrl))
             continue;
         try {
             // The chain first. This loop covers exactly the methods `assertChainId` exists for -- a
@@ -422,7 +431,7 @@ export async function findPaymentByReference(reference, opts = {}) {
     for (const log of first.conflictingLogs ?? [])
         byTransaction.set(log.txHash ?? `unnamed:${byTransaction.size}`, log);
     for (const alt of rpcFallbacks()) {
-        if (alt === rpcUrl)
+        if (sameEndpoint(alt, rpcUrl))
             continue;
         try {
             await ensureChain(alt);
@@ -435,7 +444,14 @@ export async function findPaymentByReference(reference, opts = {}) {
             // contain it. Ordinary RPC lag reproduces it; no attacker is needed. The re-scan exists
             // because one endpoint's answer cannot be trusted, and it was inheriting the primary's lie.
             const altHead = await currentBlock(alt);
-            const second = await scanForReference(reference, alt, Math.max(altHead, head), floor, opts.expect);
+            // And not asked about blocks it does not have. `Math.max` fixed the stale-primary case and
+            // opened the mirror: a fallback BEHIND the primary was asked past its own tip, geth-family
+            // nodes clamp that to their head and answer `[]` without an error, and the empty answer
+            // was counted as a corroborating negative over a window it never saw. Ordinary RPC lag,
+            // no attacker. An endpoint that cannot see the whole window has no opinion about it.
+            if (altHead < head)
+                continue;
+            const second = await scanForReference(reference, alt, altHead, floor, opts.expect);
             if (second.found) {
                 // The primary said no and this endpoint says yes. The primary IS the second opinion
                 // here — it has already disagreed — so the sighting is reported uncorroborated and the
@@ -550,7 +566,7 @@ async function corroborate(reference, sighting, primaryUrl, expect) {
     if (sighting.block === undefined || sighting.txHash === undefined)
         return false;
     for (const alt of rpcFallbacks()) {
-        if (alt === primaryUrl)
+        if (sameEndpoint(alt, primaryUrl))
             continue;
         try {
             await ensureChain(alt);
@@ -638,7 +654,20 @@ export async function readReceipt(rpcUrl, hash, timeoutMs = 30_000) {
     }
     // `source: "chain"` says this really is a receipt an endpoint answered with, so a missing
     // `logs` here is a gap in the answer rather than the absence of a chain. See `Receipt.source`.
-    const common = { hash, gasUsed, to: r.to, logs: r.logs, blockNumber, confirmations, source: "chain" };
+    // The block's own timestamp, for the anchor binding: a create carries a signed timestamp, and
+    // its anchoring transaction cannot sit in a block mined long after it. Unknown is left unknown.
+    let blockTimestamp;
+    if (r.blockNumber !== undefined) {
+        try {
+            const block = (await rpcCall(rpcUrl, "eth_getBlockByNumber", [r.blockNumber, false], timeoutMs));
+            if (block?.timestamp)
+                blockTimestamp = Number(BigInt(block.timestamp));
+        }
+        catch {
+            // unknown, not zero
+        }
+    }
+    const common = { hash, gasUsed, to: r.to, logs: r.logs, blockNumber, blockTimestamp, confirmations, source: "chain" };
     // Three outcomes, not two. Only 0x0 means the chain said no; a missing or malformed status
     // means this read did not answer, and EXECUTION_REVERTED is terminal.
     if (r.status === "0x1")

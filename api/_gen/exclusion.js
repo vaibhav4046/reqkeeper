@@ -126,9 +126,11 @@ export function excludeByNonce(input) {
     };
 }
 export function operatorReleaseDecision(input) {
-    // Only an obligation actually waiting on a dry run can be released this way. Anything else is
-    // either already resolved or in a state whose exit is somewhere else entirely.
-    if (input.state !== "PAYMENT_PREFLIGHT")
+    // Only an obligation actually waiting on a dry run can be released this way -- or one the
+    // observer moved to EVIDENCE_CONFLICT without a send ever happening. Anything else is either
+    // already resolved or in a state whose exit is somewhere else entirely.
+    const releasable = input.state === "PAYMENT_PREFLIGHT" || (input.state === "EVIDENCE_CONFLICT" && input.hasSentAttempt === false);
+    if (!releasable)
         return { kind: "REFUSE_STATE", state: input.state };
     /**
      * The last question, asked once for both answers that reach it.

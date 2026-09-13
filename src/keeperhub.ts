@@ -86,8 +86,7 @@ interface KeeperHubResponse {
  * loses only the hint.
  */
 export function rateLimitVerdict(headers?: { get(name: string): string | null }): ProviderError {
-  const raw = Number(headers?.get?.("retry-after") ?? "");
-  const wait = Number.isFinite(raw) && raw > 0 ? Math.min(raw, 300) : undefined;
+  const wait = retryAfterSeconds(headers?.get?.("retry-after") ?? null);
   const err = new ProviderError(
     "rate_limited",
     wait === undefined ? "429 from KeeperHub" : `429 from KeeperHub; it asked for ${wait}s`,
@@ -95,6 +94,23 @@ export function rateLimitVerdict(headers?: { get(name: string): string | null })
   );
   if (wait !== undefined) err.retryAfterSeconds = wait;
   return err;
+}
+
+/**
+ * `Retry-After`, in seconds, as RFC 9110 allows it to be written: a delay in seconds OR an HTTP
+ * date. `Number("Wed, 21 Oct 2015 07:28:00 GMT")` is NaN, so the date form silently lost the hint
+ * and the platform's own backoff was replaced with a local guess.
+ *
+ * Clamped at an hour rather than five minutes. The ceiling exists so a malformed header cannot
+ * park a worker for a week; a ceiling below what the platform actually asked for is the opposite
+ * of honouring it -- it retried twelve times earlier than a 3600s request said to.
+ */
+export function retryAfterSeconds(header: string | null, now = Date.now()): number | undefined {
+  if (header === null || header.trim() === "") return undefined;
+  const asNumber = Number(header);
+  const seconds = Number.isFinite(asNumber) ? asNumber : (Date.parse(header) - now) / 1000;
+  if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
+  return Math.min(Math.ceil(seconds), 3600);
 }
 
 /**
@@ -142,6 +158,7 @@ export function idempotencyVerdict(said: string): ProviderError {
 }
 
 export class KeeperHubProvider implements ExecutionProvider {
+  readonly transport = "rest" as const;
   readonly #cfg: KeeperHubConfig;
   readonly #base: string;
   readonly #timeout: number;
@@ -207,11 +224,20 @@ export class KeeperHubProvider implements ExecutionProvider {
     }
 
     const text = await res.text();
+    // The status is read BEFORE the body is parsed.
+    //
+    // The parse used to come first, and a body that was not JSON threw `bad_response` before any
+    // status branch ran -- so a 429 served as an HTML page by an edge rate limiter (the common
+    // case) lost its Retry-After and came back non-retryable, a 409 with an empty body never
+    // reached `idempotency_unlabelled`, the branch written for exactly that, and the two
+    // transports gave different verdicts for identical bytes while a parity suite asserted they
+    // could not. The suite only ever fed them JSON. A status code is the platform's answer
+    // whatever the body looks like; the body only refines it.
     let parsed: KeeperHubResponse = {};
     try {
       parsed = JSON.parse(text) as KeeperHubResponse;
     } catch {
-      if (!res.ok) throw new ProviderError("bad_response", `HTTP ${res.status}: ${text.slice(0, 200)}`, res.status >= 500);
+      // Left empty on purpose: every branch below reads `parsed.x ?? text`.
     }
 
     if (res.status === 409) {

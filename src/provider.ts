@@ -199,10 +199,13 @@ export function minConfirmations(): number {
 }
 
 export function belowConfirmationDepth(
-  receipt: Pick<Receipt, "blockNumber" | "confirmations">,
+  receipt: Pick<Receipt, "blockNumber" | "confirmations" | "source">,
   minConfirmations: number,
 ): boolean {
   if (receipt.confirmations !== undefined) return receipt.confirmations < minConfirmations;
+  // A receipt an endpoint really answered, with no depth the reader could compute, is not "deep
+  // enough"; it is unknown. Only a fixture -- no chain behind it -- has nothing to wait for.
+  if (receipt.source === "chain") return true;
   return receipt.blockNumber !== undefined;
 }
 
@@ -229,6 +232,8 @@ export class ProviderError extends Error {
 }
 
 export interface ExecutionProvider {
+  /** Which KeeperHub surface this provider talks to. Recorded on every attempt it dispatches. */
+  readonly transport?: "rest" | "mcp" | "fixture";
   simulate(body: unknown): Promise<SimulateOutcome>;
   /** `idempotencyKey` must come from the persisted attempt, never minted at call time. */
   execute(body: unknown, idempotencyKey: string): Promise<ExecuteResult>;
@@ -250,6 +255,7 @@ interface Sent {
  * the harness can assert "no second payment" rather than trusting a status string.
  */
 export class FixtureProvider implements ExecutionProvider {
+  readonly transport = "fixture" as const;
   #fault: Fault;
   #sent = new Map<string, Sent>();
   #seq = 0;

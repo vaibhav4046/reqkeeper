@@ -209,6 +209,74 @@ if (args.has("review-conflict")) {
   process.exit(0);
 }
 
+// ---- reconciling an EVIDENCE_CONFLICT against the chain ------------------------
+//
+//   npm run resolve -- --reconcile=<obligationId> --tx=<hash> --operator=<who>
+//
+// EVIDENCE_CONFLICT is entered from six places and, until this existed, exited from none: the
+// machine declared RECONCILING / SETTLED / EXECUTION_REVERTED legal and nothing shipped could take
+// any of them, while `nextStep` said "a human has to reconcile it" and named no command. The only
+// exit was a SQLite client. This is the command. It moves NOTHING on a human's word: the named
+// transaction is re-read from public endpoints, and the obligation goes where the chain says --
+// SETTLED only on a corroborated fee-proxy event paying this invoice in that very transaction,
+// EXECUTION_REVERTED on a reverted receipt, and nowhere at all on anything less.
+if (args.has("reconcile")) {
+  const target = args.get("reconcile") ?? "";
+  const tx = (args.get("tx") ?? "").trim().toLowerCase();
+  const operator = args.get("operator") ?? "";
+  if (!/^[0-9a-f]{64}$/.test(target) || !/^0x[0-9a-f]{64}$/.test(tx) || !operator || operator === "true") {
+    console.error("\n  usage: npm run resolve -- --reconcile=<obligationId> --tx=<0x…64 hex> --operator=<who>\n");
+    store.close();
+    process.exit(2);
+  }
+  const row = store.obligationForRecovery(target);
+  if (!row) {
+    console.error(`\n  no such obligation locally: ${target}\n`);
+    store.close();
+    process.exit(1);
+  }
+  if (row.state !== "EVIDENCE_CONFLICT") {
+    console.error(`\n  ${target.slice(0, 14)}… is ${row.state}, not EVIDENCE_CONFLICT — nothing to reconcile here.\n`);
+    store.close();
+    process.exit(2);
+  }
+  if (!row.paymentReference || !row.expectation) {
+    console.error("\n  REFUSED: this obligation's stored facts cannot state what paying it looks like, so no log can be matched.\n");
+    store.close();
+    process.exit(1);
+  }
+  const receiptRead = await readReceipt(rpcUrl, tx);
+  if (receiptRead.receiptStatus === "reverted") {
+    store.setState(target, "EXECUTION_REVERTED", Date.now());
+    store.audit(target, operator, "RECONCILED_BY_OPERATOR", { txHash: tx, outcome: "EXECUTION_REVERTED" });
+    console.log(`\n  ${tx} reverted on chain. ${target.slice(0, 14)}… is EXECUTION_REVERTED; nothing was paid by it.\n`);
+    store.close();
+    process.exit(0);
+  }
+  if (receiptRead.receiptStatus !== "success") {
+    console.error(`\n  REFUSED: the receipt for ${tx} reads ${receiptRead.receiptStatus}; nothing is concluded from a receipt that could not be read.\n`);
+    store.close();
+    process.exit(1);
+  }
+  const seen = await sightPayment(row.paymentReference, row.expectation, row.anchorBlock ?? undefined);
+  const { verdictFor } = await import("../src/chain.ts");
+  const verdict = verdictFor(seen, { requireCorroboration: true });
+  if (verdict.kind !== "PAID" || verdict.txHash.toLowerCase() !== tx) {
+    console.error(`\n  REFUSED: the chain does not show ${tx} paying this invoice (verdict ${verdict.kind}${"reason" in verdict ? `/${verdict.reason}` : ""}).`);
+    console.error("  Nothing moves on a transaction the chain will not corroborate.\n");
+    store.close();
+    process.exit(1);
+  }
+  const attempt = store.sentAttemptFor(target);
+  if (attempt && !attempt.txHash) store.recordOutcome(attempt.id, { outcome: "SENT", txHash: tx });
+  store.setState(target, "RECONCILING", Date.now());
+  store.setState(target, "SETTLED", Date.now());
+  store.audit(target, operator, "RECONCILED_BY_OPERATOR", { txHash: tx, outcome: "SETTLED", scannedFrom: seen.scannedFrom ?? null, scannedTo: seen.scannedTo ?? null });
+  console.log(`\n  ${tx} pays this invoice, corroborated. ${target.slice(0, 14)}… is SETTLED, on ${operator}'s reconciliation.\n`);
+  store.close();
+  process.exit(0);
+}
+
 // ---- what is actually open ---------------------------------------------------
 //
 //   npm run resolve -- --status
@@ -264,7 +332,11 @@ function nextStep(state: string, jobsDue: number): string {
     case "EXECUTION_OUTCOME_UNKNOWN":
       return "a send happened with no answer. npm run resolve reads the chain for it. Do not retry the send.";
     case "EVIDENCE_CONFLICT":
-      return "an integrity incident: the chain and this system disagree. A human has to reconcile it before anything else.";
+      return (
+        "an integrity incident: the chain and this system disagree. A human reconciles it against the " +
+        "transaction: npm run resolve -- --reconcile=<obligationId> --tx=<hash> --operator=<who> (or, if " +
+        "nothing was ever sent, --release-preflight after --review-conflict)"
+      );
     case "SETTLED":
       return "paid and closed. Nothing to do.";
     case "SOURCE_ALREADY_PAID":
@@ -350,6 +422,8 @@ if (releaseTarget) {
   });
   const decision = operatorReleaseDecision({
     state: row.state,
+    // The door opens for an EVIDENCE_CONFLICT only when nothing was ever sent: see exclusion.ts.
+    hasSentAttempt: store.sentAttemptFor(releaseTarget) !== undefined,
     exclusion,
     sighting: seen,
     // Typed by a human, on the command line, naming the risk. See the refusal below.
@@ -364,6 +438,10 @@ if (releaseTarget) {
   switch (decision.kind) {
     case "REFUSE_STATE":
       console.error(`  ${releaseTarget.slice(0, 14)}… is ${decision.state}, not PAYMENT_PREFLIGHT — nothing to release`);
+      if (decision.state === "EVIDENCE_CONFLICT") {
+        console.error("  A send happened under this obligation. Reconcile it against the transaction instead:");
+        console.error(`    npm run resolve -- --reconcile=${releaseTarget} --tx=<hash> --operator=<who>`);
+      }
       process.exit(2);
       break;
     case "REFUSE_PAID":

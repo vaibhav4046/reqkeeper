@@ -372,6 +372,7 @@ export declare function readReceipt(rpcUrl: string, hash: string, timeoutMs?: nu
         topics?: string[];
     }>;
     blockNumber?: number;
+    blockTimestamp?: number;
     confirmations?: number;
     source?: "chain" | "fixture";
 }>;
