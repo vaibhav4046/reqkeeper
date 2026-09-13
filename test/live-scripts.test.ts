@@ -25,23 +25,28 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, describe, test } from "node:test";
+import { keccak256Hex } from "../src/keccak.ts";
+import { derivePaymentReference } from "../src/request.ts";
 
 import { EXPECTED_CHAIN_ID } from "../src/chain.ts";
 import { ERC20_FEE_PROXY } from "../src/plan.ts";
 
 /** The invoice the stub gateway serves. Same real Sepolia invoice as test/request.test.ts. */
-const REQUEST_ID = "0108b3f7d7d7d3c1fd21d37ba996b21d019c59cbaaa75c5cb5801fc3d9a371c142";
 const SALT = "8682e8e726d1b4f1";
 const PAYMENT_ADDRESS = "0xc43d766CB7c48B9B198db87441b97c09e81717A1";
 /** What `derivePaymentReference` produces from the three values above, and nothing else. */
-const DERIVED_REFERENCE = "0x050562a52ec69fa2";
 const FAU = "0x370DE27fdb7D1Ff1e1BaA7D11c5820a324Cf623C";
 const ONE_FAU = "1000000000000000000";
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 /** A real reference — for a different invoice. The kind of value a hand-edited file carries. */
 const SOMEBODY_ELSES_REFERENCE = "0xfaac1220a314c4a9";
 
-function gatewayBody(anchor?: { blockNumber: number; transactionHash: string }): unknown {
+/**
+ * The id is a hash of this signed create, and `fetchInvoice` re-derives it and refuses a mismatch
+ * — so the fixture cannot claim a borrowed id any more than a hostile gateway can. Lifted to
+ * module scope for exactly that: the constants below are derived from it rather than typed.
+ */
+const CREATE_ACTION = (() => {
   const action = {
     data: {
       name: "create",
@@ -68,6 +73,28 @@ function gatewayBody(anchor?: { blockNumber: number; transactionHash: string }):
       },
     },
   };
+  return action;
+})();
+
+/** `01` + keccak256 over the normalised signed create: keys deep-sorted, whole string lowercased. */
+function channelIdFor(signedCreate: unknown): string {
+  const sort = (v: unknown): unknown =>
+    Array.isArray(v)
+      ? v.map(sort)
+      : v !== null && typeof v === "object"
+        ? Object.fromEntries(
+            Object.keys(v as Record<string, unknown>).sort().map((k) => [k, sort((v as Record<string, unknown>)[k])]),
+          )
+        : v;
+  return `01${keccak256Hex(JSON.stringify(sort(signedCreate)).toLowerCase()).replace(/^0x/, "")}`;
+}
+
+/** Derived, never typed: the id IS the hash of the create above. */
+const REQUEST_ID = channelIdFor(CREATE_ACTION);
+const DERIVED_REFERENCE = derivePaymentReference(REQUEST_ID, SALT, PAYMENT_ADDRESS);
+
+function gatewayBody(anchor?: { blockNumber: number; transactionHash: string }): unknown {
+  const action = CREATE_ACTION;
   return {
     // `meta.storageMeta` is where the Sepolia block of the create action lives. Empty is the
     // real shape while the create is still unconfirmed, which is why the anchor is optional
@@ -165,7 +192,7 @@ describe("scripts/settle-live.ts reads the invoice rather than trusting .env", (
     assert.ok(ran.output.includes(SOMEBODY_ELSES_REFERENCE), ran.output);
     assert.ok(ran.output.includes(DERIVED_REFERENCE), ran.output);
     assert.equal(gateway.channels.length, 1, "the invoice was not fetched exactly once");
-    assert.match(gateway.channels[0], /getTransactionsByChannelId\?channelId=0108b3f7/);
+    assert.ok(gateway.channels[0].includes(`getTransactionsByChannelId?channelId=${REQUEST_ID}`), gateway.channels[0]);
   });
 
   test("a .env payee the invoice does not name is refused, naming the field", async () => {
@@ -215,11 +242,13 @@ describe("scripts/live-harness.ts reads the invoice rather than trusting the loc
         REQUEST_GATEWAY_URL: gateway.url,
         KEEPERHUB_API_KEY: "not-a-credential-and-never-used",
       },
-      ["--limit", "1"],
+      // --out so a spawned production script cannot write into the repository. It used to, and
+      // replaced the committed live evidence with a stub run's output.
+      ["--limit", "1", "--out", join(tmpdir(), "reqkeeper-harness-out.json")],
     );
 
     assert.notEqual(ran.code, 0, `the run should not have succeeded:\n${ran.output}`);
-    assert.match(ran.output, /REFERENCE_MISMATCH/, ran.output);
+    assert.match(ran.output, /REQUEST_ID_MISMATCH|REFERENCE_MISMATCH/, ran.output);
     assert.ok(gateway.channels.length >= 1, "live-harness never asked the gateway anything");
     const asked = /channelId=([0-9a-fA-F]+)/.exec(gateway.channels[0])?.[1];
     assert.ok(asked && known.has(asked), `asked the gateway for ${asked}, which is not in the file`);

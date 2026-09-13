@@ -19,6 +19,7 @@ import assert from "node:assert/strict";
 import { after, describe, test } from "node:test";
 
 import { canonicalReference } from "../src/identity.ts";
+import { keccak256Hex } from "../src/keccak.ts";
 import {
   assertReferenceMatches,
   derivePaymentReference,
@@ -105,6 +106,44 @@ function gatewayBody(action: unknown = createAction()) {
   };
 }
 
+/**
+ * The channel id a signed create hashes to — `01` + keccak256 over the normalised action, keys
+ * deep-sorted and the whole string lowercased.
+ *
+ * `fetchInvoice` re-derives this and refuses a mismatch, so a fixture cannot serve arbitrary bytes
+ * under a borrowed id any more than a hostile gateway can. Every body these tests build therefore
+ * has to be asked for under its OWN id, which is the property, not an inconvenience.
+ */
+function channelIdFor(signedCreate: unknown): string {
+  const sort = (v: unknown): unknown =>
+    Array.isArray(v)
+      ? v.map(sort)
+      : v !== null && typeof v === "object"
+        ? Object.fromEntries(
+            Object.keys(v as Record<string, unknown>).sort().map((k) => [k, sort((v as Record<string, unknown>)[k])]),
+          )
+        : v;
+  return `01${keccak256Hex(JSON.stringify(sort(signedCreate)).toLowerCase()).replace(/^0x/, "")}`;
+}
+
+/** The id for whatever create a gateway body happens to carry, or the literal one if it has none. */
+function idOf(body: unknown): string {
+  const txs = (body as { result?: { transactions?: Array<{ transaction?: { data?: string } }> } })?.result?.transactions;
+  for (const t of txs ?? []) {
+    try {
+      const signed = JSON.parse(t.transaction?.data ?? "");
+      if (signed?.data?.name === "create") return channelIdFor(signed);
+    } catch {
+      // a body this malformed is the thing under test; fall through to the literal id
+    }
+  }
+  return REQUEST_ID;
+}
+
+/** The default fixture's id, and the reference that follows from it. */
+const CHANNEL_ID = channelIdFor(createAction());
+const CHANNEL_REFERENCE = derivePaymentReference(CHANNEL_ID, SALT, PAYMENT_ADDRESS);
+
 const realFetch = globalThis.fetch;
 after(() => {
   globalThis.fetch = realFetch;
@@ -152,10 +191,10 @@ describe("derivePaymentReference reproduces a reference that exists on Sepolia",
 describe("fetchInvoice reads the invoice the gateway actually serves", () => {
   test("the real payload parses into whole facts", async () => {
     const { urls } = stubGateway(gatewayBody());
-    const facts = await fetchInvoice(REQUEST_ID);
+    const facts = await fetchInvoice(CHANNEL_ID);
 
-    assert.match(urls[0], /getTransactionsByChannelId\?channelId=0108b3f7/);
-    assert.equal(facts.requestId, REQUEST_ID);
+    assert.ok(urls[0].includes(`channelId=${CHANNEL_ID}`));
+    assert.equal(facts.requestId, CHANNEL_ID);
     assert.equal(facts.chainId, SEPOLIA_CHAIN_ID);
     assert.equal(facts.tokenAddress, FAU);
     assert.equal(facts.payee, PAYMENT_ADDRESS);
@@ -168,8 +207,8 @@ describe("fetchInvoice reads the invoice the gateway actually serves", () => {
 
   test("the reference is derived from what was read, and matches the recorded one", async () => {
     stubGateway(gatewayBody());
-    const facts = await fetchInvoice(REQUEST_ID);
-    assert.equal(facts.paymentReference, REFERENCE);
+    const facts = await fetchInvoice(CHANNEL_ID);
+    assert.equal(facts.paymentReference, CHANNEL_REFERENCE);
   });
 
   test("the payee is the extension's paymentAddress, not parameters.payee", async () => {
@@ -178,12 +217,18 @@ describe("fetchInvoice reads the invoice the gateway actually serves", () => {
     // produces a transfer the reconciler cannot match — and a reference for a different debt.
     const action = createAction();
     action.data.parameters.payee.value = STRANGER;
-    stubGateway(gatewayBody(action));
+    const body = gatewayBody(action);
+    stubGateway(body);
 
-    const facts = await fetchInvoice(REQUEST_ID);
+    const id = idOf(body);
+    const facts = await fetchInvoice(id);
     assert.equal(facts.payee, PAYMENT_ADDRESS);
     assert.equal(facts.payeeOfRecord, STRANGER);
-    assert.equal(facts.paymentReference, REFERENCE, "the reference follows the payment address");
+    assert.equal(
+      facts.paymentReference,
+      derivePaymentReference(id, SALT, PAYMENT_ADDRESS),
+      "the reference follows the payment address",
+    );
   });
 
   test("an unconfirmed create yields facts with no storage anchor, not a zero block", async () => {
@@ -191,14 +236,14 @@ describe("fetchInvoice reads the invoice the gateway actually serves", () => {
     body.meta.storageMeta = [];
     stubGateway(body);
 
-    const facts = await fetchInvoice(REQUEST_ID);
+    const facts = await fetchInvoice(CHANNEL_ID);
     assert.equal(facts.anchor, undefined);
-    assert.equal(facts.paymentReference, REFERENCE);
+    assert.equal(facts.paymentReference, CHANNEL_REFERENCE);
   });
 
   test("a custom gateway URL without a trailing slash still forms one path", async () => {
     const { urls } = stubGateway(gatewayBody());
-    await fetchInvoice(REQUEST_ID, { gatewayUrl: "https://gateway.example" });
+    await fetchInvoice(CHANNEL_ID, { gatewayUrl: "https://gateway.example" });
     assert.match(urls[0], /^https:\/\/gateway\.example\/getTransactionsByChannelId\?/);
   });
 });
@@ -207,7 +252,9 @@ describe("fetchInvoice refuses rather than returning half an invoice", () => {
   const refuses = async (body: unknown, code: string, status = 200) => {
     stubGateway(body, status);
     await assert.rejects(
-      () => fetchInvoice(REQUEST_ID),
+      // Under the id this body's own create hashes to, so the refusal under test is the one the
+      // case is named for rather than REQUEST_ID_MISMATCH shadowing all of them.
+      () => fetchInvoice(idOf(body)),
       (e: RequestError) => {
         assert.ok(e instanceof RequestError, `expected RequestError, got ${e?.constructor?.name}`);
         assert.equal(e.code, code, `expected ${code}, got ${e.code}: ${e.message}`);
@@ -305,7 +352,7 @@ describe("assertReferenceMatches is the refusal the settle path uses", () => {
 describe("fetchInvoiceChecked refuses a caller's facts rather than preferring them", () => {
   /** Everything a local file or `.env` would carry, all of it agreeing with the invoice. */
   const agreeing = {
-    paymentReference: REFERENCE,
+    paymentReference: CHANNEL_REFERENCE,
     payee: PAYMENT_ADDRESS,
     amountBaseUnits: ONE_FAU,
     feeAmount: "0",
@@ -315,21 +362,21 @@ describe("fetchInvoiceChecked refuses a caller's facts rather than preferring th
 
   test("facts that agree are allowed through, and the returned ones are Request's", async () => {
     stubGateway(gatewayBody());
-    const facts = await fetchInvoiceChecked(REQUEST_ID, agreeing);
-    assert.equal(facts.paymentReference, REFERENCE);
+    const facts = await fetchInvoiceChecked(CHANNEL_ID, agreeing);
+    assert.equal(facts.paymentReference, CHANNEL_REFERENCE);
     assert.equal(facts.payee, PAYMENT_ADDRESS);
   });
 
   test("with nothing claimed it is just a read", async () => {
     stubGateway(gatewayBody());
-    const facts = await fetchInvoiceChecked(REQUEST_ID);
-    assert.equal(facts.paymentReference, REFERENCE);
+    const facts = await fetchInvoiceChecked(CHANNEL_ID);
+    assert.equal(facts.paymentReference, CHANNEL_REFERENCE);
   });
 
   test("a supplied reference for another debt is REFERENCE_MISMATCH", async () => {
     stubGateway(gatewayBody());
     await assert.rejects(
-      () => fetchInvoiceChecked(REQUEST_ID, { ...agreeing, paymentReference: "0xfaac1220a314c4a9" }),
+      () => fetchInvoiceChecked(CHANNEL_ID, { ...agreeing, paymentReference: "0xfaac1220a314c4a9" }),
       (e: RequestError) => e.code === "REFERENCE_MISMATCH",
     );
   });
@@ -345,7 +392,7 @@ describe("fetchInvoiceChecked refuses a caller's facts rather than preferring th
     for (const [field, value] of wrong) {
       stubGateway(gatewayBody());
       await assert.rejects(
-        () => fetchInvoiceChecked(REQUEST_ID, { ...agreeing, [field]: value }),
+        () => fetchInvoiceChecked(CHANNEL_ID, { ...agreeing, [field]: value }),
         (e: RequestError) => {
           assert.equal(e.code, "FACT_MISMATCH", `${field}: ${e.message}`);
           assert.ok(e.message.includes(field), `the refusal does not name ${field}: ${e.message}`);
@@ -358,13 +405,13 @@ describe("fetchInvoiceChecked refuses a caller's facts rather than preferring th
   test("checksum capitalisation is not a disagreement, but a different amount spelling is", async () => {
     stubGateway(gatewayBody());
     await assert.doesNotReject(() =>
-      fetchInvoiceChecked(REQUEST_ID, { payee: PAYMENT_ADDRESS.toLowerCase() }),
+      fetchInvoiceChecked(CHANNEL_ID, { payee: PAYMENT_ADDRESS.toLowerCase() }),
     );
     stubGateway(gatewayBody());
     // An amount is supposed to be a verbatim copy. A leading zero means something other than
     // Request typed it, and this is the last place to find that out.
     await assert.rejects(
-      () => fetchInvoiceChecked(REQUEST_ID, { amountBaseUnits: `0${ONE_FAU}` }),
+      () => fetchInvoiceChecked(CHANNEL_ID, { amountBaseUnits: `0${ONE_FAU}` }),
       (e: RequestError) => e.code === "FACT_MISMATCH",
     );
   });

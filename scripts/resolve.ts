@@ -34,10 +34,39 @@ function loadDotEnv(): void {
 }
 loadDotEnv();
 
+/**
+ * `--key=value` and `--key value`, and keys may contain hyphens.
+ *
+ * The old pattern was `/^--([a-zA-Z]+)(?:=(.*))?$/`: no hyphen in the class, and no support for a
+ * space-separated value. `--release-preflight` is the only hyphenated flag in this CLI, so it was
+ * the only one bitten — and it is the documented way out of a wedged obligation. It never parsed,
+ * so the command did nothing, printed "nothing moved", and exited 0. A reviewer ran the exact line
+ * `docs/RUNBOOK.md` prints and watched it report success while the obligation stayed in
+ * PAYMENT_PREFLIGHT. An escape hatch that reports success without opening is worse than none: it
+ * is the state this system calls a permanent wedge, wearing a green tick.
+ *
+ * No test had ever spawned this CLI. `test/resolve-cli.test.ts` does now, with the argv the docs
+ * print, character for character.
+ */
 const args = new Map<string, string>();
-for (const a of process.argv.slice(2)) {
-  const m = /^--([a-zA-Z]+)(?:=(.*))?$/.exec(a);
-  if (m) args.set(m[1], m[2] ?? "true");
+{
+  const argv = process.argv.slice(2);
+  for (let i = 0; i < argv.length; i++) {
+    const m = /^--([A-Za-z][A-Za-z0-9-]*)(?:=(.*))?$/.exec(argv[i]);
+    if (!m) continue;
+    if (m[2] !== undefined) {
+      args.set(m[1], m[2]);
+      continue;
+    }
+    // A following token that is not itself a flag is this flag's value.
+    const next = argv[i + 1];
+    if (next !== undefined && !next.startsWith("--")) {
+      args.set(m[1], next);
+      i++;
+    } else {
+      args.set(m[1], "true");
+    }
+  }
 }
 
 const dbPath = args.get("db") ?? ".data/live.sqlite";
@@ -155,7 +184,18 @@ if (releaseTarget) {
     process.exit(2);
   }
 
-  const seen = await sightPayment(row.paymentReference, row.expectation ?? undefined, row.anchorBlock ?? undefined);
+  // A chain that will not answer is "I could not tell", not a crash. This threw an unhandled
+  // rejection and killed the process before it printed anything about the obligation, so an
+  // operator running the documented line on a bad connection got a stack trace and no decision.
+  let seen;
+  try {
+    seen = await sightPayment(row.paymentReference, row.expectation ?? undefined, row.anchorBlock ?? undefined);
+  } catch (e) {
+    console.error(`  REFUSED for ${releaseTarget.slice(0, 14)}…: the chain could not be read (${String(e).slice(0, 120)}).`);
+    console.error("  An unreadable chain cannot say this invoice is unpaid. Set REQKEEPER_RPC_ENDPOINTS");
+    console.error("  to endpoints that answer, and run this again.");
+    process.exit(1);
+  }
   const decision = operatorReleaseDecision({ state: row.state, sighting: seen });
   switch (decision.kind) {
     case "REFUSE_STATE":

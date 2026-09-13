@@ -311,7 +311,12 @@ function referenceAlreadyClaimed(
  * is a refusal that costs zero sends, and anything not recognised here is rethrown, so a real
  * bug still surfaces as a real bug rather than being dressed up as a polite refusal.
  */
-function refusalForLostRace(e: unknown, store: Store, input: SettleInput): SettleOutcome | null {
+function refusalForLostRace(
+  e: unknown,
+  store: Store,
+  input: SettleInput,
+  progress: { writeIssued: boolean },
+): SettleOutcome | null {
   const message = e instanceof Error ? e.message : String(e);
   const code = (e as { code?: string } | undefined)?.code;
 
@@ -339,7 +344,7 @@ function refusalForLostRace(e: unknown, store: Store, input: SettleInput): Settl
     // A catch block cannot know what happened before the throw, so it must not assert it. The
     // store can: an attempt row with `first_send_at` set is a write that was issued, and
     // `markSent` writes it before the provider call precisely so this question survives a crash.
-    const sent = store.sentAttemptFor(input.obligationId) !== undefined;
+    const sent = progress.writeIssued;
     store.audit(input.obligationId, "system", "REFUSED_REENTRY", {
       state: state ?? null,
       via: code,
@@ -439,16 +444,29 @@ const sameAddress = (a: string, b: string): boolean => a.toLowerCase() === b.toL
  * audit trail.
  */
 export async function settleObligation(deps: SettleDeps, input: SettleInput): Promise<SettleOutcome> {
+  // What THIS call did, for a catch block that cannot see where the throw came from.
+  //
+  // The first fix here asked the store — `sentAttemptFor(obligationId)` — which answers a
+  // different question: has this OBLIGATION ever had a write. Under the 50-worker race that made
+  // five workers report `providerWriteIssued: true` over one broadcast, because four of them were
+  // merely losing a race to an obligation that had already been paid. Over-reporting is the safe
+  // direction, but it is still a misreport, and the race check that caught it is there precisely
+  // to notice a claim that the counters cannot account for.
+  const progress = { writeIssued: false };
   try {
-    return await settleOrRefuse(deps, input);
+    return await settleOrRefuse(deps, input, progress);
   } catch (e) {
-    const refused = refusalForLostRace(e, deps.store, input);
+    const refused = refusalForLostRace(e, deps.store, input, progress);
     if (refused) return refused;
     throw e;
   }
 }
 
-async function settleOrRefuse(deps: SettleDeps, input: SettleInput): Promise<SettleOutcome> {
+async function settleOrRefuse(
+  deps: SettleDeps,
+  input: SettleInput,
+  progress: { writeIssued: boolean },
+): Promise<SettleOutcome> {
   const { store, provider, policy } = deps;
   const factsHash = sourceFactsHash(input.facts);
 
@@ -923,6 +941,9 @@ async function settleOrRefuse(deps: SettleDeps, input: SettleInput): Promise<Set
   // stopping the second send is that SQLite serialises writers and Node happened not to yield
   // between the two. `markSent` now carries `WHERE first_send_at IS NULL` and reports whether
   // it changed a row, so the claim is decided by the database, not by the scheduler.
+  // Set before the compare-and-set, not after: from here on this call may have moved money,
+  // whatever happens next.
+  progress.writeIssued = true;
   if (!store.markSent(attemptId, input.now)) {
     const priorAttempt = store.getAttempt(attemptId);
     store.enqueue({

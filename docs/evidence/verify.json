@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-13T06:32:46.468Z",
+  "generatedAt": "2026-09-13T06:51:08.459Z",
   "chainId": 11155111,
   "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
   "credentialsUsed": "none",
@@ -169,7 +169,7 @@
       "id": "chain.completeness",
       "claim": "no payment on chain is missing from the evidence",
       "status": "ok",
-      "detail": "every fee-proxy payment to this deployment's 1 payee(s) over 11665964..11694184, asked of 4 endpoint(s): 44 found across their union, every one accounted for by an evidence file. The payee set comes from docs/, the payments come from the chain."
+      "detail": "every fee-proxy payment to this deployment's 1 payee(s) over 11665964..11694273, asked of 4 endpoint(s): 44 found across their union, every one accounted for by an evidence file. The payee set comes from docs/, the payments come from the chain."
     },
     {
       "id": "docs.citations",

@@ -62,6 +62,18 @@ if (!API_KEY) {
   process.exit(2);
 }
 
+/**
+ * Where the artifact goes. Defaults to the committed one; `--out` points it somewhere else.
+ *
+ * `test/live-scripts.test.ts` spawns this script, and the write at the bottom was an
+ * unconditional `writeFileSync` to the committed path — so a test run that got far enough
+ * replaced 83 rows and 38 real on-chain payments with whatever a stub gateway produced. A
+ * reviewer reproduced it twice from a clean checkout. A test suite that can destroy the evidence
+ * it exists to protect is a worse problem than whatever it was testing.
+ */
+const outArg = process.argv.indexOf("--out");
+const OUT = outArg > -1 ? (process.argv[outArg + 1] ?? "docs/refusals-live.json") : "docs/refusals-live.json";
+
 const limitArg = process.argv.indexOf("--limit");
 const LIMIT = limitArg > -1 ? Number(process.argv[limitArg + 1]) : Number.POSITIVE_INFINITY;
 
@@ -461,6 +473,24 @@ const out = {
   },
   rows,
 };
-writeFileSync("docs/refusals-live.json", `${JSON.stringify(out, null, 2)}\n`, "utf8");
-console.log("Written to docs/refusals-live.json\n");
+// A run that landed no payment must not replace one that did.
+//
+// The belt to the `--out` braces: even pointed at the committed artifact, this refuses to trade
+// recorded live settlements for a run that has none. Evidence is only worth having if losing it
+// is harder than keeping it.
+if (existsSync(OUT)) {
+  try {
+    const existing = JSON.parse(readFileSync(OUT, "utf8")) as { totals?: { payments?: number } };
+    const had = existing.totals?.payments ?? 0;
+    if (had > 0 && paid.length === 0) {
+      console.error(`Refusing to overwrite ${OUT}: it records ${had} live payment(s) and this run landed none.`);
+      console.error("Pass --out <path> to write somewhere else, or delete the file deliberately.");
+      process.exit(1);
+    }
+  } catch {
+    // An unreadable artifact is not a reason to refuse to write a good one.
+  }
+}
+writeFileSync(OUT, `${JSON.stringify(out, null, 2)}`, "utf8");
+console.log(`Written to ${OUT}`);
 process.exit(asSpecified === rows.length ? 0 : 1);

@@ -40,7 +40,9 @@ export type RequestErrorCode =
   | "WRONG_NETWORK"
   | "REFERENCE_MISMATCH"
   | "FACT_MISMATCH"
-  | "INVOICE_CANCELLED";
+  | "INVOICE_CANCELLED"
+  /** The served create does not hash to the channel id it was served under. */
+  | "REQUEST_ID_MISMATCH";
 
 export class RequestError extends Error {
   // See MoneyError: Node's strip-only TypeScript mode rejects constructor parameter
@@ -236,7 +238,11 @@ export async function fetchInvoice(
       throw new RequestError("MALFORMED_TRANSACTION", `transaction ${index} on channel ${id} carries no data string`);
     }
     try {
-      return { index, data: dig(JSON.parse(raw), "data") };
+      const signed = JSON.parse(raw) as unknown;
+      // The whole signed action is kept, not just its `data`. The channel id is a hash OVER the
+      // signed action, so verifying it needs the signature and every other field exactly as
+      // served. See `assertChannelIdBindsCreate`.
+      return { index, data: dig(signed, "data"), signed };
     } catch (e) {
       throw new RequestError(
         "MALFORMED_TRANSACTION",
@@ -262,6 +268,25 @@ export async function fetchInvoice(
   //
   // These are applied below, after the create's own fields are parsed, because a delta has to be
   // applied to something.
+  // The channel id is a hash of the signed create, so it can be checked without a credential.
+  //
+  // Everything else here trusts the gateway's bytes: no ECDSA signer is recovered, so a forged
+  // create served under a genuine request id was accepted silently — attacker payee, attacker
+  // payment address, any amount — and the reference then derived self-consistently from the
+  // forgery, so every downstream guard protected the wrong debt. A reviewer demonstrated exactly
+  // that. It is reachable through REQUEST_GATEWAY_URL, `opts.gatewayUrl`, or a gateway that has
+  // been compromised.
+  //
+  // Request derives the id as `01` + keccak256 of the signed create, normalised: keys deep-sorted
+  // and the whole string lowercased. Verified against all 46 invoices this deployment knows,
+  // 46 of 46. It costs one hash and no network call, and it turns "the gateway says this is the
+  // invoice" into "these bytes are the only ones that hash to the id I asked for".
+  //
+  // It binds the CREATE, which is where the payee, the payment address, the amount, the token and
+  // the salt live — everything the payment reference derives from. Later actions on the channel
+  // are still unauthenticated; `amountChangedBy` carries that into the sentence a human approves.
+  assertChannelIdBindsCreate(id, create.signed);
+
   const everyAction = actions.map((a) => ({
     index: a.index,
     name: asString(dig(a.data, "name")),
@@ -446,6 +471,34 @@ function storageAnchor(body: unknown, index: number): { anchor?: { blockNumber: 
   const transactionHash = asString(dig(eth, "transactionHash"));
   if (typeof blockNumber !== "number" || !transactionHash) return {};
   return { anchor: { blockNumber, transactionHash } };
+}
+
+/** Deep-sorted keys, then lowercased — Request's own normalisation before hashing. */
+function normalizeForHash(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalizeForHash);
+  if (value !== null && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+      out[key] = normalizeForHash((value as Record<string, unknown>)[key]);
+    }
+    return out;
+  }
+  return value;
+}
+
+function assertChannelIdBindsCreate(id: string, signedCreate: unknown): void {
+  if (signedCreate === undefined) {
+    throw new RequestError("MALFORMED_TRANSACTION", `channel ${id} served a create this reader could not re-read`);
+  }
+  const derived = `01${keccak256Hex(JSON.stringify(normalizeForHash(signedCreate)).toLowerCase()).replace(/^0x/, "")}`;
+  if (derived !== id) {
+    throw new RequestError(
+      "REQUEST_ID_MISMATCH",
+      `channel ${id} served a create that hashes to ${derived}. The request id is a hash of the ` +
+        "signed create action, so these are not the bytes that id refers to — the invoice has been " +
+        "substituted somewhere between Request and here.",
+    );
+  }
 }
 
 function assertSepolia(id: string, field: string, network: string | undefined): void {
