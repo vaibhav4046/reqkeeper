@@ -144,7 +144,7 @@ describe("what a reply from the MCP server does to a dispatch", () => {
     // term this reads as "would not revert" and the preflight gate lets a real payment through.
     mcpAnswers(200, { error: "execution reverted: ERC20: insufficient allowance" });
     const sim = await fresh().simulate(STEP);
-    assert.equal(sim.wouldRevert, true, "a simulation that failed to run is not a simulation that passed");
+    assert.equal(sim.kind, "UNKNOWN", "a simulation that failed to run is not a simulation that passed, and not a revert either");
   });
 
   test("a 409 conflict is an integrity incident on this transport too", async () => {

@@ -31,7 +31,7 @@ import { obligationId } from "../src/identity.ts";
 import { PRE_DISPATCH_REFUSALS, REPLANNABLE, TERMINAL, canReplan, canTransition } from "../src/machine.ts";
 import { toBaseUnits } from "../src/money.ts";
 import { NAMESPACE, PAY_SIGNATURE } from "../src/plan.ts";
-import { FixtureProvider, ProviderError, type ExecuteResult, type Receipt, type SimulateResult } from "../src/provider.ts";
+import { FixtureProvider, ProviderError, type ExecuteResult, type Receipt, type SimulateOutcome } from "../src/provider.ts";
 import { settleObligation } from "../src/settle.ts";
 import { Store } from "../src/store.ts";
 import { drainUntilQuiet } from "../src/worker.ts";
@@ -96,7 +96,7 @@ function propose(store: Store, provider: FixtureProvider, requestId: string, amo
 
 /** A provider whose preflight fails the way a revoked key or a bad request does. */
 class HardRefusalProvider extends FixtureProvider {
-  override async simulate(): Promise<SimulateResult> {
+  override async simulate(): Promise<SimulateOutcome> {
     throw new ProviderError("bad_response", "400 from provider", false);
   }
 }
@@ -110,16 +110,18 @@ class HardRefusalProvider extends FixtureProvider {
  * agent was told "The payment would revert. A retry repeats the revert." The retry paid.
  */
 class LeakySilentFailureProvider extends FixtureProvider {
-  override async simulate(): Promise<SimulateResult> {
+  override async simulate(): Promise<SimulateOutcome> {
     this.sendCounts.set("leaked-simulate", (this.sendCounts.get("leaked-simulate") ?? 0) + 1);
-    return { status: "simulated", wouldRevert: true, simulated: false, gasEstimate: "21000" };
+    // A reply that failed without a verdict. The whole point is that this is UNKNOWN and not
+    // WOULD_REVERT: the dry run above already moved money.
+    return { kind: "UNKNOWN", code: "simulate_unsuccessful", detail: "success:false, no verdict" };
   }
 }
 
 /** A provider that really did simulate, and the payment really does revert. */
 class HonestRevertProvider extends FixtureProvider {
-  override async simulate(): Promise<SimulateResult> {
-    return { status: "simulated", wouldRevert: true, simulated: true, gasEstimate: "21000" };
+  override async simulate(): Promise<SimulateOutcome> {
+    return { kind: "WOULD_REVERT", detail: "the provider simulated the call and it reverts" };
   }
 }
 
@@ -130,7 +132,7 @@ class HonestRevertProvider extends FixtureProvider {
  * before the reply was lost.
  */
 class LeakyHardFailureProvider extends FixtureProvider {
-  override async simulate(): Promise<SimulateResult> {
+  override async simulate(): Promise<SimulateOutcome> {
     this.sendCounts.set("leaked-simulate", (this.sendCounts.get("leaked-simulate") ?? 0) + 1);
     throw new ProviderError("bad_response", "400 from provider", false);
   }
@@ -138,7 +140,7 @@ class LeakyHardFailureProvider extends FixtureProvider {
 
 /** The #1959 hazard in its dangerous shape: the dry run executes, and then the reply is lost. */
 class LeakyTimeoutProvider extends FixtureProvider {
-  override async simulate(): Promise<SimulateResult> {
+  override async simulate(): Promise<SimulateOutcome> {
     this.sendCounts.set("leaked-simulate", (this.sendCounts.get("leaked-simulate") ?? 0) + 1);
     throw new ProviderError("timeout", "no response from provider", true);
   }

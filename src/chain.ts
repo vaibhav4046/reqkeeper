@@ -155,6 +155,18 @@ export interface PaymentSighting extends Partial<PaymentLogFields> {
   readonly block?: number;
   /** How far back the scan actually looked. A false with a small window is not "unpaid". */
   readonly scannedBlocks?: number;
+  /** The lowest block the scan reached. With `truncated: false` there is nothing below it to find. */
+  readonly scannedFrom?: number;
+  /**
+   * The scan could not cover the window in which a payment for this obligation could
+   * plausibly be, so `found: false` means "I could not tell", never "unpaid".
+   *
+   * This used to mean "the scan did not start at genesis", which on a live chain is every
+   * scan there has ever been: head 11692278 with the standard 300k lookback puts the floor at
+   * 11392278, so `truncated` was permanently true and every negative was inconclusive. The
+   * floor that actually settles the question is the invoice's own anchor block — a payment
+   * cannot predate the invoice it pays — which callers pass as `anchorBlock`.
+   */
   readonly truncated?: boolean;
   /**
    * A second, independent endpoint returned the same transaction for this reference.
@@ -243,7 +255,7 @@ export function decodePaymentLogFields(data: string): PaymentLogFields | null {
  * obvious way to write this — fails for every caller rather than returning nothing.
  */
 const MAX_RANGE = 45_000;
-const DEFAULT_LOOKBACK = 450_000;
+export const DEFAULT_LOOKBACK = 450_000;
 
 /**
  * Request Network's payment detection, as a direct chain read: find the ERC20FeeProxy event
@@ -251,8 +263,9 @@ const DEFAULT_LOOKBACK = 450_000;
  * agreeing with it does not depend on Request's API being up.
  *
  * Scans backwards from head in permitted chunks and stops at the first hit, because a payment
- * we care about is almost always recent. `truncated` says whether the window ran out before
- * genesis — a `found: false` with `truncated: true` means "not seen recently", never "unpaid".
+ * we care about is almost always recent. `truncated` says whether the window ran out before it
+ * reached the block below which there is nothing to find — a `found: false` with
+ * `truncated: true` means "not seen", never "unpaid".
  */
 export async function findPaymentByReference(
   reference: string,
@@ -260,6 +273,14 @@ export async function findPaymentByReference(
     rpcUrl?: string;
     fromBlock?: number;
     lookbackBlocks?: number;
+    /**
+     * The block the invoice itself is anchored at. A payment cannot predate the invoice it
+     * pays, so this is the floor below which there is nothing to find — supply it and a
+     * `found: false` is an answer rather than a shrug. The scan is extended down to it when
+     * the requested window stops short, because a window that cannot reach the anchor cannot
+     * settle the question, and its cost is bounded by the invoice's own age.
+     */
+    anchorBlock?: number;
     /**
      * The payment this obligation is owed. Supplied by every caller that can decide money;
      * without it a log is matched on its reference alone, which is what made a foreign
@@ -271,10 +292,23 @@ export async function findPaymentByReference(
   const rpcUrl = opts.rpcUrl ?? DEFAULT_RPC;
   await ensureChain(rpcUrl);
   const head = await currentBlock(rpcUrl);
-  const floor =
+  const requested =
     opts.fromBlock !== undefined
       ? Math.max(0, opts.fromBlock)
       : Math.max(0, head - (opts.lookbackBlocks ?? DEFAULT_LOOKBACK));
+  const anchorFloor = opts.anchorBlock === undefined ? undefined : Math.max(0, opts.anchorBlock);
+  const floor = anchorFloor === undefined ? requested : Math.min(requested, anchorFloor);
+
+  /**
+   * Genesis is not the bar. Requiring `floor === 0` made every real scan inconclusive, which
+   * made `PREFLIGHT_UNAVAILABLE` — the only way back for an obligation whose preflight failed —
+   * unreachable against the live chain, and wedged those obligations permanently.
+   *
+   * A caller that names the anchor gets a conclusive answer. A caller that names nothing has
+   * given this function no floor to prove coverage against, so it stays inconclusive: "I could
+   * not tell" must never quietly become "go ahead", which is the whole point of the flag.
+   */
+  const truncated = floor > (anchorFloor ?? 0);
 
   const first = await scanForReference(reference, rpcUrl, head, floor, opts.expect);
   if (first.found) {
@@ -303,7 +337,9 @@ export async function findPaymentByReference(
       // an unreachable endpoint is not a second opinion; keep asking
     }
   }
-  return first;
+  // The window is reported with the negative, not separately: a caller that has to ask a second
+  // question to find out whether the first answer meant anything will eventually stop asking.
+  return { ...first, truncated, scannedFrom: floor };
 }
 
 interface RawLog {
@@ -361,10 +397,11 @@ async function scanForReference(
     to = from - 1;
   }
 
+  // No `truncated` here: whether this window was wide enough depends on the floor the CALLER
+  // could name, which this function is not told. `findPaymentByReference` decides it.
   return {
     found: false,
     scannedBlocks: head - floor + 1,
-    truncated: floor > 0,
     ...(conflicts.length > 0 ? { conflicts } : {}),
   };
 }

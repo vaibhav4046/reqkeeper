@@ -39,6 +39,18 @@ export interface PaymentSighting extends Partial<PaymentLogFields> {
     readonly block?: number;
     /** How far back the scan actually looked. A false with a small window is not "unpaid". */
     readonly scannedBlocks?: number;
+    /** The lowest block the scan reached. With `truncated: false` there is nothing below it to find. */
+    readonly scannedFrom?: number;
+    /**
+     * The scan could not cover the window in which a payment for this obligation could
+     * plausibly be, so `found: false` means "I could not tell", never "unpaid".
+     *
+     * This used to mean "the scan did not start at genesis", which on a live chain is every
+     * scan there has ever been: head 11692278 with the standard 300k lookback puts the floor at
+     * 11392278, so `truncated` was permanently true and every negative was inconclusive. The
+     * floor that actually settles the question is the invoice's own anchor block — a payment
+     * cannot predate the invoice it pays — which callers pass as `anchorBlock`.
+     */
     readonly truncated?: boolean;
     /**
      * A second, independent endpoint returned the same transaction for this reference.
@@ -84,19 +96,29 @@ export declare function matchPaymentLog(log: PaymentLogFields & {
  * person to "fix" the correct offset would have broken every amount check at once.
  */
 export declare function decodePaymentLogFields(data: string): PaymentLogFields | null;
+export declare const DEFAULT_LOOKBACK = 450000;
 /**
  * Request Network's payment detection, as a direct chain read: find the ERC20FeeProxy event
  * carrying this payment reference. This is the same evidence Request's own indexer uses, so
  * agreeing with it does not depend on Request's API being up.
  *
  * Scans backwards from head in permitted chunks and stops at the first hit, because a payment
- * we care about is almost always recent. `truncated` says whether the window ran out before
- * genesis — a `found: false` with `truncated: true` means "not seen recently", never "unpaid".
+ * we care about is almost always recent. `truncated` says whether the window ran out before it
+ * reached the block below which there is nothing to find — a `found: false` with
+ * `truncated: true` means "not seen", never "unpaid".
  */
 export declare function findPaymentByReference(reference: string, opts?: {
     rpcUrl?: string;
     fromBlock?: number;
     lookbackBlocks?: number;
+    /**
+     * The block the invoice itself is anchored at. A payment cannot predate the invoice it
+     * pays, so this is the floor below which there is nothing to find — supply it and a
+     * `found: false` is an answer rather than a shrug. The scan is extended down to it when
+     * the requested window stops short, because a window that cannot reach the anchor cannot
+     * settle the question, and its cost is bounded by the invoice's own age.
+     */
+    anchorBlock?: number;
     /**
      * The payment this obligation is owed. Supplied by every caller that can decide money;
      * without it a log is matched on its reference alone, which is what made a foreign

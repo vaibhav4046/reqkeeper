@@ -32,6 +32,8 @@ export interface InvoiceFacts {
   readonly tokenAddress?: string;
   readonly tokenDecimals?: number;
   readonly tokenSymbol?: string;
+  /** Where Request anchored the invoice on Sepolia. The recovery scan's floor; see SourceFacts. */
+  readonly anchorBlock?: number;
   /**
    * Whether the chain already shows this reference paid.
    *
@@ -116,6 +118,7 @@ export function buildSourceFacts(f: InvoiceFacts): SourceFacts {
     feeBaseUnits: f.feeAmount,
     feeRecipient: f.feeAddress.toLowerCase(),
     hasBeenPaid: f.hasBeenPaid ?? false,
+    ...(f.anchorBlock === undefined ? {} : { anchorBlock: f.anchorBlock }),
   };
 }
 

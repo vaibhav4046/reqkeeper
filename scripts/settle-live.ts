@@ -9,7 +9,9 @@
  *
  * Reconciliation is deliberately zero-dependency: rather than asking Request's API whether
  * it thinks the invoice is paid, this reads the ERC20FeeProxy event log off the chain and
- * matches the payment reference — the same evidence Request's own detection uses.
+ * matches the payment it describes — token, payee, amount and fee, not the reference alone —
+ * over a window the invoice's own anchor block bounds. It is the same evidence Request's own
+ * detection uses.
  *
  * Both KeeperHub surfaces are the same settlement. `KEEPERHUB_TRANSPORT=mcp` dispatches
  * through KeeperHub's own MCP server instead of its REST API; `settle()`, the policy, the
@@ -22,8 +24,8 @@
 
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { encodeCall } from "../src/abi.ts";
+import { DEFAULT_LOOKBACK, findPaymentByReference, type PaymentExpectation } from "../src/chain.ts";
 import { obligationId } from "../src/identity.ts";
-import { keccak256Hex } from "../src/keccak.ts";
 import { KeeperHubProvider } from "../src/keeperhub.ts";
 import { KeeperHubMcpProvider } from "../src/keeperhub-mcp.ts";
 import type { ExecutionProvider } from "../src/provider.ts";
@@ -33,7 +35,9 @@ import { settleObligation } from "../src/settle.ts";
 import { Store } from "../src/store.ts";
 
 const SEPOLIA = 11155111;
-const RPC = "https://ethereum-sepolia-rpc.publicnode.com";
+// Same override and same default as `DEFAULT_RPC` in src/chain.ts: one endpoint decision,
+// not two. `assertChainId` refuses whatever is pointed at here if it is not Sepolia.
+const RPC = process.env.SEPOLIA_RPC ?? "https://ethereum-sepolia-rpc.publicnode.com";
 const PROXY = "0x399F5EE127ce7432E4921a61b8CF52b0af52cbfE";
 const FAU = "0x370DE27fdb7D1Ff1e1BaA7D11c5820a324Cf623C";
 const PAY_SIG = "transferFromWithReferenceAndFee(address,address,uint256,bytes,uint256,address)";
@@ -102,38 +106,41 @@ const FEE_ADDRESS = invoice.feeRecipient.toLowerCase();
 const FEE_AMOUNT = invoice.feeBaseUnits;
 const AMOUNT = invoice.invoiceBaseUnits;
 
-async function rpc(method: string, params: unknown[]): Promise<unknown> {
-  const res = await fetch(RPC, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-    signal: AbortSignal.timeout(30_000),
-  });
-  const body = (await res.json()) as { result?: unknown; error?: { message: string } };
-  if (body.error) throw new Error(`${method}: ${body.error.message}`);
-  return body.result;
-}
+/**
+ * What paying THIS invoice looks like on chain: token, payee, amount and fee, not the
+ * reference alone. The reference is public and the fee proxy is permissionless, so a log
+ * carrying it proves only that somebody emitted it.
+ */
+const expectation: PaymentExpectation = {
+  tokenAddress: FAU,
+  to: PAYEE,
+  amount: AMOUNT,
+  feeAmount: FEE_AMOUNT,
+  feeAddress: FEE_ADDRESS,
+};
 
 /**
- * Request's payment detection, reimplemented as a chain read.
+ * The window the already-paid guard searches, and the sentence that says so out loud.
  *
- * `paymentReference` is an INDEXED bytes parameter, so the topic is the keccak hash of the
- * reference bytes rather than the bytes themselves — a detail that silently returns zero
- * logs if you get it wrong.
+ * It used to be `head - 200` — about forty minutes of Sepolia. This project's own last LIVE
+ * settlement sat 1033 blocks behind head, so the guard could not see the payment it exists to
+ * catch, and a negative from it meant nothing while reading like permission to pay. A payment
+ * cannot predate the invoice it pays, so the invoice's own anchor block is the floor that makes
+ * a negative conclusive; while the create is still unconfirmed there is no anchor, and then the
+ * invoice is minutes old and the default lookback covers it many times over. Either way the run
+ * prints which window it actually checked, because "no payment seen" is only worth as much as
+ * the window behind it.
  */
-const EVENT_TOPIC = keccak256Hex("TransferWithReferenceAndFee(address,address,uint256,bytes,uint256,address)");
-const REFERENCE_TOPIC = keccak256Hex(Uint8Array.from(Buffer.from(REFERENCE.slice(2), "hex")));
+const anchorBlock = invoice.anchor?.blockNumber;
+const searchWindow = anchorBlock === undefined ? {} : { anchorBlock };
+const searchedDescription =
+  anchorBlock === undefined
+    ? `the last ${DEFAULT_LOOKBACK} blocks (this invoice has no storage anchor yet)`
+    : `blocks ${anchorBlock}..latest (the invoice's own anchor block)`;
 
-async function proxySawPayment(fromBlock: number): Promise<{ found: boolean; txHash?: string; amount?: string }> {
-  const logs = (await rpc("eth_getLogs", [
-    { address: PROXY, topics: [EVENT_TOPIC, REFERENCE_TOPIC], fromBlock: `0x${fromBlock.toString(16)}`, toBlock: "latest" },
-  ])) as Array<{ data: string; transactionHash: string }>;
-  if (logs.length === 0) return { found: false };
-  // data = tokenAddress, to, amount, <offset>, feeAmount, feeAddress, then the bytes tail
-  const d = logs[0].data.slice(2);
-  const amount = BigInt(`0x${d.slice(128, 192)}`).toString(10);
-  return { found: true, txHash: logs[0].transactionHash, amount };
-}
+/** One scan, one window, for the guard, the reconciliation and the confirmation alike. */
+const scanForThisInvoice = () =>
+  findPaymentByReference(REFERENCE, { rpcUrl: RPC, expect: expectation, ...searchWindow });
 
 // ---- the plan -------------------------------------------------------------
 
@@ -160,10 +167,10 @@ const facts: SourceFacts = {
   feeRecipient: FEE_ADDRESS,
   // Not a typed-in assertion any more: these facts are only ever consumed by the settle call
   // below, which is now unreachable if the fee proxy already carries a payment for this
-  // reference -- the script exits 2 before it. The residual is stated rather than hidden: a
-  // reference-only sighting is not proof THIS invoice was paid by us, which is why the exit
-  // sends a human to `npm run resolve` instead of deciding. Request's own SDK verdict, if you
-  // want it before running this, is `node tools/invoice/check-paid.mjs`.
+  // invoice -- the script exits 2 before it. The residual is stated rather than hidden: a
+  // sighting matching every field is still not proof the payment was made BY US, which is why
+  // the exit sends a human to `npm run resolve` instead of deciding. Request's own SDK verdict,
+  // if you want it before running this, is `node tools/invoice/check-paid.mjs`.
   hasBeenPaid: false,
 };
 
@@ -187,8 +194,6 @@ const provider: ExecutionProvider =
     ? new KeeperHubMcpProvider({ apiKey: KH_KEY, chainId: SEPOLIA, rpcUrl: RPC })
     : new KeeperHubProvider({ apiKey: KH_KEY, chainId: SEPOLIA, rpcUrl: RPC });
 
-const startBlock = Number(BigInt((await rpc("eth_blockNumber", [])) as string)) - 200;
-
 console.log("\nLive settlement — one Request obligation, through the real protocol\n");
 console.log(`transport        : KeeperHub ${TRANSPORT.toUpperCase()}`);
 console.log(`requestId        : ${REQUEST_ID}`);
@@ -200,18 +205,29 @@ console.log(`calldata         : ${calldata.slice(0, 42)}… (${(calldata.length 
 const oid = obligationId(NS, REQUEST_ID);
 console.log(`obligationId     : ${oid}`);
 
-const before = await proxySawPayment(startBlock);
-console.log(`\nproxy log before : ${before.found ? `ALREADY PAID in ${before.txHash}` : "no payment seen"}`);
+const before = await scanForThisInvoice();
+console.log(`\nsearched         : ${searchedDescription}`);
+console.log(
+  `proxy log before : ${
+    before.found
+      ? `ALREADY PAID in ${before.txHash}`
+      : before.conflicts?.length
+        ? `a log carries this reference but does not pay this invoice: ${before.conflicts[0]}`
+        : "no payment seen"
+  }`,
+);
 
 // And then it used to settle anyway. Printing "ALREADY PAID" and proceeding is the duplicate
 // payment this whole project exists to refuse, written into the script that moves real money.
-// The fee proxy is permissionless, so a sighting is not proof this invoice was paid by us --
-// but it is more than enough reason to stop and make a human look.
-if (before.found) {
+// A log that carries the reference and pays something else stops the run too: it is not this
+// invoice's settlement, and it is not nothing either -- it is a question for a human, and
+// paying over the top of it would bury the question.
+if (before.found || before.conflicts?.length) {
   console.error(
-    `\nREFUSED before any write: the fee proxy already carries a payment for ${REFERENCE} ` +
-      `in ${before.txHash}.\nIf that payment is this invoice's, the debt is settled and there is ` +
-      `nothing to do. If it is not, reconcile it before paying: npm run resolve\n`,
+    `\nREFUSED before any write: searching ${searchedDescription}, the fee proxy already ` +
+      `carries ${before.found ? `a payment for ${REFERENCE} in ${before.txHash}` : `a log for ${REFERENCE} that pays something else`}.` +
+      `\nIf that payment is this invoice's, the debt is settled and there is nothing to do. ` +
+      `If it is not, reconcile it before paying: npm run resolve\n`,
   );
   store.close();
   process.exit(2);
@@ -231,7 +247,7 @@ const outcome = await settleObligation(
     // exact defect the SettleDeps contract documents at src/settle.ts:55-58. This is
     // the live-money path, so it is the last place that shortcut belongs.
     sourceSaysPaid: async (_requestId: string, txHash: string) => {
-      const seen = await proxySawPayment(startBlock);
+      const seen = await scanForThisInvoice();
       return (
         seen.found &&
         seen.txHash?.toLowerCase() === txHash.toLowerCase() &&
@@ -289,8 +305,12 @@ if (outcome.txHash) {
   console.log(`etherscan        : https://sepolia.etherscan.io/tx/${outcome.txHash}`);
 }
 
-const after = await proxySawPayment(startBlock);
-console.log(`\nproxy log after  : ${after.found ? `reference seen, amount ${after.amount} in ${after.txHash}` : "NOT SEEN"}`);
+const after = await scanForThisInvoice();
+console.log(
+  `\nproxy log after  : ${
+    after.found ? `reference seen, amount ${after.amount} in ${after.txHash}` : `NOT SEEN in ${searchedDescription}`
+  }`,
+);
 console.log(
   after.found && after.amount === AMOUNT
     ? "\nThe reference is on-chain for the exact invoice amount. Request's detection reads this same log.\n"

@@ -37,6 +37,17 @@ export interface SourceFacts {
     readonly feeBaseUnits: string;
     readonly feeRecipient: string;
     readonly hasBeenPaid: boolean;
+    /**
+     * The Sepolia block the invoice's create action is anchored at, when Request has confirmed it.
+     *
+     * Not a policy input -- nothing here decides anything from it. It is carried so the RECOVERY
+     * path can bound its chain scan: a payment for an invoice cannot predate the invoice, so this
+     * is the floor below which a silence is conclusive rather than merely unobserved. Without it
+     * `findPaymentByReference` reports every negative as truncated, `worker.ts` refuses to conclude
+     * from a truncated scan, and PREFLIGHT_UNAVAILABLE is unreachable on the real chain -- which
+     * turns every failed dry run into a permanent wedge. Safety without liveness is not recovery.
+     */
+    readonly anchorBlock?: number;
 }
 export type Decision = {
     readonly ok: true;

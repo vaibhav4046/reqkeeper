@@ -23,7 +23,8 @@
 
 import { type CallStep, decodeAllowedCall } from "./calldata-gate.ts";
 import { readReceipt, rpcCall } from "./chain.ts";
-import type { ExecuteResult, ExecutionProvider, Receipt, SimulateResult } from "./provider.ts";
+import { classifySimulateReply } from "./provider.ts";
+import type { ExecuteResult, ExecutionProvider, Receipt, SimulateOutcome } from "./provider.ts";
 import { ProviderError } from "./provider.ts";
 
 export interface KeeperHubConfig {
@@ -166,24 +167,9 @@ export class KeeperHubProvider implements ExecutionProvider {
 
   // --- ExecutionProvider ---------------------------------------------------
 
-  async simulate(body: unknown): Promise<SimulateResult> {
+  async simulate(body: unknown): Promise<SimulateOutcome> {
     const res = await this.#post("execute/contract-call", { ...this.#body(body as CallStep), simulate: true });
-    const hash = res.transactionHash ?? res.txHash ?? res.hash;
-    return {
-      status: "simulated",
-      // An HTTP 200 carrying an error body is not a clean simulation. Absent this, such a
-      // response has neither `wouldRevert` nor `success`, both comparisons are false, and the
-      // gate reads "would not revert" from what is actually a failure to simulate at all.
-      // Unknown must mean unsafe here, because the next step spends money.
-      wouldRevert: res.wouldRevert === true || res.success === false || res.error !== undefined,
-      // A verdict, as opposed to a silence. Only an explicit `wouldRevert` from a reply that did
-      // not also carry an error is the provider saying it simulated and the payment reverts.
-      simulated: res.wouldRevert !== undefined && res.error === undefined,
-      gasEstimate: res.gasEstimate ?? "0",
-      // Passed through deliberately. A hash here means the dry run executed, and settle.ts
-      // treats that as a real send rather than a simulation.
-      ...(hash ? { transactionHash: hash } : {}),
-    };
+    return classifySimulateReply(res);
   }
 
   async execute(body: unknown, idempotencyKey: string): Promise<ExecuteResult> {

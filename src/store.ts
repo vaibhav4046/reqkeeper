@@ -661,6 +661,8 @@ export class Store {
          * recovery path is exactly where nobody is watching.
          */
         expectation: PaymentExpectation | null;
+        /** The invoice's anchor block, when it was known at import. See SourceFacts.anchorBlock. */
+        anchorBlock: number | null;
       }
     | undefined {
     const row = this.#db
@@ -675,6 +677,7 @@ export class Store {
     if (!row) return undefined;
     let invoiceBaseUnits: string | null = null;
     let expectation: PaymentExpectation | null = null;
+    let anchorBlock: number | null = null;
     try {
       const parsed = JSON.parse(row.factsJson) as {
         invoiceBaseUnits?: string;
@@ -682,8 +685,10 @@ export class Store {
         tokenAddress?: string;
         feeBaseUnits?: string;
         feeRecipient?: string;
+        anchorBlock?: number;
       };
       invoiceBaseUnits = parsed.invoiceBaseUnits ?? null;
+      anchorBlock = typeof parsed.anchorBlock === "number" ? parsed.anchorBlock : null;
       // Only when every load-bearing field is present. A partial expectation is worse than
       // none: it reads as a full check while silently skipping the field that was missing.
       if (parsed.invoiceBaseUnits && parsed.payee && parsed.tokenAddress) {
@@ -705,6 +710,7 @@ export class Store {
       paymentReference: row.paymentReference,
       invoiceBaseUnits,
       expectation,
+      anchorBlock,
     };
   }
 

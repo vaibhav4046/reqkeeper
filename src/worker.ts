@@ -46,8 +46,27 @@ export interface WorkerDeps {
    * nothing — but it is not enough to decide whether a simulation that died mid-flight ever
    * executed. Concluding "nothing happened" from an inconclusive read is precisely how a second
    * payment gets authorised, so that decision needs `found`, `truncated` and `corroborated`.
+   *
+   * An implementation that cannot bound its scan cannot produce a conclusive negative, and the
+   * obligation stays where it is: `truncated` is only false when the scan reached a floor below
+   * which a payment for this obligation could not exist, which in practice means passing the
+   * invoice's `anchorBlock` to `findPaymentByReference`. A lookback alone, however large, leaves
+   * PREFLIGHT_UNAVAILABLE unreachable — deliberately, because nothing else here can vouch for it.
    */
-  readonly sightPayment?: (reference: string, expect?: PaymentExpectation) => Promise<PaymentSighting>;
+  /**
+   * Reads the chain for a payment carrying this reference.
+   *
+   * `anchorBlock` is the invoice's own anchor: a payment for an invoice cannot predate the
+   * invoice, so it is the floor below which a silence is conclusive. An implementation that
+   * ignores it reports every negative as truncated, which leaves PREFLIGHT_UNAVAILABLE
+   * unreachable and every failed dry run wedged forever. Safety without liveness is not
+   * recovery, and this parameter is the difference.
+   */
+  readonly sightPayment?: (
+    reference: string,
+    expect?: PaymentExpectation,
+    anchorBlock?: number,
+  ) => Promise<PaymentSighting>;
 }
 
 export interface DrainResult {
@@ -197,7 +216,11 @@ async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Reso
       return { done: false, reason: "CANNOT_OBSERVE", advanced };
     }
 
-    const sighting = await deps.sightPayment(obligation.paymentReference, obligation.expectation ?? undefined);
+    const sighting = await deps.sightPayment(
+      obligation.paymentReference,
+      obligation.expectation ?? undefined,
+      obligation.anchorBlock ?? undefined,
+    );
 
     if (sighting.found) {
       // The dry run executed for real (#1959). Money moved with no attempt row behind it, which
@@ -214,9 +237,10 @@ async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Reso
       return { done: true, advanced };
     }
 
-    // Absence only counts when the read could actually see the whole window. A truncated scan,
-    // or one no second endpoint could corroborate, is "I could not tell" — and "I could not
-    // tell" must never become "go ahead".
+    // Absence only counts when the read could actually see the whole window in which a payment
+    // for this obligation could be — which is the window down to the invoice's anchor block, not
+    // down to genesis. A scan that stopped short is "I could not tell", and "I could not tell"
+    // must never become "go ahead", so the obligation waits here rather than being released.
     if (sighting.truncated === true) return { done: false, reason: "SCAN_TRUNCATED", advanced };
 
     // Nothing carrying this reference paid this invoice, across the full window. The simulation

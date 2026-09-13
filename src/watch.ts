@@ -25,7 +25,7 @@ import { matchPaymentLog, type PaymentExpectation, type PaymentSighting } from "
 import { obligationId } from "./identity.ts";
 import type { State } from "./machine.ts";
 import { buildPolicy, buildSourceFacts, buildSteps, FAU, NAMESPACE, type InvoiceFacts } from "./plan.ts";
-import type { ExecuteResult, ExecutionProvider, Receipt, SimulateResult } from "./provider.ts";
+import type { ExecuteResult, ExecutionProvider, Receipt, SimulateOutcome } from "./provider.ts";
 import { settleObligation } from "./settle.ts";
 import type { StandingPolicy } from "./standing-policy.ts";
 import type { Store } from "./store.ts";
@@ -108,7 +108,7 @@ function refuse(): never {
  * dispatch, this throws where a real provider would have paid.
  */
 export const NO_DISPATCH_PROVIDER: ExecutionProvider = {
-  async simulate(): Promise<SimulateResult> {
+  async simulate(): Promise<SimulateOutcome> {
     refuse();
   },
   async execute(): Promise<ExecuteResult> {

@@ -32,9 +32,9 @@ import type {
   ExecuteResult,
   ExecutionProvider,
   Receipt,
-  SimulateResult,
+  SimulateOutcome,
 } from "./provider.ts";
-import { ProviderError } from "./provider.ts";
+import { classifySimulateReply, ProviderError } from "./provider.ts";
 
 const PROTOCOL_VERSION = "2025-06-18";
 const CLIENT_INFO = { name: "reqkeeper", version: "0.1.0" };
@@ -246,33 +246,19 @@ export class KeeperHubMcpProvider implements ExecutionProvider {
 
   // --- ExecutionProvider ---------------------------------------------------
 
-  async simulate(body: unknown): Promise<SimulateResult> {
+  async simulate(body: unknown): Promise<SimulateOutcome> {
     const payload = await this.#callTool("execute_contract_call", {
       ...this.#args(body as CallStep),
       // A real boolean. `"true"` here would sign and broadcast.
       simulate: true,
     });
-    const hash = payload.transactionHash ?? payload.transaction_hash;
-    return {
-      status: "simulated",
-      // The third term is the one this transport was missing. A tool payload that carries an
-      // `error` and neither `wouldRevert` nor `success` makes both other comparisons false, so
-      // a failure to simulate at all read as "would not revert" — and settle's preflight gate
-      // then let a real payment through on the strength of it. Unknown must mean unsafe here,
-      // because the next step spends money. The REST transport has had this guard since the
-      // same shape was observed there; the MCP transport is the surface that carries the live
-      // settlements, and it did not.
-      wouldRevert: payload.wouldRevert === true || payload.success === false || payload.error !== undefined,
-      // A verdict, as opposed to a silence. Only an explicit `wouldRevert` from a payload that
-      // did not also carry an error is this transport saying it simulated and the payment
-      // reverts. settle.ts releases the reservation on a verdict and holds it on a silence,
-      // and conflating the two here is what paid an invoice twice.
-      simulated: payload.wouldRevert !== undefined && payload.error === undefined,
-      gasEstimate: payload.gasEstimate ?? "0",
-      // Passed through deliberately: a hash from a dry run means it really executed, and
-      // settle.ts treats that as a real send.
-      ...(hash ? { transactionHash: hash } : {}),
-    };
+    // The same classifier REST uses. This transport spent a whole round missing a guard REST
+    // already had, because each one decided for itself what a reply meant; there is now one
+    // answer to that question and both surfaces get it from the same place.
+    return classifySimulateReply({
+      ...payload,
+      transactionHash: payload.transactionHash ?? payload.transaction_hash,
+    });
   }
 
   async execute(body: unknown, idempotencyKey: string): Promise<ExecuteResult> {

@@ -168,14 +168,20 @@ if (!LIVE_SIMULATE) {
   const live = new KeeperHubProvider({ apiKey: KH_KEY, chainId: SEPOLIA, rpcUrl: RPC });
   try {
     const sim = await live.simulate({ to: PROXY, data: APPROVED_CALLDATA, value: "0" });
-    if (sim.transactionHash) {
+    if (sim.kind === "EXECUTED") {
       bad("canonical calldata simulate", `dry run returned a hash: ${sim.transactionHash}`);
     } else {
-      // wouldRevert flips to false once the payer holds FAU and has approved the proxy, so
-      // report the flag rather than asserting either value — both are legitimate states.
+      // WOULD_REVERT flips to WOULD_SUCCEED once the payer holds FAU and has approved the proxy,
+      // so report which outcome came back rather than asserting one — both are legitimate here.
+      // UNKNOWN is reported as itself and never as a revert, which is the distinction four
+      // duplicate-payment findings turned on.
       ok(
         "canonical calldata passes the gate and reaches the chain",
-        `wouldRevert=${sim.wouldRevert}${sim.wouldRevert ? " (payer lacks balance or allowance)" : " (payment would succeed)"}, no hash returned`,
+        sim.kind === "WOULD_SUCCEED"
+          ? "WOULD_SUCCEED (payment would go through), no hash returned"
+          : sim.kind === "WOULD_REVERT"
+            ? `WOULD_REVERT (payer lacks balance or allowance), no hash returned`
+            : `UNKNOWN (${sim.code}) — the platform returned no verdict, which is not a revert`,
       );
     }
   } catch (e) {

@@ -23,7 +23,17 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
-import { findPaymentByReference, matchPaymentLog, readReceipt, type PaymentExpectation } from "../src/chain.ts";
+import {
+  EVENT_TOPIC,
+  assertChainId,
+  currentBlock,
+  decodePaymentLogFields,
+  matchPaymentLog,
+  readReceipt,
+  referenceTopic,
+  rpcCall,
+  type PaymentExpectation,
+} from "../src/chain.ts";
 import { derivePaymentReference } from "../src/request.ts";
 import { ERC20_FEE_PROXY, FAU } from "../src/plan.ts";
 
@@ -106,40 +116,57 @@ if (!race) {
 
 // ---- 1b. the live race -----------------------------------------------------
 
+interface LiveRaceWorker {
+  state: string;
+  refusal: string | null;
+  txHash: string | null;
+  providerWriteIssued?: boolean;
+}
 interface LiveRace {
   mode?: string;
   workers: number;
   invoice?: { requestId?: string; reference?: string; payee?: string };
   totals: Record<string, number>;
-  waves: Array<{ label: string; workers: Array<{ state: string; refusal: string | null; txHash: string | null }> }>;
+  waves: Array<{ label: string; workers: LiveRaceWorker[] }>;
 }
 const liveRace = readJson<LiveRace>("docs/evidence/race-live.json");
 if (!liveRace) {
   record("race.live", "the race, once, against the real platform", "BLOCKED", "docs/evidence/race-live.json is absent");
 } else {
   const ref = liveRace.invoice?.reference;
+
+  /**
+   * Recomputed from the worker rows, like the fixture race above it, and for the reason stated
+   * at the top of this file: this check used to read `totals.broadcasts` and `totals.duplicates`
+   * straight out of the summary block. Two separate passes walked through it — one injected a
+   * second broadcast into the rows, one forged a SETTLED row with a transaction hash that was
+   * never sent — and both were told "0 duplicate(s)", exit 0, because the summary still said so.
+   *
+   * A worker counts as a broadcast if it says it issued a provider write OR it carries a
+   * transaction hash. Either alone is enough: a forged row that sets only `txHash` is claiming a
+   * payment, and a row that admits `providerWriteIssued` while hiding the hash is still a send.
+   */
+  const allWorkers = liveRace.waves.flatMap((w) => w.workers);
+  const broadcast = (w: LiveRaceWorker): boolean => w.providerWriteIssued === true || Boolean(w.txHash);
+  const broadcasts = allWorkers.filter(broadcast).length;
+  const hashes = new Set(allWorkers.map((w) => w.txHash).filter(Boolean) as string[]);
+  const secondWave = (liveRace.waves.find((w) => w.label === "second wave")?.workers ?? []).filter(broadcast).length;
+  // One obligation, so every broadcast past the first IS the duplicate payment.
+  const duplicates = Math.max(0, broadcasts - 1);
+  const summaryAgrees =
+    liveRace.totals.broadcasts === broadcasts &&
+    liveRace.totals.duplicates === duplicates &&
+    (liveRace.totals.secondWaveBroadcasts ?? 0) === secondWave &&
+    liveRace.totals.distinctTransactions === hashes.size;
+
   record(
     "race.live",
     `${liveRace.workers} concurrent workers against real KeeperHub and real Sepolia`,
-    liveRace.totals.broadcasts === 1 && liveRace.totals.duplicates === 0 ? "ok" : "FAIL",
-    `${liveRace.totals.broadcasts} payment(s) carrying ${ref ?? "?"}, ${liveRace.totals.duplicates} duplicate(s)`,
+    broadcasts === 1 && duplicates === 0 && hashes.size === 1 && secondWave === 0 && summaryAgrees ? "ok" : "FAIL",
+    `${broadcasts} payment(s) carrying ${ref ?? "?"}, ${duplicates} duplicate(s)` +
+      `, ${hashes.size} distinct transaction(s), ${secondWave} in the second wave` +
+      (summaryAgrees ? " — recomputed from the worker rows" : " — and the summary block disagrees with the rows it summarises"),
   );
-
-  // Counted again here, from the chain, rather than read from the artifact. The artifact says
-  // it was recounted from the chain; this is what makes that checkable.
-  if (ref) {
-    try {
-      const seen = await findPaymentByReference(ref, { rpcUrl: RPC, lookbackBlocks: 300_000 });
-      record(
-        "race.live.onchain",
-        "that live payment is on chain, exactly once",
-        seen.found ? "ok" : "FAIL",
-        seen.found ? `${seen.txHash?.slice(0, 20)}… amount ${seen.amount}` : "no payment found for the reference it raced for",
-      );
-    } catch (e) {
-      record("race.live.onchain", "that live payment is on chain, exactly once", "BLOCKED", (e as Error).message.slice(0, 80));
-    }
-  }
 }
 
 // ---- 1c. the second KeeperHub surface --------------------------------------
@@ -176,49 +203,8 @@ if (!mcp?.rows?.length) {
     withExecId.map((r) => r.keeperhubExecutionId).join(", ") || "none",
   );
 
-  // Built from the row itself, so a row that lies about what it paid fails the chain read that
-  // is supposed to corroborate it. A row missing any of these cannot be corroborated at all, and
-  // says so rather than quietly falling back to a weaker check.
-  // Fails closed. The first attempt at this read `row.tokenAddress`, which is not what the
-  // artifact calls the field, so the expectation came back undefined and the check quietly went
-  // back to matching on the reference alone -- green, and proving nothing. A row that cannot be
-  // corroborated must say so.
-  const expectationFor = (row: McpRow): PaymentExpectation | null =>
-    row.token && row.payee && row.amountBaseUnits
-      ? { tokenAddress: row.token, to: row.payee, amount: row.amountBaseUnits }
-      : null;
-
-  // Counted from the chain, not from the artifact: one fee-proxy event per reference.
-  for (const r of viaMcp) {
-    if (!r.paymentReference || !r.txHash) continue;
-    try {
-      // With an expectation, `found` means the fee-proxy event matched emitter, token, payee,
-      // amount and fee -- not just the reference. Without one this check was reference-to-hash
-      // only, and every other field in the row was written to the artifact and never compared to
-      // anything: a review inflated an amount 999x and set the payee to 0x...dEaD and still got
-      // `21 ok - 0 failed`. The file a judge is invited to trust has to be the file this checks.
-      const expect = expectationFor(r);
-      if (!expect) {
-        record(
-          `keeperhub.mcp.onchain.${r.paymentReference}`,
-          `the MCP settlement for ${r.paymentReference} is on chain`,
-          "FAIL",
-          "the row does not state token, payee and amount, so nothing can corroborate it",
-        );
-        continue;
-      }
-      const seen = await findPaymentByReference(r.paymentReference, { rpcUrl: RPC, lookbackBlocks: 60_000, expect });
-      const ok = seen.found && seen.txHash?.toLowerCase() === r.txHash.toLowerCase();
-      record(
-        `keeperhub.mcp.onchain.${r.paymentReference}`,
-        `the MCP settlement for ${r.paymentReference} is on chain`,
-        ok ? "ok" : "FAIL",
-        ok ? `${seen.txHash?.slice(0, 20)}…` : "the artifact's transaction is not what the chain shows",
-      );
-    } catch (e) {
-      record(`keeperhub.mcp.onchain.${r.paymentReference}`, "the MCP settlement is on chain", "BLOCKED", (e as Error).message.slice(0, 70));
-    }
-  }
+  // The per-row chain read that corroborates these rows lives in section 5, with every other
+  // LIVE row in the repository. It used to live here, covering these three and nothing else.
 }
 
 // ---- 2. the crash matrix ---------------------------------------------------
@@ -297,6 +283,10 @@ interface InvoiceRow {
   payee?: string;
   paymentAddress?: string;
   paymentReference: string;
+  /** What the invoice owes. The rows in `docs/refusals-live.json` carry none of this. */
+  amountBaseUnits?: string;
+  feeAmount?: string;
+  feeAddress?: string;
 }
 // The file is `{ createdAt, payee, invoices: [...] }`, but an older cut was a bare array and a
 // sibling artifact uses `rows`. All three are accepted; what is NOT accepted is silently
@@ -337,34 +327,289 @@ if (!sample) {
       `${sample.tx_hash?.slice(0, 18)}… → ${receipt.receiptStatus}, block ${receipt.blockNumber ?? "?"}, gas ${receipt.gasUsed}`,
     );
 
-    const expectation: PaymentExpectation = {
-      tokenAddress: FAU,
-      to:
-        invoiceRows.find((i) => i.paymentReference?.toLowerCase() === sample.payment_reference?.toLowerCase())?.payee ??
-        invoiceRows[0]?.payee ??
-        "",
-      amount: "1000000000000000000",
-    };
     const feeProxyLog = (receipt.logs ?? []).find((l) => l.address && l.address.toLowerCase() === ERC20_FEE_PROXY.toLowerCase());
     if (!feeProxyLog) {
       record("chain.receipt-log", "the receipt's own logs contain the fee-proxy payment", "FAIL", "no ERC20FeeProxy event in the receipt");
     } else {
       record("chain.receipt-log", "the receipt's own logs contain the fee-proxy payment", "ok", `emitted by ${ERC20_FEE_PROXY.slice(0, 10)}…`);
     }
-
-    const sighting = await findPaymentByReference(sample.payment_reference as string, { rpcUrl: RPC, lookbackBlocks: 300_000, expect: expectation.to ? expectation : undefined });
-    record(
-      "chain.reference",
-      "the payment is found again by the event query Request's own detection uses",
-      sighting.found && sighting.txHash?.toLowerCase() === sample.tx_hash?.toLowerCase() ? "ok" : "FAIL",
-      sighting.found
-        ? `reference ${sample.payment_reference} → ${sighting.txHash?.slice(0, 18)}…${sighting.corroborated ? ", corroborated by a second endpoint" : ", single endpoint"}`
-        : `not seen in the last ${sighting.scannedBlocks ?? "?"} blocks${sighting.truncated ? " (window truncated — inconclusive, not 'unpaid')" : ""}`,
-    );
-    void matchPaymentLog;
   } catch (e) {
     record("chain", "a recorded payment is still on chain", "BLOCKED", `RPC unavailable: ${(e as Error).message.slice(0, 90)}`);
   }
+}
+
+// ---- 5. every LIVE row, against the chain ----------------------------------
+//
+// One claim, made by every settled row in every artifact: "transaction T paid reference R, and
+// what it paid is what the invoice owed." One function checks it, over every row that makes it.
+//
+// It used to be a loop inside section 1c, covering the three MCP rows and nothing else. A
+// KeeperHub reviewer replaced all 37 non-sampled transaction hashes in `docs/refusals-live.json`
+// with fabricated values and this command answered `21 ok · 0 failed · 0 blocked`, exit 0 —
+// because `L001` was the only row of the 38 anything ever read from the chain. A verification
+// that samples one row verifies one row.
+
+interface Corroborand {
+  /** Names the row in the check detail, so a failure says which one failed. */
+  readonly label: string;
+  readonly reference: string | null;
+  readonly txHash: string | null;
+  /**
+   * What the invoice owed. `null` means the evidence cannot state token, payee and amount — a
+   * failure, never a fallback to matching on the reference alone. References are public and the
+   * ERC20FeeProxy is permissionless, so "a log carries this reference" is a sighting, not a
+   * payment: an earlier cut of this check matched on the reference only, and a review inflated
+   * an amount 999x and set the payee to `0x…dEaD` and still got a green run.
+   */
+  readonly expect: PaymentExpectation | null;
+  /** How badly a null `expect` counts, and what to say about it. */
+  readonly unstated: { readonly status: Status; readonly detail: string };
+}
+
+/**
+ * publicnode answers `eth_getLogs` for fee-proxy logs that demonstrably exist with an empty
+ * array and no error — every one of the 41 references below comes back empty from it, and comes
+ * back from Tenderly in one call — so one endpoint's silence is not evidence of absence. The
+ * sweep unions endpoints in order and stops as soon as every reference has been seen.
+ */
+const SWEEP_ENDPOINTS = [...new Set([RPC, "https://sepolia.gateway.tenderly.co", "https://sepolia.drpc.org"])];
+const SWEEP_LOOKBACK = 300_000;
+/** publicnode answers `exceed maximum block range: 50000`, so ranges are chunked below its cap. */
+const SWEEP_RANGE = 45_000;
+
+interface SweptLog {
+  readonly txHash: string;
+  readonly emitter: string;
+  readonly data: string;
+}
+
+/**
+ * One `eth_getLogs` filter for every reference at once (`topics: [event, [ref1, ref2, …]]`)
+ * rather than one scan per row. 41 rows scanned one at a time is upwards of a hundred RPC
+ * calls and a rate limit; batched, the whole set is two calls, because every payment this
+ * project has made falls inside one 45,000-block window.
+ */
+async function sweepPayments(references: readonly string[]): Promise<Map<string, SweptLog[]>> {
+  const wantedTopics = new Map<string, string>();
+  for (const r of references) wantedTopics.set(referenceTopic(r).toLowerCase(), r.toLowerCase());
+
+  let head: number | null = null;
+  let lastError: Error | null = null;
+  for (const endpoint of SWEEP_ENDPOINTS) {
+    try {
+      head = await currentBlock(endpoint);
+      break;
+    } catch (e) {
+      lastError = e as Error;
+    }
+  }
+  if (head === null) throw lastError ?? new Error("no endpoint answered eth_blockNumber");
+  const floor = Math.max(0, head - SWEEP_LOOKBACK);
+
+  const found = new Map<string, SweptLog[]>();
+  const seen = new Set<string>();
+  const hex = (n: number) => `0x${n.toString(16)}`;
+
+  for (const endpoint of SWEEP_ENDPOINTS) {
+    if (found.size === wantedTopics.size) break;
+    try {
+      // A hash is only unique within one chain, and an RPC URL does not say which chain answers.
+      await assertChainId(endpoint);
+      let to = head;
+      while (to >= floor) {
+        const from = Math.max(floor, to - SWEEP_RANGE + 1);
+        const logs = (await rpcCall(endpoint, "eth_getLogs", [
+          {
+            address: ERC20_FEE_PROXY,
+            topics: [EVENT_TOPIC, [...wantedTopics.keys()]],
+            fromBlock: hex(from),
+            toBlock: hex(to),
+          },
+        ])) as Array<{ data: string; transactionHash: string; address?: string; topics?: string[] }>;
+
+        for (const log of logs) {
+          const reference = wantedTopics.get(String(log.topics?.[1] ?? "").toLowerCase());
+          if (!reference) continue;
+          const key = `${reference}:${log.transactionHash.toLowerCase()}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const bucket = found.get(reference) ?? [];
+          bucket.push({ txHash: log.transactionHash, emitter: log.address ?? ERC20_FEE_PROXY, data: log.data });
+          found.set(reference, bucket);
+        }
+
+        if (found.size === wantedTopics.size || from === floor) break;
+        to = from - 1;
+      }
+    } catch {
+      // An endpoint that will not answer is not a second opinion. Ask the next one.
+    }
+  }
+  return found;
+}
+
+async function corroborate(rows: readonly Corroborand[]): Promise<Map<string, { status: Status; detail: string }>> {
+  const out = new Map<string, { status: Status; detail: string }>();
+  const readable: Corroborand[] = [];
+  for (const row of rows) {
+    if (!row.expect) out.set(row.label, { status: row.unstated.status, detail: row.unstated.detail });
+    else if (!row.reference || !row.txHash) {
+      out.set(row.label, { status: "BLOCKED", detail: "the row carries no payment reference or no transaction hash" });
+    } else readable.push(row);
+  }
+  if (readable.length === 0) return out;
+
+  let logs: Map<string, SweptLog[]>;
+  try {
+    logs = await sweepPayments([...new Set(readable.map((r) => r.reference as string))]);
+  } catch (e) {
+    for (const row of readable) {
+      out.set(row.label, { status: "BLOCKED", detail: `RPC unavailable: ${(e as Error).message.slice(0, 70)}` });
+    }
+    return out;
+  }
+
+  for (const row of readable) {
+    const sightings = logs.get((row.reference as string).toLowerCase()) ?? [];
+    if (sightings.length === 0) {
+      // Not "unpaid". Every endpoint was asked and none had it inside the window, which is
+      // inconclusive — and inconclusive is never a pass.
+      out.set(row.label, {
+        status: "BLOCKED",
+        detail: `no fee-proxy event carrying ${row.reference} in the last ${SWEEP_LOOKBACK} blocks on ${SWEEP_ENDPOINTS.length} endpoint(s) — inconclusive, not "unpaid"`,
+      });
+      continue;
+    }
+    if (sightings.length > 1) {
+      out.set(row.label, {
+        status: "FAIL",
+        detail: `${sightings.length} transactions carry ${row.reference}: ${sightings.map((s) => s.txHash.slice(0, 12)).join(", ")}`,
+      });
+      continue;
+    }
+    const [log] = sightings;
+    const fields = decodePaymentLogFields(log.data);
+    if (!fields) {
+      out.set(row.label, { status: "FAIL", detail: `${log.txHash.slice(0, 14)}… carries this reference but is not a payment event` });
+      continue;
+    }
+    const verdict = matchPaymentLog({ ...fields, emitter: log.emitter }, row.expect as PaymentExpectation);
+    if (!verdict.ok) {
+      out.set(row.label, { status: "FAIL", detail: `${log.txHash.slice(0, 14)}… ${verdict.conflicts.join("; ")}` });
+      continue;
+    }
+    if (log.txHash.toLowerCase() !== (row.txHash as string).toLowerCase()) {
+      out.set(row.label, {
+        status: "FAIL",
+        detail: `the chain pays ${row.reference} in ${log.txHash.slice(0, 14)}…, the row claims ${(row.txHash as string).slice(0, 14)}…`,
+      });
+      continue;
+    }
+    out.set(row.label, { status: "ok", detail: `${log.txHash.slice(0, 20)}…` });
+  }
+  return out;
+}
+
+/**
+ * The invoice is where token, payee and amount come from for the rows that do not state them.
+ * `docs/refusals-live.json` records a case id, a reference and a hash and nothing about the
+ * money, so without this join those 38 rows could only ever be matched on their reference.
+ */
+const invoiceByKey = new Map<string, InvoiceRow>();
+for (const inv of invoiceRows) {
+  if (inv.paymentReference) invoiceByKey.set(inv.paymentReference.toLowerCase(), inv);
+  if (inv.requestId) invoiceByKey.set(inv.requestId.toLowerCase(), inv);
+}
+const invoiceExpectation = (...keys: Array<string | null | undefined>): PaymentExpectation | null => {
+  const inv = keys.map((k) => (k ? invoiceByKey.get(k.toLowerCase()) : undefined)).find(Boolean);
+  const to = inv?.payee ?? inv?.paymentAddress;
+  if (!inv || !to || !inv.amountBaseUnits) return null;
+  return {
+    // The invoice file records no token. FAU is the only token this deployment settles in and
+    // the only one `npm run fund` approves, so it is stated here from `src/plan.ts` rather than
+    // read from the row — which is why this is named in the check's detail, not hidden in it.
+    tokenAddress: FAU,
+    to,
+    amount: inv.amountBaseUnits,
+    ...(inv.feeAmount !== undefined ? { feeAmount: inv.feeAmount } : {}),
+    ...(inv.feeAddress !== undefined ? { feeAddress: inv.feeAddress } : {}),
+  };
+};
+
+const NO_INVOICE = {
+  status: "BLOCKED" as Status,
+  detail: "docs/live-invoices.json has no invoice for this row, so token, payee and amount cannot be stated — uncorroborated, never a pass",
+};
+
+const mcpToCheck = (mcp?.rows ?? []).filter((r) => r.transport === "mcp");
+const restToCheck = (live?.rows ?? []).filter((r) => r.tx_hash && r.payment_reference);
+const raceRef = liveRace?.invoice?.reference ?? null;
+const raceTx = (liveRace?.waves.flatMap((w) => w.workers) ?? []).map((w) => w.txHash).find(Boolean) ?? null;
+
+const verdicts = await corroborate([
+  ...mcpToCheck.map((r) => ({
+    label: `mcp:${r.paymentReference}`,
+    reference: r.paymentReference ?? null,
+    txHash: r.txHash ?? null,
+    // These rows DO state what they paid, so a missing field is the artifact's failure, not the
+    // join's. The first version of this read `row.tokenAddress`, which is not what the artifact
+    // calls the field, so the expectation came back undefined and the check quietly fell back to
+    // the reference alone — green, and proving nothing.
+    expect:
+      r.token && r.payee && r.amountBaseUnits
+        ? { tokenAddress: r.token, to: r.payee, amount: r.amountBaseUnits }
+        : null,
+    unstated: { status: "FAIL" as Status, detail: "the row does not state token, payee and amount, so nothing can corroborate it" },
+  })),
+  ...restToCheck.map((r) => ({
+    label: `rest:${r.case_id}`,
+    reference: r.payment_reference,
+    txHash: r.tx_hash,
+    expect: invoiceExpectation(r.payment_reference, (r as { request_id?: string }).request_id),
+    unstated: NO_INVOICE,
+  })),
+  ...(raceRef && raceTx
+    ? [
+        {
+          label: "race:live",
+          reference: raceRef,
+          txHash: raceTx,
+          expect: invoiceExpectation(raceRef, liveRace?.invoice?.requestId),
+          unstated: NO_INVOICE,
+        },
+      ]
+    : []),
+]);
+
+for (const r of mcpToCheck) {
+  const v = verdicts.get(`mcp:${r.paymentReference}`);
+  if (v) record(`keeperhub.mcp.onchain.${r.paymentReference}`, `the MCP settlement for ${r.paymentReference} is on chain`, v.status, v.detail);
+}
+
+if (raceRef && raceTx) {
+  const v = verdicts.get("race:live");
+  if (v) record("race.live.onchain", "that live payment is on chain, exactly once", v.status, v.detail);
+}
+
+if (restToCheck.length === 0) {
+  record("chain.reference", "every recorded payment is on chain, in the transaction its row names", "BLOCKED", "no recorded row carries both a hash and a reference");
+} else {
+  const results = restToCheck.map((r) => ({ id: r.case_id, ...(verdicts.get(`rest:${r.case_id}`) ?? { status: "BLOCKED" as Status, detail: "not checked" }) }));
+  const failed = results.filter((r) => r.status === "FAIL");
+  const blocked = results.filter((r) => r.status === "BLOCKED");
+  const passed = results.filter((r) => r.status === "ok");
+  const summarise = (rs: typeof results) => rs.slice(0, 3).map((r) => `${r.id}: ${r.detail}`).join(" · ") + (rs.length > 3 ? ` · +${rs.length - 3} more` : "");
+  record(
+    "chain.reference",
+    "every recorded payment is on chain, in the transaction its row names",
+    failed.length > 0 ? "FAIL" : blocked.length > 0 ? "BLOCKED" : "ok",
+    failed.length > 0
+      ? `${failed.length}/${results.length} row(s) disagree with the chain — ${summarise(failed)}`
+      : blocked.length > 0
+        ? `${blocked.length}/${results.length} row(s) could not be corroborated — ${summarise(blocked)}`
+        : `${passed.length}/${results.length} recorded payments matched emitter, token, payee, amount and fee in the transaction the row names ` +
+          `(payee, amount and fee joined from docs/live-invoices.json; token is FAU from src/plan.ts, the only token this deployment settles in)`,
+  );
 }
 
 // ---- report ----------------------------------------------------------------

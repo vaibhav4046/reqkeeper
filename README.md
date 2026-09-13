@@ -102,7 +102,7 @@ dependencies. `typecheck` and `build` call `tsc`, so those two want `npm install
 ```bash
 npm install           # only for typecheck and build; everything above runs without it
 
-npm test              # 380 tests, 73 suites
+npm test              # 394 tests, 78 suites
 npm run typecheck     # tsc --noEmit
 npm run build         # console + api; the tree must stay clean afterwards
 npm run gate-a        # Request <-> KeeperHub <-> Sepolia end to end

@@ -78,12 +78,18 @@ if (!LIVE_SIMULATE) {
   console.log("           Checks 2 and 3 below move nothing and run either way.");
 } else try {
   const sim = await provider.simulate({ to: ERC20_FEE_PROXY, data: approved, value: "0" });
-  if (sim.transactionHash) {
+  // Reported as the disposition the provider actually returns, so this probe says which of the
+  // four outcomes came back rather than flattening them into a boolean.
+  if (sim.kind === "EXECUTED") {
     bad("dry run", `returned a transaction hash: ${sim.transactionHash}`);
   } else {
     ok(
       "handshake, session and execute_contract_call all answered",
-      `wouldRevert=${sim.wouldRevert}, gasEstimate=${sim.gasEstimate}, no hash`,
+      sim.kind === "WOULD_SUCCEED"
+        ? `WOULD_SUCCEED, gasEstimate=${sim.gasEstimate}, no hash`
+        : sim.kind === "WOULD_REVERT"
+          ? `WOULD_REVERT (${sim.detail}), no hash`
+          : `UNKNOWN (${sim.code}: ${sim.detail}), no hash`,
     );
   }
 } catch (e) {

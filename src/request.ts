@@ -318,6 +318,7 @@ export function toInvoiceFacts(
   feeAddress: string;
   maxTotalDebitBaseUnits: string;
   tokenAddress: string;
+  anchorBlock?: number;
 } {
   return {
     requestId: f.requestId,
@@ -328,6 +329,11 @@ export function toInvoiceFacts(
     feeAddress: f.feeRecipient,
     maxTotalDebitBaseUnits: assertBaseUnits("maxTotalDebitBaseUnits", maxTotalDebitBaseUnits),
     tokenAddress: f.tokenAddress,
+    // Carried so the recovery scan has a floor. A payment cannot predate its invoice, so this is
+    // what turns "I saw nothing in the window I looked at" into "nothing ever paid this". Absent
+    // while Request has not confirmed the create, and omitted rather than defaulted to zero: a
+    // zero floor would claim a scan to genesis that never happened.
+    ...(f.anchor ? { anchorBlock: f.anchor.blockNumber } : {}),
   };
 }
 

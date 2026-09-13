@@ -62,10 +62,13 @@ describe("simulate() fails closed", () => {
   test("an HTTP 200 carrying an error body is not a clean simulation", async () => {
     stubFetch(200, { error: "insufficient funds" });
     const out = await provider().simulate(STEP);
+    // Stronger than the assertion this replaced. That one required only "not safe to dispatch",
+    // which an error body and a real revert both satisfied -- and settle then released the
+    // obligation on the strength of it, because a revert is conclusive and an error is not.
     assert.equal(
-      out.wouldRevert,
-      true,
-      "an error body must read as unsafe — reading it as wouldRevert:false lets the gate dispatch a real payment",
+      out.kind,
+      "UNKNOWN",
+      "an error body is a failure to simulate, not a simulation that failed: it cannot release the obligation",
     );
   });
 
@@ -97,17 +100,21 @@ describe("simulate() fails closed", () => {
     // and an explicit negative, is the one shape that means "safe to proceed".
     stubFetch(200, { wouldRevert: false, gasEstimate: "74618" });
     const out = await provider().simulate(STEP);
-    assert.equal(out.wouldRevert, false);
-    assert.equal(out.gasEstimate, "74618");
+    assert.equal(out.kind, "WOULD_SUCCEED");
+    assert.equal(out.kind === "WOULD_SUCCEED" ? out.gasEstimate : null, "74618");
   });
 
-  test("an explicit revert is still reported", async () => {
+  test("an explicit revert is a verdict, and says so", async () => {
     stubFetch(200, { wouldRevert: true, gasEstimate: "0" });
-    assert.equal((await provider().simulate(STEP)).wouldRevert, true);
+    // WOULD_REVERT is the one outcome that lets settle release the obligation, because it is the
+    // provider saying it ran the dry run and nothing was broadcast.
+    assert.equal((await provider().simulate(STEP)).kind, "WOULD_REVERT");
   });
 
-  test("success:false is still reported", async () => {
+  test("success:false is NOT a verdict, and must not be read as one", async () => {
     stubFetch(200, { success: false });
-    assert.equal((await provider().simulate(STEP)).wouldRevert, true);
+    // These two tests asserted the identical thing before this split, and that is exactly how a
+    // dry run that had already executed and then answered `{"success": false}` got paid twice.
+    assert.equal((await provider().simulate(STEP)).kind, "UNKNOWN");
   });
 });

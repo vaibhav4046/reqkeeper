@@ -103,8 +103,11 @@ async function findPaidReference(reference: string, expect?: PaymentExpectation)
  * `findPaidReference` collapses "the chain says no" and "I could not tell" into null, which is
  * safe for recovering a hash and not safe for deciding whether a dead simulation executed.
  */
-const sightPayment = (reference: string, expect?: PaymentExpectation) =>
-  findPaymentByReference(reference, { lookbackBlocks: 300_000, rpcUrl, expect });
+// The anchor is what lets a silence mean "not paid" rather than "not seen": a payment for an
+// invoice cannot predate the invoice. Without it the scan floor is arbitrary, every negative is
+// truncated, and this resolver can never release an obligation it was run to release.
+const sightPayment = (reference: string, expect?: PaymentExpectation, anchorBlock?: number) =>
+  findPaymentByReference(reference, { lookbackBlocks: 300_000, rpcUrl, expect, anchorBlock });
 
 const results = await drainUntilQuiet(
   { store, provider: { receipt }, sourceSaysPaid, findPaidReference, sightPayment },

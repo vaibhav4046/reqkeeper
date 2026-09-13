@@ -10,7 +10,7 @@ import { ERC20_FEE_PROXY, decodeAllowedCall } from "./calldata-gate.ts";
 import { idempotencyKey, obligationId, planHash as hashPlan, policyHash as hashPolicy, sourceFactsHash } from "./identity.ts";
 import { checkPolicy, type Policy, type SourceFacts } from "./policy.ts";
 import { toHuman } from "./money.ts";
-import type { ExecutionProvider } from "./provider.ts";
+import type { ExecutionProvider, SimulateOutcome } from "./provider.ts";
 import { ProviderError } from "./provider.ts";
 import type { Store } from "./store.ts";
 
@@ -605,99 +605,71 @@ async function settleOrRefuse(deps: SettleDeps, input: SettleInput): Promise<Set
   const body = { chainId: policy.chainId, ...input.steps[stepIndex] };
   // State and the observation that will come looking, committed together. See store.beginPreflight.
   store.beginPreflight(input.obligationId, planHash, input.now);
+  // --- 6b. the dry run, as a disposition rather than a pair of booleans ----
+  //
+  // Four duplicate-payment findings in three adversarial rounds all had the same shape: a caller
+  // reading a flag that could mean "I do not know" as though it meant "no". They were fixed one
+  // at a time, and each round found the next one, so the shape of the data is the defect. The
+  // provider now returns a `SimulateOutcome`, this switch is exhaustive, and the `never`
+  // assignment at the end makes a fifth outcome a compile error instead of a payment.
+  //
+  // The line that matters runs between EXECUTED/WOULD_REVERT -- the provider told us something --
+  // and UNKNOWN, which includes a timeout, a 4xx, an HTML error page, `{"success": false}` and a
+  // body with no verdict in it. Only the first kind may release the obligation.
+  let outcome: SimulateOutcome;
   try {
-    const sim = await provider.simulate({ ...body, simulate: true });
-    if (sim.transactionHash) {
-      // A dry run returned a hash: it really executed. Treat as a real send, never retry.
+    outcome = await provider.simulate({ ...body, simulate: true });
+  } catch (e) {
+    // A throw is an UNKNOWN like any other: the call may or may not have broadcast, and nothing
+    // reachable from here can tell. It is emphatically NOT "the provider refused the plan".
+    const code = e instanceof ProviderError ? e.code : "simulate_failed";
+    outcome = { kind: "UNKNOWN", code, detail: e instanceof Error ? e.message.slice(0, 200) : String(e) };
+  }
+
+  switch (outcome.kind) {
+    case "EXECUTED": {
+      // #1959: the dry run really executed. Money moved with no attempt row behind it, which is
+      // an integrity incident and never a settlement. A human has to look at it.
       store.setState(input.obligationId, "EVIDENCE_CONFLICT", input.now);
-      store.endPreflight(planHash);
-      store.audit(input.obligationId, "system", "SIMULATE_LEAKED_EXECUTION", { hash: sim.transactionHash });
+      store.audit(input.obligationId, "system", "SIMULATE_EXECUTED", { txHash: outcome.transactionHash });
       return out({
         state: "EVIDENCE_CONFLICT",
         refusal: "SIMULATE_EXECUTED",
-        detail: `dry run returned tx ${sim.transactionHash} — the platform executed a simulate call (#1959)`,
+        detail: `dry run returned tx ${outcome.transactionHash} — the platform executed a simulate call (#1959)`,
         providerWriteIssued: true,
-        txHash: sim.transactionHash,
+        txHash: outcome.transactionHash,
         planHash,
       });
     }
-    if (sim.wouldRevert && sim.simulated) {
-      // A verdict: the provider ran the dry run and the payment reverts. Nothing executed, so the
-      // observation ends and the reservation goes back for a corrected plan.
+
+    case "WOULD_REVERT": {
+      // A verdict. The provider ran the dry run and the payment reverts, so nothing was
+      // broadcast: end the observation, hand the reservation back, let a corrected plan come.
       store.setState(input.obligationId, "SIMULATION_BLOCKED", input.now);
       store.endPreflight(planHash);
       store.releaseObligation(input.obligationId, planHash);
-      return out({ state: "SIMULATION_BLOCKED", refusal: "SIMULATION_BLOCKED", detail: "payment would revert", providerWriteIssued: false, planHash });
+      return out({ state: "SIMULATION_BLOCKED", refusal: "SIMULATION_BLOCKED", detail: outcome.detail, providerWriteIssued: false, planHash });
     }
-    if (sim.wouldRevert) {
-      // Not a verdict -- a reply that told us nothing, which both transports report through the
-      // same flag so that it can never authorise a send. It must not authorise a RELEASE either:
-      // a dry run that executed and then answered `{"success":false}` is indistinguishable from
-      // one that never ran, and releasing here is how the second payment gets made. Same
-      // treatment as a throw: hold the reservation, leave OBSERVE_PREFLIGHT queued, say so.
-      store.audit(input.obligationId, "system", "PREFLIGHT_OUTCOME_UNKNOWN", {
-        reason: "the provider reported a failed simulate without a revert verdict",
-      });
-      return out({
-        state: "PAYMENT_PREFLIGHT",
-        refusal: "EXECUTION_OUTCOME_UNKNOWN",
-        detail:
-          "the dry run did not come back with a verdict, only a failure. Whether it executed is " +
-          "not known here, and a dry run that executed can still have moved money. The " +
-          "reservation is held and an observation is queued: run the resolver (npm run resolve, " +
-          "or the MCP resolve_pending tool) to settle the question from the chain.",
-        providerWriteIssued: false,
-        planHash,
-      });
-    }
-  } catch (e) {
-    const code = e instanceof ProviderError ? e.code : "simulate_failed";
-    const retryable = e instanceof ProviderError && e.retryable;
 
-    // A 429 is not a revert. Funnelling every preflight error into SIMULATION_BLOCKED — a
-    // state whose agent guidance reads "the payment would revert" — turns the platform's rate
-    // limit into a permanent refusal and a support ticket blaming the platform for a revert
-    // that never happened. But the obvious repair, adding PAYMENT_PREFLIGHT to REPLANNABLE, is
-    // a trap: it would also admit a re-plan after a simulate TIMEOUT, and a timed-out dry run
-    // may have executed for real (#1959, handled above when the hash comes back). The
-    // provider's `retryable` flag cannot separate the two — rate_limited and timeout are both
-    // retryable:true — so it is not the discriminator.
-    //
-    // Durable local state was supposed to be the discriminator: PREFLIGHT_UNAVAILABLE only when
-    // no attempt on this obligation had ever been stamped `first_send_at`. That test is vacuous
-    // HERE. `openAttempt` does not run until after the simulate returns, so on a first proposal
-    // there is no attempt row to inspect and `sentAttemptFor` is structurally null every time.
-    // The condition collapsed to `retryable` -- the flag the comment above correctly says is not
-    // the discriminator -- so a timed-out dry run that had in fact executed was answered with
-    // "nothing has ever been dispatched for this obligation, so no payment is in doubt", the
-    // OBSERVE_PREFLIGHT job committed to ask exactly that question was cancelled, the reservation
-    // was handed back, and the next proposal paid the invoice a second time. Measured, by the
-    // red-team pass that found it: two physical sends for one obligation.
-    //
-    // Nothing reachable from here can separate a busy platform from a dry run that executed and
-    // lost its reply. The chain can, and the job to go and look is already committed and already
-    // pending. So a retryable failure no longer decides anything: the reservation stays held,
-    // OBSERVE_PREFLIGHT stays queued, and the caller is told what is and is not known. The
-    // observer (`npm run resolve`, or the MCP resolve_pending tool) reads the chain and either
-    // finds the leaked execution -- EVIDENCE_CONFLICT, which a human looks at -- or establishes
-    // across the whole window that nothing carrying this reference paid this invoice, and only
-    // then releases to PREFLIGHT_UNAVAILABLE. A truncated scan stays unresolved, because "I could
-    // not tell" must never become "go ahead".
-    //
-    // The cost is a resolver pass before a rate-limited proposal can be proposed again. That is
-    // the price of not guessing, and it is not the payer who should be charged it.
-    {
+    case "UNKNOWN": {
+      // No verdict, from any cause. The reservation stays held and OBSERVE_PREFLIGHT stays
+      // queued, because the chain is the only thing that can answer this and the job to go and
+      // ask it was committed in the same transaction as PAYMENT_PREFLIGHT. The resolver either
+      // finds the leaked execution (EVIDENCE_CONFLICT, for a human) or establishes across the
+      // whole window that nothing carrying this reference paid this invoice, and only then
+      // releases to PREFLIGHT_UNAVAILABLE. A truncated scan stays unresolved, because "I could
+      // not tell" must never become "go ahead".
       store.audit(input.obligationId, "system", "PREFLIGHT_OUTCOME_UNKNOWN", {
-        code,
-        reason: "the simulate did not answer; whether it executed is a question for the chain",
+        code: outcome.code,
+        reason: outcome.detail,
       });
       return out({
         state: "PAYMENT_PREFLIGHT",
         refusal: "EXECUTION_OUTCOME_UNKNOWN",
         detail:
-          `preflight did not answer: ${code}. Whether that dry run executed is not known here, and ` +
-          `a dry run that times out can still have moved money. The reservation is held and an ` +
-          `observation is already queued: run the resolver (npm run resolve, or the MCP ` +
+          `the dry run did not come back with a verdict (${outcome.code}). Whether it executed is ` +
+          `not known here, and a dry run that executed can still have moved money. The reservation ` +
+          `is held and an observation is queued: run the resolver (npm run resolve, or the MCP ` +
           `resolve_pending tool) to settle the question from the chain. Do not propose this ` +
           `obligation again until it has.`,
         providerWriteIssued: false,
@@ -705,19 +677,16 @@ async function settleOrRefuse(deps: SettleDeps, input: SettleInput): Promise<Set
       });
     }
 
-    // There is deliberately no second branch. The first fix here kept one: a NON-retryable error
-    // was treated as "the provider refused the plan, so nothing executed", which released the
-    // reservation into SIMULATION_BLOCKED -- a replannable state -- and a red-team pass walked
-    // straight through it to a second payment. Both transports raise non-retryable for any 4xx,
-    // including a 409 and a 4xx whose body is not even JSON (an edge or WAF HTML page), and none
-    // of those can distinguish a plan the provider rejected from a plan it executed before the
-    // reply was lost. `retryable` was never the discriminator -- that was the original finding,
-    // and keeping one branch that still consulted it kept the original bug on one side.
-    //
-    // A dry run that ANSWERS is different, and still handled: `sim.wouldRevert` above is the
-    // provider telling us it simulated and the payment would revert, which is a real answer and
-    // conclusive. Only a throw -- no answer at all -- lands here, and an absence of an answer is
-    // never evidence of an absence of an execution.
+    case "WOULD_SUCCEED":
+      // The only outcome that continues to the dispatch below.
+      break;
+
+    default: {
+      // Unreachable while the union is fully handled. If someone adds a fifth outcome, this stops
+      // compiling -- which is the entire reason the disposition is a union and not a boolean.
+      const exhaustive: never = outcome;
+      throw new Error(`unhandled simulate outcome: ${JSON.stringify(exhaustive)}`);
+    }
   }
 
   // --- 7. commit the attempt BEFORE sending -------------------------------

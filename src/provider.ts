@@ -27,29 +27,85 @@ export type Fault =
   | "COMPLETE_BUT_RECEIPT_MISSING"
   | "RATE_LIMITED";
 
-export interface SimulateResult {
-  readonly status: "simulated";
+/**
+ * What a dry run ESTABLISHED, as four mutually exclusive outcomes.
+ *
+ * This was booleans, and it cost four duplicate-payment findings in three adversarial rounds --
+ * each one a different caller reading a flag that could mean "I do not know" as if it meant "no":
+ *
+ *   1. `retryable` read as "nothing executed"
+ *   2. `!retryable` read as "nothing executed"
+ *   3. `wouldRevert` read as a verdict, when both transports also raise it for an unreadable
+ *      reply, deliberately, so that an unknown can never authorise a send
+ *   4. and the same conflation again on the success path
+ *
+ * Each was fixed where it was found, and the next round found the next one, because the shape of
+ * the data let any caller collapse "unknown" into "no" by accident. A boolean cannot carry three
+ * states, so the code carried the third one in a comment and hoped.
+ *
+ * The distinction that actually matters is not revert-versus-success. It is whether the provider
+ * TOLD US ANYTHING. A timeout, a malformed body, a 409, an HTML error page and `{"success":false}`
+ * are all the same thing to this system: the dry run may or may not have broadcast, and only the
+ * chain can say. That is `UNKNOWN`, and it is not a failure mode -- it is the normal state of a
+ * distributed call, and the one this project exists to handle.
+ *
+ * Callers must switch exhaustively. `settleOrRefuse` ends its switch with a `never` assignment,
+ * so adding a fifth outcome without handling it is a compile error rather than a payment.
+ */
+export type SimulateOutcome =
+  /** The provider simulated, and the payment would go through. */
+  | { readonly kind: "WOULD_SUCCEED"; readonly gasEstimate: string }
+  /** The provider simulated, and the payment would revert. Conclusive: nothing was broadcast. */
+  | { readonly kind: "WOULD_REVERT"; readonly detail: string }
   /**
-   * Fail-closed: true whenever it is not safe to dispatch, which includes a provider reply that
-   * said nothing at all. Never read this as a verdict on the payment -- see `simulated`.
+   * The dry run really executed (#1959). The hash proves a send happened with no attempt row
+   * behind it, which is an integrity incident, never a settlement.
    */
-  readonly wouldRevert: boolean;
+  | { readonly kind: "EXECUTED"; readonly transactionHash: string }
   /**
-   * Whether the provider actually ran a dry run and reported its outcome. False means the reply
-   * was a failure to simulate, not a simulation that failed.
-   *
-   * These were one boolean until an adversarial pass showed what that costs. `wouldRevert` is
-   * set by both transports from `success === false || error !== undefined` -- deliberately, so
-   * an unreadable answer can never authorise a send -- and settle.ts then treated it as
-   * conclusive, ending the chain observation and releasing the reservation into
-   * SIMULATION_BLOCKED, which is replannable. A dry run that had already executed (#1959) and
-   * then returned `{"success":false}` therefore got paid a second time, while the agent was told
-   * "The payment would revert. A retry repeats the revert."
+   * No verdict. The call may or may not have broadcast, and nothing reachable from the provider
+   * can distinguish the two. Never a licence to release the obligation or to send again.
    */
-  readonly simulated: boolean;
-  readonly gasEstimate: string;
-  /** Must always be absent. A hash from a dry run means it really executed (#1959). */
-  readonly transactionHash?: string;
+  | { readonly kind: "UNKNOWN"; readonly code: string; readonly detail: string };
+
+/**
+ * What a dry-run reply established, for either transport.
+ *
+ * Order matters and is the whole point. A hash comes first, because a dry run that hands back a
+ * transaction really executed (#1959) and nothing else about the reply can matter after that.
+ * `error` and `success === false` come next, and they are UNKNOWN rather than a revert: the
+ * provider is telling us it did not complete a simulation, not that it completed one and the
+ * payment fails. Only an explicit `wouldRevert` from a reply that carries no error is a verdict.
+ *
+ * The previous shape folded rows two and three together into one boolean and left a comment
+ * warning the reader not to read it as a verdict. Three adversarial rounds read it as a verdict.
+ */
+export function classifySimulateReply(reply: {
+  transactionHash?: string;
+  txHash?: string;
+  hash?: string;
+  wouldRevert?: boolean;
+  success?: boolean;
+  error?: unknown;
+  gasEstimate?: string;
+}): SimulateOutcome {
+  const hash = reply.transactionHash ?? reply.txHash ?? reply.hash;
+  if (hash) return { kind: "EXECUTED", transactionHash: hash };
+  if (reply.error !== undefined) {
+    return { kind: "UNKNOWN", code: "simulate_error", detail: String(reply.error).slice(0, 200) };
+  }
+  if (reply.success === false) {
+    return { kind: "UNKNOWN", code: "simulate_unsuccessful", detail: "the reply reported success: false with no revert verdict" };
+  }
+  if (reply.wouldRevert === true) {
+    return { kind: "WOULD_REVERT", detail: "the provider simulated the call and it reverts" };
+  }
+  if (reply.wouldRevert === false) {
+    return { kind: "WOULD_SUCCEED", gasEstimate: reply.gasEstimate ?? "0" };
+  }
+  // No hash, no error, no success flag, no verdict: a reply that said nothing about the dry run.
+  // This used to read as `wouldRevert: false` -- a clean simulation -- and let a payment through.
+  return { kind: "UNKNOWN", code: "no_verdict", detail: "the reply carried no simulation verdict" };
 }
 
 export interface ExecuteResult {
@@ -106,7 +162,7 @@ export class ProviderError extends Error {
 }
 
 export interface ExecutionProvider {
-  simulate(body: unknown): Promise<SimulateResult>;
+  simulate(body: unknown): Promise<SimulateOutcome>;
   /** `idempotencyKey` must come from the persisted attempt, never minted at call time. */
   execute(body: unknown, idempotencyKey: string): Promise<ExecuteResult>;
   observe(executionId: string): Promise<ExecuteResult>;
@@ -147,24 +203,18 @@ export class FixtureProvider implements ExecutionProvider {
     return n;
   }
 
-  async simulate(body: unknown): Promise<SimulateResult> {
+  async simulate(body: unknown): Promise<SimulateOutcome> {
     if (this.#fault === "SIMULATE_IGNORED") {
       // The bug: the dry run actually executed. It even hands back a hash.
       this.#seq++;
       const key = `simulate-leak-${this.#seq}`;
       this.sendCounts.set(key, (this.sendCounts.get(key) ?? 0) + 1);
-      return {
-        status: "simulated",
-        wouldRevert: false,
-        simulated: true,
-        gasEstimate: "21000",
-        transactionHash: `0x${"5i".repeat(32).slice(0, 64)}`,
-      };
+      return { kind: "EXECUTED", transactionHash: `0x${"5i".repeat(32).slice(0, 64)}` };
     }
     if (this.#fault === "RATE_LIMITED") {
       throw new ProviderError("rate_limited", "429 from provider", true);
     }
-    return { status: "simulated", wouldRevert: false, simulated: true, gasEstimate: "21000" };
+    return { kind: "WOULD_SUCCEED", gasEstimate: "21000" };
   }
 
   async execute(body: unknown, idempotencyKey: string): Promise<ExecuteResult> {

@@ -41,7 +41,7 @@ import type {
   ExecuteResult,
   ExecutionProvider,
   Receipt,
-  SimulateResult,
+  SimulateOutcome,
 } from "../src/provider.ts";
 import { fetchInvoiceChecked, toInvoiceFacts, type InvoiceFactsFromRequest } from "../src/request.ts";
 import { settleObligation } from "../src/settle.ts";
@@ -94,7 +94,7 @@ class CountingProvider implements ExecutionProvider {
   constructor(inner: ExecutionProvider) {
     this.#inner = inner;
   }
-  async simulate(body: unknown): Promise<SimulateResult> {
+  async simulate(body: unknown): Promise<SimulateOutcome> {
     this.simulations++;
     return await this.#inner.simulate(body);
   }

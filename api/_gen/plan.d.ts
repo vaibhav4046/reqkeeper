@@ -26,6 +26,8 @@ export interface InvoiceFacts {
     readonly tokenAddress?: string;
     readonly tokenDecimals?: number;
     readonly tokenSymbol?: string;
+    /** Where Request anchored the invoice on Sepolia. The recovery scan's floor; see SourceFacts. */
+    readonly anchorBlock?: number;
     /**
      * Whether the chain already shows this reference paid.
      *

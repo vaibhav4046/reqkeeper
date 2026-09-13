@@ -328,8 +328,11 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
           provider: ctx.provider,
           // Uncertainty intact, for the one decision that needs it: whether a simulation that
           // never came back actually executed.
-          sightPayment: (reference: string, expect?: PaymentExpectation) =>
-            findPayment(reference, { rpcUrl: ctx.rpcUrl, lookbackBlocks: 300_000, expect }),
+          // The anchor makes a negative conclusive. Without it every negative comes back
+          // truncated, the worker refuses to conclude from a truncated scan (correctly), and the
+          // obligation stays wedged for ever -- safe, and never recovered.
+          sightPayment: (reference: string, expect?: PaymentExpectation, anchorBlock?: number) =>
+            findPayment(reference, { rpcUrl: ctx.rpcUrl, lookbackBlocks: 300_000, expect, anchorBlock }),
           sourceSaysPaid: async (requestId: string, txHash: string) => {
             const row = ctx.store.obligationForRecovery(obligationId(NAMESPACE, requestId));
             if (!row?.paymentReference) return false;

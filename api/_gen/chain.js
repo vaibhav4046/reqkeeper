@@ -176,23 +176,36 @@ export function decodePaymentLogFields(data) {
  * obvious way to write this — fails for every caller rather than returning nothing.
  */
 const MAX_RANGE = 45_000;
-const DEFAULT_LOOKBACK = 450_000;
+export const DEFAULT_LOOKBACK = 450_000;
 /**
  * Request Network's payment detection, as a direct chain read: find the ERC20FeeProxy event
  * carrying this payment reference. This is the same evidence Request's own indexer uses, so
  * agreeing with it does not depend on Request's API being up.
  *
  * Scans backwards from head in permitted chunks and stops at the first hit, because a payment
- * we care about is almost always recent. `truncated` says whether the window ran out before
- * genesis — a `found: false` with `truncated: true` means "not seen recently", never "unpaid".
+ * we care about is almost always recent. `truncated` says whether the window ran out before it
+ * reached the block below which there is nothing to find — a `found: false` with
+ * `truncated: true` means "not seen", never "unpaid".
  */
 export async function findPaymentByReference(reference, opts = {}) {
     const rpcUrl = opts.rpcUrl ?? DEFAULT_RPC;
     await ensureChain(rpcUrl);
     const head = await currentBlock(rpcUrl);
-    const floor = opts.fromBlock !== undefined
+    const requested = opts.fromBlock !== undefined
         ? Math.max(0, opts.fromBlock)
         : Math.max(0, head - (opts.lookbackBlocks ?? DEFAULT_LOOKBACK));
+    const anchorFloor = opts.anchorBlock === undefined ? undefined : Math.max(0, opts.anchorBlock);
+    const floor = anchorFloor === undefined ? requested : Math.min(requested, anchorFloor);
+    /**
+     * Genesis is not the bar. Requiring `floor === 0` made every real scan inconclusive, which
+     * made `PREFLIGHT_UNAVAILABLE` — the only way back for an obligation whose preflight failed —
+     * unreachable against the live chain, and wedged those obligations permanently.
+     *
+     * A caller that names the anchor gets a conclusive answer. A caller that names nothing has
+     * given this function no floor to prove coverage against, so it stays inconclusive: "I could
+     * not tell" must never quietly become "go ahead", which is the whole point of the flag.
+     */
+    const truncated = floor > (anchorFloor ?? 0);
     const first = await scanForReference(reference, rpcUrl, head, floor, opts.expect);
     if (first.found) {
         return { ...first, corroborated: await corroborate(reference, first, rpcUrl, opts.expect) };
@@ -221,7 +234,9 @@ export async function findPaymentByReference(reference, opts = {}) {
             // an unreachable endpoint is not a second opinion; keep asking
         }
     }
-    return first;
+    // The window is reported with the negative, not separately: a caller that has to ask a second
+    // question to find out whether the first answer meant anything will eventually stop asking.
+    return { ...first, truncated, scannedFrom: floor };
 }
 async function scanForReference(reference, rpcUrl, head, floor, expect) {
     const topics = [EVENT_TOPIC, referenceTopic(reference)];
@@ -263,10 +278,11 @@ async function scanForReference(reference, rpcUrl, head, floor, expect) {
             break;
         to = from - 1;
     }
+    // No `truncated` here: whether this window was wide enough depends on the floor the CALLER
+    // could name, which this function is not told. `findPaymentByReference` decides it.
     return {
         found: false,
         scannedBlocks: head - floor + 1,
-        truncated: floor > 0,
         ...(conflicts.length > 0 ? { conflicts } : {}),
     };
 }

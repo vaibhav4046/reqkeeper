@@ -81,6 +81,7 @@ export function buildSourceFacts(f) {
         feeBaseUnits: f.feeAmount,
         feeRecipient: f.feeAddress.toLowerCase(),
         hasBeenPaid: f.hasBeenPaid ?? false,
+        ...(f.anchorBlock === undefined ? {} : { anchorBlock: f.anchorBlock }),
     };
 }
 /**
