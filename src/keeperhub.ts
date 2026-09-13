@@ -37,6 +37,8 @@ export interface KeeperHubConfig {
 }
 
 interface KeeperHubResponse {
+  /** On a 409: the execution this idempotency key already started, if there is one. */
+  originalExecutionId?: string;
   code?: string;
   success?: boolean;
   status?: string;
@@ -172,10 +174,34 @@ export class KeeperHubProvider implements ExecutionProvider {
     }
 
     if (res.status === 409) {
-      throw idempotencyVerdict(`${parsed.code ?? ""} ${parsed.error ?? ""}`);
+      const verdict = idempotencyVerdict(`${parsed.code ?? ""} ${parsed.error ?? ""}`);
+      // The platform's own pointer to the execution this key already started.
+      //
+      // KeeperHub documents it: on a 409 with a non-null `originalExecutionId`, poll
+      // `execute/{id}/status` with it to learn the outcome of the work you were retrying. It was
+      // read nowhere, so an idempotency conflict -- the one case where KeeperHub hands you the id
+      // of the execution that may already have moved the money -- was resolved the slow way, by
+      // scanning the chain, or not at all.
+      const original = parsed.originalExecutionId;
+      if (typeof original === "string" && original.length > 0) {
+        verdict.executionId = original;
+      }
+      throw verdict;
     }
     if (res.status === 429) {
-      throw new ProviderError("rate_limited", "429 from KeeperHub", true);
+      // Read the platform's instruction rather than guessing. `Retry-After` is documented as
+      // sent only on 429; the caller backs off on a fixed constant without it.
+      // Defensively: `headers` is external input like everything else on this boundary, and a
+      // transport that omits it must cost a backoff hint, never the refusal itself.
+      const after = Number(res.headers?.get?.("retry-after") ?? "");
+      const wait = Number.isFinite(after) && after > 0 ? Math.min(after, 300) : undefined;
+      const err = new ProviderError(
+        "rate_limited",
+        wait === undefined ? "429 from KeeperHub" : `429 from KeeperHub; it asked for ${wait}s`,
+        true,
+      );
+      if (wait !== undefined) err.retryAfterSeconds = wait;
+      throw err;
     }
     if (res.status >= 500) {
       throw new ProviderError("provider_error", `HTTP ${res.status}: ${parsed.error ?? text.slice(0, 200)}`, true);

@@ -32,7 +32,11 @@ loadDotEnv();
 
 const args = new Map<string, string>();
 for (const a of process.argv.slice(2)) {
-  const m = /^--([a-zA-Z]+)(?:=(.*))?$/.exec(a);
+  // Hyphens, and `--key value` as well as `--key=value`. The same pattern without the hyphen
+  // silently broke `--release-preflight` in `resolve.ts` -- the flag never matched, the command
+  // took the ordinary path and reported success. Nothing here has a hyphen yet; the point is
+  // that the next flag to grow one does not have to find that out the same way.
+  const m = /^--([a-zA-Z][a-zA-Z0-9-]*)(?:=(.*))?$/.exec(a);
   if (m) args.set(m[1], m[2] ?? "true");
 }
 
@@ -136,7 +140,19 @@ console.log(`policy   : ${describeStandingPolicy(standing)}`);
 console.log(once ? "mode     : single pass" : `mode     : every ${intervalMs / 1000}s, Ctrl-C to stop`);
 
 if (once) {
-  report(await watchPass(deps, invoices));
+  // The same try/catch the loop has. Without it an endpoint that refuses -- a free tier saying
+  // "chain is not available on free plan", which one of the built-in fallbacks does -- ended this
+  // as a raw stack trace, and `store.close()` below never ran. A chain that will not answer is
+  // "I could not tell", not a crash; `resolve.ts` learned that and this file did not.
+  try {
+    report(await watchPass(deps, invoices));
+  } catch (e) {
+    console.error(`pass failed: ${(e as Error).message}`);
+    console.error("  An endpoint that will not answer says nothing about these invoices. Set");
+    console.error("  SEPOLIA_RPC, and REQKEEPER_RPC_ENDPOINTS for the corroboration quorum.");
+    store.close();
+    process.exit(1);
+  }
 } else {
   while (!stopping) {
     try {

@@ -23,6 +23,18 @@ import { toHuman } from "../src/money.ts";
 import { derivePlan, restate } from "../src/settle.ts";
 import { Store } from "../src/store.ts";
 
+/** Printed on any missing argument. A money gate that answers "go and read the source" is not one. */
+const USAGE = [
+  "usage:",
+  "  npm run approve -- --requestId <id> --reference <0x…8 bytes> --payee <0x…>",
+  "                     --amount <baseUnits> --max <baseUnits> --approver <you@example.com>",
+  "                     [--reject] [--yes] [--db .data/live.sqlite]",
+  "",
+  "  The plan hash is RECOMPUTED from what you type and compared with the one reserved for this",
+  "  obligation. It is never accepted as an argument: if they disagree, something proposed a",
+  "  payment other than the one you are being shown, and nothing is recorded.",
+].join("\n");
+
 const args = new Map<string, string>();
 for (const a of process.argv.slice(2)) {
   const m = /^--([a-zA-Z]+)(?:=(.*))?$/.exec(a);
@@ -32,7 +44,7 @@ for (const a of process.argv.slice(2)) {
 function need(flag: string): string {
   const v = args.get(flag);
   if (!v) {
-    console.error(`\nmissing --${flag}\n\nsee the header of scripts/approve.ts for usage\n`);
+    console.error(`\nmissing --${flag}\n\n${USAGE}\n`);
     process.exit(2);
   }
   return v;

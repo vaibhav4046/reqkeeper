@@ -141,7 +141,11 @@ export async function drainOnce(
       const code = (e as Error & { code?: string }).code;
       if (code === "STALE_FENCE") continue; // another worker owns it; nothing to do
       try {
-        store.deferJob(job.id, opts.now + RETRY_MS, code ?? "WORKER_ERROR", job.fencingGeneration);
+        // The platform's own number when it gave one. `Retry-After` is documented as sent only
+        // on a 429, and backing off on a local constant instead is how a rate limit becomes a
+        // rate limit that lasts longer than it had to.
+        const asked = ((e as { retryAfterSeconds?: number }).retryAfterSeconds ?? 0) * 1000;
+        store.deferJob(job.id, opts.now + Math.max(RETRY_MS, asked), code ?? "WORKER_ERROR", job.fencingGeneration);
         deferred++;
       } catch {
         // Lost the lease while handling the error. The live worker will pick it up.

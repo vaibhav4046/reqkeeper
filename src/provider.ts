@@ -195,6 +195,16 @@ export function belowConfirmationDepth(
 }
 
 export class ProviderError extends Error {
+  /**
+   * The execution KeeperHub says this key already started, from a 409's `originalExecutionId`.
+   *
+   * Carried so the caller can ask the platform what happened rather than inferring it from the
+   * chain. It is the one moment KeeperHub volunteers the id of the work that may already have
+   * moved the money, and it used to be dropped on the floor.
+   */
+  executionId?: string;
+  /** What a 429's `Retry-After` asked for, in seconds. Absent means the platform did not say. */
+  retryAfterSeconds?: number;
   readonly code: string;
   readonly retryable: boolean;
 

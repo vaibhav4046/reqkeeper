@@ -1000,11 +1000,30 @@ async function settleOrRefuse(
     executed = await provider.execute(body, key);
   } catch (e) {
     const code = e instanceof ProviderError ? e.code : "unknown";
+    // KeeperHub's own pointer to the execution this key already started, when it gave one.
+    //
+    // It arrives on a 409 as `originalExecutionId`, and it is the one moment the platform
+    // volunteers the id of work that may already have moved money. Recorded on the attempt
+    // BEFORE anything else is decided, so the observer has something to ask about rather than
+    // having to find the payment on chain by reference. It is not evidence of an outcome and is
+    // never treated as one: `OBSERVE_EXECUTION` still reads the chain.
+    const pointed = e instanceof ProviderError ? e.executionId : undefined;
+    if (pointed) {
+      store.audit(input.obligationId, "system", "PROVIDER_NAMED_PRIOR_EXECUTION", { attemptId, executionId: pointed });
+    }
     if (code === "idempotency_conflict") {
       // Same key, different body. An integrity incident: never rotate the key to succeed.
       store.recordOutcome(attemptId, { outcome: "INTEGRITY_CONFLICT", now: input.now });
       store.setState(input.obligationId, "EVIDENCE_CONFLICT", input.now);
-      return out({ state: "EVIDENCE_CONFLICT", refusal: "IDEMPOTENCY_CONFLICT", detail: "provider holds a different body for this key", providerWriteIssued: true, planHash });
+      return out({
+        state: "EVIDENCE_CONFLICT",
+        refusal: "IDEMPOTENCY_CONFLICT",
+        detail:
+          "provider holds a different body for this key" +
+          (pointed ? `; it named execution ${pointed} as the one this key already started` : ""),
+        providerWriteIssued: true,
+        planHash,
+      });
     }
     store.recordOutcome(attemptId, { outcome: "UNKNOWN", now: input.now });
     store.setState(input.obligationId, "EXECUTION_OUTCOME_UNKNOWN", input.now);
@@ -1012,7 +1031,10 @@ async function settleOrRefuse(
     return out({
       state: "EXECUTION_OUTCOME_UNKNOWN",
       refusal: "EXECUTION_OUTCOME_UNKNOWN",
-      detail: `no confirmation from provider (${code}); checking the existing execution, no new payment submitted`,
+      detail:
+        `no confirmation from provider (${code})` +
+        (pointed ? `, which named execution ${pointed}` : "") +
+        "; checking the existing execution, no new payment submitted",
       providerWriteIssued: true,
       planHash,
     });

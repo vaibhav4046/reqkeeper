@@ -272,3 +272,48 @@ describe("the recovery itself, against something this project did not produce", 
     assert.equal(recoverAddress(new Uint8Array(31), `0x${"ab".repeat(65)}`), null);
   });
 });
+
+describe("a signature authorises one action, on one invoice", () => {
+  test("the same signed increase served five times raises the debt once, or not at all", async () => {
+    // Measured by a reviewer against the real reader: one authorised increase of 500 became
+    // 2,500. Every copy is genuinely signed by the payer and every copy is genuinely an increase;
+    // what nobody checked was how many times one authorisation may be spent.
+    const signed = signAction(increase("500"), PAYER_KEY);
+    const id = serve([signed, signed, signed, signed, signed]);
+    assert.equal(await refusalFrom(id), "ACTION_REPLAYED");
+  });
+
+  test("two DIFFERENT increases, each signed once, both apply", async () => {
+    // The control. A payer who really agreed twice has agreed twice, and refusing that would make
+    // every amended invoice unpayable.
+    const id = serve([signAction(increase("500"), PAYER_KEY), signAction(increase("300"), PAYER_KEY)]);
+    const invoice = await read(id);
+    assert.equal(invoice.invoiceBaseUnits, (BigInt(ONE) + 800n).toString());
+    assert.equal(invoice.amountChangedBy?.actions, 2);
+  });
+
+  test("an increase signed for ANOTHER invoice cannot be lifted onto this one", async () => {
+    // A real signature, a real party, the wrong debt. Request's actions name the request they act
+    // on; nothing compared that to the channel being read, so a payer's genuine increase on their
+    // own invoice was portable onto somebody else's.
+    const foreign = signAction(
+      { name: "increaseExpectedAmount", parameters: { deltaAmount: "500", requestId: `01${"ff".repeat(32)}` } },
+      PAYER_KEY,
+    );
+    const id = serve([foreign]);
+    assert.equal(await refusalFrom(id), "ACTION_FOREIGN");
+  });
+
+  test("and one that names this invoice is fine", async () => {
+    const id = serve([]);
+    const mine = signAction(
+      { name: "increaseExpectedAmount", parameters: { deltaAmount: "500", requestId: id } },
+      PAYER_KEY,
+    );
+    const sameChannel = serve([mine]);
+    // `serve` rebuilds the channel from the same create, so the id is stable and `mine` names it.
+    assert.equal(sameChannel, id);
+    const invoice = await read(sameChannel);
+    assert.equal(invoice.invoiceBaseUnits, (BigInt(ONE) + 500n).toString());
+  });
+});

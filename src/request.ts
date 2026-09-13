@@ -51,7 +51,11 @@ export type RequestErrorCode =
   /** An action was signed by a real party of this invoice, in a role Request does not allow it. */
   | "ACTION_ROLE_VIOLATION"
   /** The anchor names a transaction that did not store this invoice's bytes. */
-  | "ANCHOR_UNBOUND";
+  | "ANCHOR_UNBOUND"
+  /** One signature, served twice. A signature authorises one action. */
+  | "ACTION_REPLAYED"
+  /** A genuinely signed action, lifted from another invoice onto this one. */
+  | "ACTION_FOREIGN";
 
 export class RequestError extends Error {
   // See MoneyError: Node's strip-only TypeScript mode rejects constructor parameter
@@ -676,6 +680,18 @@ function assertActionsAreSigned(
 ): void {
   const payee = parties.payee?.toLowerCase();
   const payer = parties.payer?.toLowerCase();
+  /**
+   * Every signature already seen on this channel.
+   *
+   * A signature authorises ONE action, and nothing counted them. The gateway could serve the same
+   * signed `increaseExpectedAmount` five times and the reader applied five increases -- one
+   * signature, five deltas, all of them "signed by the payer" and every one of them true. A
+   * reviewer measured it: one authorised increase of 500 became 2,500.
+   *
+   * Bounded downstream by the ceiling and by the human, which is why this is an overpay within
+   * limits rather than an unbounded loss. It is still a debt nobody agreed to.
+   */
+  const seen = new Set<string>();
 
   for (const action of actions) {
     const name = asString(dig(action.data, "name")) ?? "unnamed";
@@ -710,6 +726,30 @@ function assertActionsAreSigned(
         "ACTION_SIGNATURE_INVALID",
         `action ${action.index} (${name}) on invoice ${id} carries a signature that recovers to no address; ` +
           "the bytes have been altered or the signature is not over this action",
+      );
+    }
+
+    if (seen.has(value.toLowerCase())) {
+      throw new RequestError(
+        "ACTION_REPLAYED",
+        `action ${action.index} (${name}) on invoice ${id} carries a signature that already appears ` +
+          "earlier on this channel. A signature authorises one action; serving it twice is two " +
+          "actions on one authorisation.",
+      );
+    }
+    seen.add(value.toLowerCase());
+
+    // And it has to be about THIS invoice.
+    //
+    // Request's actions name the request they act on. Nothing compared that to the channel being
+    // read, so an increase legitimately signed by a payer on THEIR OWN invoice could be lifted
+    // onto somebody else's and applied there -- a real signature, a real party, the wrong debt.
+    const about = asString(dig(action.data, "parameters", "requestId"));
+    if (about !== undefined && about.toLowerCase() !== id.toLowerCase()) {
+      throw new RequestError(
+        "ACTION_FOREIGN",
+        `action ${action.index} (${name}) served on invoice ${id} says it acts on ${about}. A ` +
+          "signature over another invoice's action is not authorisation for this one.",
       );
     }
 

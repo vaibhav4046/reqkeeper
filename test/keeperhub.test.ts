@@ -138,10 +138,11 @@ describe("what each HTTP status does to a dispatch", () => {
     globalThis.fetch = realFetch;
   });
 
-  function platformAnswers(status: number, body: unknown) {
+  function platformAnswers(status: number, body: unknown, headers: Record<string, string> = {}) {
     globalThis.fetch = (async () => ({
       status,
       ok: status >= 200 && status < 300,
+      headers: { get: (k: string) => headers[k.toLowerCase()] ?? null },
       text: async () => JSON.stringify(body),
       json: async () => body,
     })) as unknown as typeof fetch;
@@ -150,14 +151,15 @@ describe("what each HTTP status does to a dispatch", () => {
   const p = new KeeperHubProvider({ apiKey: "kh_test", chainId: 11155111, rpcUrl: "http://127.0.0.1:1" });
   const send = () => p.execute({ to: PROXY, data: PAY_CALLDATA, value: "0" }, "key-abc");
 
-  async function dispositionOf(status: number, body: unknown) {
-    platformAnswers(status, body);
+  async function dispositionOf(status: number, body: unknown, headers: Record<string, string> = {}) {
+    platformAnswers(status, body, headers);
     try {
       const r = await send();
       return { threw: false as const, result: r };
     } catch (e) {
       const err = e as { code?: string; retryable?: boolean };
-      return { threw: true as const, code: err.code, retryable: err.retryable };
+      const full = e as { code?: string; retryable?: boolean; retryAfterSeconds?: number; executionId?: string };
+      return { threw: true as const, code: err.code, retryable: err.retryable, retryAfterSeconds: full.retryAfterSeconds, executionId: full.executionId };
     }
   }
 
@@ -185,6 +187,50 @@ describe("what each HTTP status does to a dispatch", () => {
   test("429 is retryable and holds the key", async () => {
     const d = await dispositionOf(429, { error: "rate limited" });
     assert.equal(d.threw && d.code, "rate_limited");
+    assert.equal(d.threw && d.retryable, true);
+  });
+
+  test("a 429 carries the platform's own Retry-After, when it sends one", async () => {
+    // KeeperHub documents `Retry-After` as sent only on a 429. It was discarded, and the worker
+    // backed off on a local constant instead -- which is how a rate limit lasts longer than the
+    // platform asked it to, and how a caller ignores the one instruction it was given.
+    const d = await dispositionOf(429, { error: "rate limited" }, { "retry-after": "42" });
+    assert.equal(d.threw && d.code, "rate_limited");
+    assert.equal(d.threw && d.retryAfterSeconds, 42);
+  });
+
+  test("and a 429 without one is still retryable, with no invented number", async () => {
+    const d = await dispositionOf(429, { error: "rate limited" });
+    assert.equal(d.threw && d.retryable, true);
+    assert.equal(d.threw && d.retryAfterSeconds, undefined, "a backoff nobody stated must not be guessed at");
+  });
+
+  test("a 409 hands back the execution KeeperHub says the key already started", async () => {
+    // The platform's own pointer, documented and read nowhere: on a 409 with a non-null
+    // `originalExecutionId`, that is the id of the work this key already began -- which is the
+    // one case where the execution that may have moved the money is named for you rather than
+    // having to be found on chain.
+    const d = await dispositionOf(409, {
+      code: "idempotency_conflict",
+      error: "different body for this key",
+      originalExecutionId: "exec_9f21",
+    });
+    assert.equal(d.threw && d.code, "idempotency_conflict");
+    assert.equal(d.threw && d.executionId, "exec_9f21");
+  });
+
+  test("a 409 that names no execution carries none, rather than an empty string", async () => {
+    const d = await dispositionOf(409, { code: "idempotency_conflict", error: "no pointer here" });
+    assert.equal(d.threw && d.executionId, undefined);
+  });
+
+  test("a 409 that says NEITHER thing is retryable, not a permanent integrity incident", async () => {
+    // Three states, two returns. An empty body, an edge's HTML error page, or a shape KeeperHub
+    // has not documented used to fall into `conflict` -- which settle writes as EVIDENCE_CONFLICT,
+    // not replannable, enqueuing nothing. A silent reply became a permanent wedge because it was
+    // silent, not because it said anything.
+    const d = await dispositionOf(409, {});
+    assert.equal(d.threw && d.code, "idempotency_unlabelled");
     assert.equal(d.threw && d.retryable, true);
   });
 
