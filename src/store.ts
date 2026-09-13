@@ -649,12 +649,18 @@ export class Store {
         .prepare("UPDATE obligations SET preflight_block = ? WHERE obligation_id = ?")
         .run(preflightBlock ?? null, obligationId);
       this.#setStateInTx(obligationId, "PAYMENT_PREFLIGHT", now);
+      // The dedupe key carries `now` as well as the plan hash. Keyed on the plan hash alone, a
+      // SECOND preflight of the same plan -- which is what a retry after a failed dry run is --
+      // collided with the first job's key and `INSERT OR IGNORE` silently dropped it. The
+      // obligation then sat in PAYMENT_PREFLIGHT with nothing queued to ever look at the chain,
+      // and nothing to release it: wedged permanently at zero sends. The first job is long since
+      // done; what has to be deduped is two observations of the SAME attempt, not two attempts.
       this.#db
         .prepare(
           `INSERT OR IGNORE INTO jobs (kind, dedupe_key, obligation_id, attempt_id, due_at, created_at)
            VALUES (?,?,?,?,?,?)`,
         )
-        .run("OBSERVE_PREFLIGHT", `preflight:${planHash}`, obligationId, null, now + PREFLIGHT_OBSERVE_DELAY_MS, now);
+        .run("OBSERVE_PREFLIGHT", `preflight:${planHash}:${now}`, obligationId, null, now + PREFLIGHT_OBSERVE_DELAY_MS, now);
     });
   }
 
@@ -666,9 +672,13 @@ export class Store {
    * point: on an uninterrupted run the outbox does not accumulate work nobody needs.
    */
   endPreflight(planHash: string): void {
+    // Matched on the plan-hash PREFIX, because the key now also carries the timestamp of the
+    // preflight it belongs to -- two preflights of the same plan are two attempts and each needs
+    // its own observation. Closing by prefix retires every observation for this plan, which is
+    // what "the dry run answered, stop looking" means.
     this.#db
-      .prepare("UPDATE jobs SET status = 'done', lease_expires_at = 0 WHERE dedupe_key = ? AND status = 'pending'")
-      .run(`preflight:${planHash}`);
+      .prepare("UPDATE jobs SET status = 'done', lease_expires_at = 0 WHERE dedupe_key LIKE ? AND status = 'pending'")
+      .run(`preflight:${planHash}%`);
   }
 
   /**
@@ -959,8 +969,8 @@ export class Store {
       // The attempt supersedes the preflight observation: from here the dispatch job is the
       // thing that comes looking. Same transaction, so the hand-off cannot be interrupted.
       this.#db
-        .prepare("UPDATE jobs SET status = 'done', lease_expires_at = 0 WHERE dedupe_key = ? AND status = 'pending'")
-        .run(`preflight:${a.planHash}`);
+        .prepare("UPDATE jobs SET status = 'done', lease_expires_at = 0 WHERE dedupe_key LIKE ? AND status = 'pending'")
+        .run(`preflight:${a.planHash}%`);
 
       return { attemptId, reused: false };
     });
