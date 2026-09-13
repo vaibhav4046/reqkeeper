@@ -15,6 +15,8 @@ export declare const FAU = "0x370DE27fdb7D1Ff1e1BaA7D11c5820a324Cf623C";
 export declare const PAY_SIGNATURE = "transferFromWithReferenceAndFee(address,address,uint256,bytes,uint256,address)";
 /** What a Request invoice tells us. Every field is read from the source, never inferred. */
 export interface InvoiceFacts {
+    /** The payment address is not the party of record. Carried to the approval sentence. */
+    readonly payeeDiffersFromRecord?: boolean;
     readonly requestId: string;
     readonly paymentReference: string;
     readonly payee: string;

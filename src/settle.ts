@@ -234,6 +234,11 @@ export function restate(
     // rules, so an increase really was signed by the payer -- but "signed by the right party" is
     // not "expected by the person about to approve it". So it is named rather than folded into
     // the number.
+    (facts.payeeDiffersFromRecord
+      ? ` NOTE: this pays ${facts.payee}, which is NOT the party of record on the invoice.` +
+        " Request allows that and this system does not refuse it, but the address receiving the" +
+        " money is not the one the invoice names as the payee. Check it is the one you mean."
+      : "") +
     (facts.amountChangedBy
       ? ` NOTE: this invoice was raised at ${toHuman(BigInt(facts.amountChangedBy.fromBaseUnits), d)}` +
         ` ${policy.token.symbol} and changed by ${facts.amountChangedBy.actions} later signed action(s) on` +

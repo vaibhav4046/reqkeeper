@@ -452,6 +452,11 @@ interface McpRow {
   physicalSends?: number;
 }
 const mcp = readJson<{ rows?: McpRow[] }>("docs/evidence/mcp-settlements.json");
+/** What the artifact claims, and which references have to be corroborated before it is recorded. */
+let mcpClaim: { viaMcp: number; settledOnce: number; references: string[] } | undefined;
+/** Per-reference verdicts from the chain reads, keyed by payment reference. */
+const mcpOnChain = new Map<string, Status>();
+
 if (!mcp?.rows?.length) {
   record("keeperhub.mcp", "value moved through KeeperHub's MCP surface too", "BLOCKED", "docs/evidence/mcp-settlements.json is absent");
 } else {
@@ -459,12 +464,18 @@ if (!mcp?.rows?.length) {
   const viaMcp = rows.filter((r) => r.transport === "mcp");
   const withExecId = viaMcp.filter((r) => r.keeperhubExecutionId);
   const settledOnce = viaMcp.filter((r) => r.finalState === "SETTLED" && r.physicalSends === 1);
-  record(
-    "keeperhub.mcp",
-    "value moved through KeeperHub's MCP surface, not only REST",
-    viaMcp.length >= 3 && settledOnce.length === viaMcp.length ? "ok" : "FAIL",
-    `${viaMcp.length} settlement(s) via mcp, ${settledOnce.length} settled at one send each`,
-  );
+  // Deferred, because this claim counts ROWS and rows are written by this repository.
+  //
+  // A review added a fourth row with a transaction hash that exists nowhere on chain. The per-row
+  // check in section 5 correctly went BLOCKED and the run exited 1 -- and this line still said
+  // `ok` with the count inflated to four, because it read the artifact and nothing else. An
+  // aggregate that is not gated on the evidence under it is a headline a forged row can write.
+  // It is recorded after those reads, from their verdicts.
+  mcpClaim = {
+    viaMcp: viaMcp.length,
+    settledOnce: settledOnce.length,
+    references: viaMcp.map((r) => r.paymentReference).filter((x): x is string => typeof x === "string"),
+  };
   record(
     "keeperhub.mcp.execution-ids",
     "each carries the KeeperHub execution id that produced it",
@@ -888,6 +899,7 @@ const verdicts = await corroborate([
 for (const r of mcpToCheck) {
   const v = verdicts.get(`mcp:${r.paymentReference}`);
   if (v) record(`keeperhub.mcp.onchain.${r.paymentReference}`, `the MCP settlement for ${r.paymentReference} is on chain`, v.status, v.detail);
+  if (v && r.paymentReference) mcpOnChain.set(r.paymentReference, v.status);
 }
 
 if (raceRef && raceTx) {
@@ -1150,6 +1162,23 @@ if (payeeSet.size === 0) {
         `declared in the file they name, and ${counted - named} name a line that is still inside it. A symbol ` +
         `citation cannot drift — inserting code above it moves nothing — which is why the line-numbered form was ` +
         `converted after a reviewer found three citations pointing at unrelated code.`,
+  );
+}
+
+// ---- the aggregate KeeperHub claim, gated on the per-row chain reads -------------------------
+//
+// See the note where `mcpClaim` is built: counting rows an artifact contains is not evidence that
+// value moved, and a forged row proved it. Every row this claim counts must have been found on
+// chain by the reads above.
+if (typeof mcpClaim !== "undefined") {
+  const corroborated = mcpClaim.references.filter((ref: string) => mcpOnChain.get(ref) === "ok").length;
+  const enough = mcpClaim.viaMcp >= 3 && mcpClaim.settledOnce === mcpClaim.viaMcp;
+  record(
+    "keeperhub.mcp",
+    "value moved through KeeperHub's MCP surface, not only REST",
+    enough && corroborated === mcpClaim.viaMcp ? "ok" : enough ? "BLOCKED" : "FAIL",
+    `${mcpClaim.viaMcp} settlement(s) via mcp, ${mcpClaim.settledOnce} settled at one send each, ` +
+      `${corroborated} of ${mcpClaim.viaMcp} found on chain by the per-row reads above`,
   );
 }
 

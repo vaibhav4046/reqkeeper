@@ -758,12 +758,42 @@ export async function handleRequest(
           result: { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }] },
         };
       } catch (e) {
-        // Tool failures are reported in-band as isError, per MCP, so the agent can read them.
+        // Tool failures are reported in-band as isError, per MCP, so the agent can read them --
+        // but as the same SHAPE every other answer has, not as a sentence.
+        //
+        // This returned `refused: ${message}`, which discarded the refusal code, the guidance and
+        // `providerWriteIssued`. An agent parsing every other reply as JSON got a string here,
+        // and the one field that says whether money may have moved went with it. It is also the
+        // channel an unexpected store error travels, so the flattening applied hardest to the
+        // answers nobody anticipated.
+        const code = (e as { code?: string }).code;
+        const refusal = typeof code === "string" && /^[A-Z_]+$/.test(code) ? code : "UNEXPECTED_ERROR";
         return {
           jsonrpc: "2.0",
           id,
           result: {
-            content: [{ type: "text", text: `refused: ${(e as Error).message}` }],
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify(
+                  {
+                    refusal,
+                    detail: (e as Error).message,
+                    // Nothing here issued a provider write: this path is reached before a
+                    // dispatch, or by an error thrown after one has already been reported
+                    // through the normal reply. Stated rather than omitted, because an absent
+                    // field is what an agent reads as false anyway.
+                    providerWriteIssued: false,
+                    agentGuidance:
+                      TERMINAL_FOR_AGENTS[refusal] ??
+                      "This is not a refusal this surface anticipated. Do not retry blindly: read " +
+                        "the detail, and hand it to a human if it names anything about a payment.",
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
             isError: true,
           },
         };

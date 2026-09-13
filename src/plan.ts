@@ -21,6 +21,8 @@ export const PAY_SIGNATURE =
 
 /** What a Request invoice tells us. Every field is read from the source, never inferred. */
 export interface InvoiceFacts {
+  /** The payment address is not the party of record. Carried to the approval sentence. */
+  readonly payeeDiffersFromRecord?: boolean;
   readonly requestId: string;
   readonly paymentReference: string;
   readonly payee: string;
@@ -124,6 +126,7 @@ export function buildSourceFacts(f: InvoiceFacts): SourceFacts {
     feeBaseUnits: f.feeAmount,
     feeRecipient: f.feeAddress.toLowerCase(),
     hasBeenPaid: f.hasBeenPaid ?? false,
+    ...(f.payeeDiffersFromRecord ? { payeeDiffersFromRecord: true } : {}),
     // Into the facts, therefore into the facts HASH, therefore into the plan hash: an amount that
     // was changed after the invoice was raised produces a different plan from one that was not,
     // so a human's approval of the quiet version cannot authorise the changed one.

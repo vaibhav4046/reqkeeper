@@ -73,6 +73,15 @@ export interface SourceFacts {
   readonly feeRecipient: string;
   readonly hasBeenPaid: boolean;
   /**
+   * The money goes somewhere other than the party of record on the invoice.
+   *
+   * Legitimate in Request, so never a refusal -- but the person approving is being asked to send
+   * funds to an address that is not the party the invoice names, and that is exactly the thing
+   * they would want to be told. `src/request.ts` promised "a human should look" and nothing
+   * looked; this is what carries it to them.
+   */
+  readonly payeeDiffersFromRecord?: boolean;
+  /**
    * How many later channel actions changed the amount the create stated, and by how much.
    *
    * Request channels are append-only and a creditor can increase or reduce the expected amount

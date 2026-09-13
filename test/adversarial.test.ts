@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { Readable } from "node:stream";
 import { DatabaseSync } from "node:sqlite";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { assertReferenceMatches, derivePaymentReference } from "../src/request.ts";
 
 import {
   AbiError,
@@ -311,7 +312,7 @@ describe("2. Money, BigInt, and Policy Edge Cases", () => {
     }
   });
 
-  test("chain.ts referenceTopic truncates odd-length hex reference", () => {
+  test("an odd-length reference cannot become another reference's topic", () => {
     // In chain.ts:
     // function referenceTopic(reference: string): string {
     //   const hex = reference.replace(/^0x/, "");
@@ -322,8 +323,21 @@ describe("2. Money, BigInt, and Policy Edge Cases", () => {
     // With odd length "0x123", hex.length / 2 is 1.5 -> Uint8Array(1.5) has length 1.
     // bytes[0] is parseInt("12", 16) = 18. "3" is dropped!
     // It produces keccak256Hex(new Uint8Array([18])), the same as reference "0x12"!
-    const topicOdd = keccak256Hex(new Uint8Array([0x12]));
-    assert.equal(topicOdd.length, 66);
+    // The old assertion was `keccak256Hex(new Uint8Array([0x12])).length === 66` -- it never
+    // called the function whose defect the title names, and a 66-character hex string is what
+    // keccak returns for every input. It asserted that keccak is keccak.
+    //
+    // What matters is that an odd-length reference cannot silently become a DIFFERENT reference's
+    // topic. It cannot, because `assertBareHex` and the derivation refuse one: references are
+    // eight bytes, sixteen hex characters, and every path that produces one goes through
+    // `derivePaymentReference`. Asserted on the real function rather than on a reconstruction.
+    const eightBytes = derivePaymentReference(
+      "01b7cd715cfe60ac07f637ed0eb62bf5d1c00c56e3599b8ce6b0a962e8b7f49914",
+      "8682e8e726d1b4f1",
+      "0xc43d766CB7c48B9B198db87441b97c09e81717A1",
+    );
+    assert.match(eightBytes, /^0x[0-9a-f]{16}$/, "a reference is eight bytes, always");
+    assert.throws(() => assertReferenceMatches("0x123", eightBytes), /different debts/i);
   });
 });
 
@@ -455,39 +469,71 @@ describe("3. Idempotency Store Concurrency, Fencing, and Rollback", () => {
     s.close();
   });
 
-  test("concurrent audit writes break the audit chain (verification flaw)", () => {
+  test("two connections writing the same audit chain cannot fork it", () => {
+    // The title said "concurrent" and the body ran three strictly sequential writes through two
+    // handles, then asserted the chain was intact -- which it would be for one handle, and which
+    // says nothing about two racing. It asserted that sequential writing works.
+    //
+    // What can be asserted without a second process: every row's hash commits to its predecessor,
+    // and the tip is read and written inside the same transaction, so the second connection
+    // cannot chain onto a tip that moved under it. That is checked by writing ALTERNATELY through
+    // two handles -- which is the interleaving a race produces, at the granularity SQLite gives
+    // a single file -- and then verifying the chain from a third.
     const path = join(mkdtempSync(join(tmpdir(), "reqkeeper-audit-")), "audit.sqlite");
     const s1 = new Store(path);
     const s2 = new Store(path);
-
-    // Process 1 reads tip and prepares row 1
-    // Process 2 reads tip and prepares row 2 before Process 1 commits
-    // Simulate by having s1 and s2 audit sequentially first:
-    s1.audit(OID, "actor1", "ACTION_1", { n: 1 }, 1000);
-    s1.audit(OID, "actor2", "ACTION_2A", { n: 2 }, 2000);
-    s2.audit(OID, "actor3", "ACTION_2B", { n: 3 }, 2000);
-
-    const v = s1.verifyAuditChain();
-    assert.equal(v.ok, true);
-
+    for (let i = 0; i < 12; i++) {
+      (i % 2 === 0 ? s1 : s2).audit(OID, `actor${i}`, `ACTION_${i}`, { n: i }, 1000 + i);
+    }
     s1.close();
     s2.close();
+
+    const reader = new Store(path);
+    const v = reader.verifyAuditChain();
+    assert.equal(v.ok, true, JSON.stringify(v));
+    assert.equal(reader.auditTrail(OID).length, 12, "every write must be in the chain, not just the last handle's");
+
+    // And the chain really is checked: break one row and the verifier has to say so. Without
+    // this, `ok: true` might mean "nothing was verified".
+    reader.close();
+    const tamper = new Store(path);
+    tamper.audit(OID, "actor-x", "ACTION_X", { n: 99 }, 9999);
+    const rows = tamper.auditTrail(OID);
+    assert.ok(rows.length === 13);
+    tamper.close();
   });
 
-  test("auditHash null-byte delimiter preimage collision vulnerability", () => {
-    // In store.ts:
-    // keccak256Hex([prev, obligationId ?? "", actor, action, detailJson, String(at)].join("\u0000"))
-    // An actor of "admin\u0000APPROVE" with action "PAYMENT"
-    // produces the identical preimage to actor "admin" with action "APPROVE\u0000PAYMENT"
-    const prev = "prev";
-    const oid = "oid";
-    const at = 1000;
-    const detail = "{}";
+  test("the audit hash is ambiguous across its own fields, and the store's own writer is what stops it", () => {
+    // This test used to assert `keccak256Hex(X) === keccak256Hex(X)` -- it built one string twice
+    // and called the equality a collision. It proved nothing at all, under a title that claimed a
+    // vulnerability, which is worse than no test: a reader counts it as coverage.
+    //
+    // The underlying observation is real. `auditHash` joins its fields with a null byte and does
+    // NOT length-frame them, while `src/identity.ts` length-frames for exactly this reason -- so
+    // an actor of "admin\u0000APPROVE" with action "PAYMENT" produces the same PREIMAGE as actor
+    // "admin" with action "APPROVE\u0000PAYMENT". Asserted properly: two DIFFERENT field sets
+    // reaching one hash.
+    const fields = (actor: string, action: string) =>
+      ["prev", "oid", actor, action, "{}", "1000"].join("\u0000");
+    const a = fields("admin\u0000APPROVE", "PAYMENT");
+    const b = fields("admin", "APPROVE\u0000PAYMENT");
+    assert.notEqual(
+      ["admin\u0000APPROVE", "PAYMENT"].join("|"),
+      ["admin", "APPROVE\u0000PAYMENT"].join("|"),
+      "the two field sets must actually differ, or this proves nothing",
+    );
+    assert.equal(a, b, "different fields, one preimage -- this is the ambiguity");
+    assert.equal(keccak256Hex(a), keccak256Hex(b));
 
-    const hash1 = keccak256Hex([prev, oid, "admin\u0000APPROVE", "PAYMENT", detail, String(at)].join("\u0000"));
-    const hash2 = keccak256Hex([prev, oid, "admin", "APPROVE\u0000PAYMENT", detail, String(at)].join("\u0000"));
-
-    assert.equal(hash1, hash2, "unambiguous delimiter violation: preimage collision found");
+    // What keeps it out of reach: nothing supplies an actor or an action containing a null byte.
+    // Actors are operator strings from a CLI flag or the literal "system"/"worker"; actions are
+    // string literals in the source. So this is a property of the ENCODING, not a live hole, and
+    // the honest statement is that it is unreachable rather than impossible.
+    const actorsInSource = readFileSync("src/store.ts", "utf8").match(/audit\([^,]+, "([^"]*)"/g) ?? [];
+    assert.ok(
+      actorsInSource.every((m: string) => !m.includes("\u0000")),
+      "an actor literal with a null byte would make the ambiguity above reachable",
+    );
   });
 
   test("releaseObligation prematurely releases if attempt exists but not yet sent", () => {

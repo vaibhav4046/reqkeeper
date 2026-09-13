@@ -93,6 +93,14 @@ export interface InvoiceFactsFromRequest {
    * cannot match. If the two disagree, a human should look before anything is settled.
    */
   readonly payeeOfRecord: string;
+  /**
+   * The money goes somewhere other than the party of record.
+   *
+   * Legitimate in Request -- an invoice may name a payment address that is not the payee -- and
+   * so never a refusal here. It is carried so the human approving can be told, which is what the
+   * comment above this field promised and nothing delivered.
+   */
+  readonly payeeDiffersFromRecord?: boolean;
   readonly invoiceBaseUnits: string;
   readonly feeBaseUnits: string;
   readonly feeRecipient: string;
@@ -436,6 +444,14 @@ export async function fetchInvoice(
   const tokenAddress = assertAddress("currency.value", asString(dig(p, "currency", "value")));
   const payee = assertAddress("paymentAddress", asString(dig(ep, "paymentAddress")));
   const payeeOfRecord = assertAddress("payee.value", asString(dig(p, "payee", "value")));
+  // Recorded and, when they differ, CARRIED -- not compared and refused.
+  //
+  // Request lets an invoice be paid to an address that is not the party of record, and that is a
+  // legitimate arrangement, so refusing here would refuse real invoices. But the docblock on this
+  // type promised "if the two disagree, a human should look before anything is settled", and
+  // nothing read the field: the control existed only as a sentence. It reaches the sentence a
+  // human approves now, which is where "a human should look" actually happens.
+  const payeeDiffersFromRecord = payee.toLowerCase() !== payeeOfRecord.toLowerCase();
   const feeRecipient = assertAddress("feeAddress", asString(dig(ep, "feeAddress")));
   const salt = assertBareHex("salt", asString(dig(ep, "salt")));
   // The amount as the channel stands now: the create's expectedAmount with every later
@@ -486,6 +502,7 @@ export async function fetchInvoice(
     tokenAddress,
     payee,
     payeeOfRecord,
+    ...(payeeDiffersFromRecord ? { payeeDiffersFromRecord: true } : {}),
     invoiceBaseUnits,
     feeBaseUnits,
     feeRecipient,
@@ -518,6 +535,7 @@ export function toInvoiceFacts(
   maxTotalDebitBaseUnits: string;
   tokenAddress: string;
   anchorBlock?: number;
+  payeeDiffersFromRecord?: boolean;
 } {
   return {
     requestId: f.requestId,
@@ -533,6 +551,9 @@ export function toInvoiceFacts(
     // while Request has not confirmed the create, and omitted rather than defaulted to zero: a
     // zero floor would claim a scan to genesis that never happened.
     ...(f.anchor ? { anchorBlock: f.anchor.blockNumber } : {}),
+    // The party of record and the address being paid are not the same. Request allows it; the
+    // human approving should still be told, and this is the only path that can tell them.
+    ...(f.payeeDiffersFromRecord ? { payeeDiffersFromRecord: true } : {}),
   };
 }
 
