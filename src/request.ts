@@ -469,7 +469,33 @@ export async function fetchInvoice(
   // nothing read the field: the control existed only as a sentence. It reaches the sentence a
   // human approves now, which is where "a human should look" actually happens.
   const payeeDiffersFromRecord = payee.toLowerCase() !== payeeOfRecord.toLowerCase();
-  const feeRecipient = assertAddress("feeAddress", asString(dig(ep, "feeAddress")));
+  /**
+   * An invoice with no fee is an invoice, not a malformed one.
+   *
+   * `feeAddress` and `feeAmount` are OPTIONAL on Request's fee-proxy extension: its
+   * `fee-reference-based.ts#createCreationAction` validates each only if present, and enforces one
+   * rule about the pair -- neither, or both. So the ordinary invoice created through Request's own
+   * app with no fee carries neither field, and this reader refused every one of them as
+   * malformed. Every invoice this deployment made carries an explicit `"0"` and the zero address,
+   * which is why the gap survived: the fixture and the product agreed with each other.
+   *
+   * Absent means no fee, which is what the ERC20FeeProxy call expresses as amount 0 to the zero
+   * address -- the exact calldata this system already builds for its own zero-fee invoices. Half a
+   * pair is refused, because Request refuses to create one and a half-stated fee is not a fee this
+   * reader can guess at.
+   */
+  const statedFeeAddress = asString(dig(ep, "feeAddress"));
+  const statedFeeAmount = asString(dig(ep, "feeAmount"));
+  if ((statedFeeAddress === undefined) !== (statedFeeAmount === undefined)) {
+    throw new RequestError(
+      "MALFORMED_TRANSACTION",
+      `invoice ${id} states ${statedFeeAddress === undefined ? "a feeAmount with no feeAddress" : "a feeAddress with no feeAmount"}. ` +
+        "Request refuses that pairing when the invoice is created (fee-reference-based.ts: " +
+        '"feeAmount requires feeAddress"), so half a fee is not something this reader will complete.',
+    );
+  }
+  const feeRecipient =
+    statedFeeAddress === undefined ? `0x${"0".repeat(40)}` : assertAddress("feeAddress", statedFeeAddress);
   const salt = assertBareHex("salt", asString(dig(ep, "salt")));
   // The amount as the channel stands now: the create's expectedAmount with every later
   // increase and reduction applied, in order. Request states deltas, not new totals.
@@ -511,7 +537,7 @@ export async function fetchInvoice(
   // was raised belongs on that screen.
   const amountChangedBy =
     changingActions > 0 ? { actions: changingActions, fromBaseUnits: raisedAt.toString() } : undefined;
-  const feeBaseUnits = assertBaseUnits("feeAmount", asString(dig(ep, "feeAmount")));
+  const feeBaseUnits = statedFeeAmount === undefined ? "0" : assertBaseUnits("feeAmount", statedFeeAmount);
 
   return {
     requestId: id,
@@ -958,11 +984,46 @@ function failureFor(
   return null;
 }
 
+/**
+ * `a <= b`, over Request's three-part action versions. Missing parts count as zero.
+ *
+ * Written out rather than compared as strings because "10.0.0" sorts below "2.0.0" as text, and a
+ * version comparison that is wrong in that direction would take the pre-2.0.0 hashing path for
+ * every future version of the protocol.
+ */
+function versionAtMost(version: string | undefined, ceiling: string): boolean {
+  const parse = (v: string) => v.split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const [a, b] = [parse(version ?? "0.0.0"), parse(ceiling)];
+  for (let i = 0; i < 3; i++) {
+    const [x, y] = [a[i] ?? 0, b[i] ?? 0];
+    if (x !== y) return x < y;
+  }
+  return true;
+}
+
 function assertChannelIdBindsCreate(id: string, signedCreate: unknown): void {
   if (signedCreate === undefined) {
     throw new RequestError("MALFORMED_TRANSACTION", `channel ${id} served a create this reader could not re-read`);
   }
-  const derived = `01${keccak256Hex(JSON.stringify(normalizeForHash(signedCreate)).toLowerCase()).replace(/^0x/, "")}`;
+  /**
+   * What Request hashes, which is not always the whole envelope.
+   *
+   * `request-logic/src/action.ts#getActionHash` says it in one line: "Before the version 2.0.0,
+   * the hash was computed without the signature". This reader always hashed the envelope, so every
+   * invoice whose create states 2.0.0 or older -- real invoices, still on the network, whose ids
+   * are perfectly correct -- came back REQUEST_ID_MISMATCH: the refusal that means "the invoice has
+   * been substituted somewhere between Request and here". A reader that calls old invoices forged
+   * is wrong in the way that costs a creditor their money.
+   *
+   * The signature is authenticated separately either way, against the parties the create names, so
+   * taking Request's older shape here does not take a weaker check with it.
+   */
+  const version = asString(dig(signedCreate, "data", "version"));
+  // An ABSENT version is not an old one. Request stamps every action it makes, so a create with no
+  // version is a shape nobody produced -- and reading it as "older than 2.0.0" would hand an
+  // attacker the weaker binding by deleting a field.
+  const hashed = version !== undefined && versionAtMost(version, "2.0.0") ? dig(signedCreate, "data") : signedCreate;
+  const derived = `01${keccak256Hex(JSON.stringify(normalizeForHash(hashed)).toLowerCase()).replace(/^0x/, "")}`;
   if (derived !== id) {
     throw new RequestError(
       "REQUEST_ID_MISMATCH",

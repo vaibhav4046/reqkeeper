@@ -272,3 +272,112 @@ describe("the whole channel decides what is owed", () => {
     assert.equal((await read(id)).invoiceBaseUnits, ONE);
   });
 });
+
+describe("an invoice with no fee is an invoice", () => {
+  /**
+   * `feeAddress` and `feeAmount` are optional on Request's fee-proxy extension. Its
+   * `fee-reference-based.ts#createCreationAction` validates each only when present and enforces
+   * exactly one rule about the pair -- neither, or both -- so an invoice raised through Request's
+   * own app with no fee carries neither field. This reader called every one of them malformed.
+   *
+   * The gap survived because every invoice this deployment created states `"0"` and the zero
+   * address explicitly: the fixtures and the product agreed with each other, and neither had ever
+   * met an invoice made by anybody else.
+   */
+  function createWithFee(fee: Record<string, unknown>): Action {
+    const params = JSON.parse(JSON.stringify(CREATE.parameters)) as Record<string, unknown>;
+    const ext = (params.extensionsData as Array<Record<string, unknown>>)[0] as Record<string, unknown>;
+    const extParams = ext.parameters as Record<string, unknown>;
+    delete extParams.feeAmount;
+    delete extParams.feeAddress;
+    Object.assign(extParams, fee);
+    return { name: "create", parameters: params };
+  }
+
+  test("neither field stated means no fee, to nobody", async () => {
+    const invoice = await read(serve([createWithFee({})]));
+    assert.equal(invoice.feeBaseUnits, "0");
+    assert.equal(invoice.feeRecipient, `0x${"0".repeat(40)}`);
+    // And the reference still derives from the payment address, which is what the fee proxy pays.
+    assert.equal(invoice.invoiceBaseUnits, ONE);
+  });
+
+  test("a fee stated with no recipient is refused, because Request refuses to create one", async () => {
+    assert.equal(
+      await refusalCode(() => read(serve([createWithFee({ feeAmount: "500" })]))),
+      "MALFORMED_TRANSACTION",
+    );
+  });
+
+  test("and a recipient with no amount is refused the same way", async () => {
+    assert.equal(
+      await refusalCode(() => read(serve([createWithFee({ feeAddress: `0x${"11".repeat(20)}` })]))),
+      "MALFORMED_TRANSACTION",
+    );
+  });
+
+  test("a stated fee is still read exactly as stated", async () => {
+    // The control: the common path must not have been turned into a default.
+    const invoice = await read(serve([createWithFee({ feeAmount: "500", feeAddress: `0x${"11".repeat(20)}` })]));
+    assert.equal(invoice.feeBaseUnits, "500");
+    assert.equal(invoice.feeRecipient.toLowerCase(), `0x${"11".repeat(20)}`);
+  });
+});
+
+describe("an invoice older than this reader is still an invoice", () => {
+  /**
+   * `request-logic/src/action.ts#getActionHash`, in one line of its own: "Before the version
+   * 2.0.0, the hash was computed without the signature". So a create stating 2.0.0 or older hashes
+   * to an id derived from its `data` alone, and this reader -- which always hashed the whole
+   * envelope -- answered REQUEST_ID_MISMATCH for every one of them. That refusal means "the
+   * invoice has been substituted somewhere between Request and here", said about invoices whose
+   * ids are perfectly correct and which are still on the network.
+   *
+   * The signature is authenticated separately on both paths, so matching Request's older shape
+   * does not take a weaker check with it.
+   */
+  function idForOldShape(signedCreate: { data: unknown }): string {
+    return channelIdFor(signedCreate.data);
+  }
+
+  function oldCreate(version: string): Action {
+    const params = JSON.parse(JSON.stringify(CREATE.parameters)) as Record<string, unknown>;
+    return { name: "create", parameters: params, version } as Action & { version: string };
+  }
+
+  function serveUnder(id: string, signedCreate: unknown): void {
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          result: {
+            transactions: [
+              { transaction: { data: JSON.stringify(signedCreate) }, blockNumber: 11_690_000, timestamp: 1_700_000_000 },
+            ],
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )) as typeof fetch;
+    void id;
+  }
+
+  for (const version of ["2.0.0", "1.0.0"]) {
+    test(`a create stating version ${version} is read under the id its data hashes to`, async () => {
+      const signed = signAction(oldCreate(version), PAYEE_KEY);
+      const id = idForOldShape(signed);
+      serveUnder(id, signed);
+      assert.equal((await read(id)).invoiceBaseUnits, ONE);
+    });
+  }
+
+  test("and a current create still hashes over the whole signed envelope", async () => {
+    // The control. Taking the old shape for everything would drop the signature out of the id
+    // binding on every modern invoice.
+    const signed = signAction(oldCreate("2.0.3"), PAYEE_KEY);
+    serveUnder(channelIdFor(signed), signed);
+    assert.equal((await read(channelIdFor(signed))).invoiceBaseUnits, ONE);
+
+    // ... and the data-only id is NOT accepted for it.
+    serveUnder(idForOldShape(signed), signed);
+    assert.equal(await refusalCode(() => read(idForOldShape(signed))), "REQUEST_ID_MISMATCH");
+  });
+});
