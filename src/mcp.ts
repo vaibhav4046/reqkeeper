@@ -224,6 +224,18 @@ export const TERMINAL_FOR_AGENTS: Record<string, string> = {
     "The transaction reverted on chain. Nothing moved. This obligation is terminal and keeps " +
     "its payment reference, so raise a new Request invoice for the debt and settle that.",
   SIMULATE_EXECUTED: "A dry run really executed. Treat as a real send and stop.",
+  IDEMPOTENCY_CONFLICT:
+    "The provider holds a different body for this idempotency key. An integrity incident: the key " +
+    "is never rotated to get through, and a human reconciles it against the provider record.",
+  NO_HASH:
+    "The provider reported success with no transaction hash. A send may have happened: observe it " +
+    "with npm run resolve. Do not propose or send.",
+  OBLIGATION_ID_MISMATCH:
+    "The obligation id does not derive from this namespace and request id. One invoice is one " +
+    "obligation and the id is computed, never supplied; pass the derived id.",
+  REFERENCE_UNRECORDED:
+    "This obligation is stored with no payment reference, so neither duplicate defence can see it. " +
+    "Re-import it with its reference before anything is dispatched.",
 };
 
 function toInvoiceFacts(a: Record<string, unknown>): InvoiceFacts {

@@ -81,12 +81,17 @@ describe("no agent is left without an instruction where it matters", () => {
   test("every refusal code the source can emit has guidance", () => {
     // Read from the code rather than from a list somebody maintains: a refusal added with no
     // entry falls back to "report this to a human", which is safe and says nothing useful.
-    const sources = ["src/mcp.ts", "src/settle.ts", "src/policy.ts", "src/request.ts"]
+    const sources = ["src/mcp.ts", "src/settle.ts", "src/policy.ts", "src/request.ts", "src/worker.ts"]
       .map((f) => readFileSync(f, "utf8"))
       .join("\n");
-    const emitted = new Set(
-      [...sources.matchAll(/refusedBeforeWrite\(\s*\w+,\s*"([A-Z_]+)"/g)].map((m) => m[1] as string),
-    );
+    // Two spellings, because the first alone let four codes through: the pre-write helper, and
+    // the `refusal:` field of an outcome returned directly. IDEMPOTENCY_CONFLICT, NO_HASH,
+    // OBLIGATION_ID_MISMATCH and REFERENCE_UNRECORDED were all returned that way, none had an
+    // entry, and this test was green the whole time.
+    const emitted = new Set([
+      ...[...sources.matchAll(/refusedBeforeWrite\(\s*\w+,\s*"([A-Z_]+)"/g)].map((m) => m[1] as string),
+      ...[...sources.matchAll(/refusal: "([A-Z_]+)"/g)].map((m) => m[1] as string),
+    ]);
     assert.ok(emitted.size > 0, "no refusal codes found, so this test is watching nothing");
     const unguided = [...emitted].filter((c) => !TERMINAL_FOR_AGENTS[c]);
     assert.deepEqual(unguided, [], `these refusals answer an agent with the generic fallback: ${unguided.join(", ")}`);

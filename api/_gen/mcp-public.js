@@ -116,6 +116,14 @@ export const RETRY_GUIDANCE = {
     EXECUTION_OUTCOME_UNKNOWN: "A send happened and its result is unknown. Observe it.",
     CACHED_FAILURE: "The provider replays a cached failure. Rotating the key would pay twice.",
     SIMULATE_EXECUTED: "A dry run really executed. Treat as a real send and stop.",
+    IDEMPOTENCY_CONFLICT: "The provider holds a different body for this idempotency key. An integrity incident: the key " +
+        "is never rotated to get through, and a human reconciles it against the provider record.",
+    NO_HASH: "The provider reported success with no transaction hash. A send may have happened: observe it " +
+        "with npm run resolve. Do not propose or send.",
+    OBLIGATION_ID_MISMATCH: "The obligation id does not derive from this namespace and request id. One invoice is one " +
+        "obligation and the id is computed, never supplied; pass the derived id.",
+    REFERENCE_UNRECORDED: "This obligation is stored with no payment reference, so neither duplicate defence can see it. " +
+        "Re-import it with its reference before anything is dispatched.",
 };
 const PROTOCOL = [
     "0  One payment reference is one debt. A second obligation for the same reference is refused.",
