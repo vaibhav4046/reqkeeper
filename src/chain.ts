@@ -217,7 +217,7 @@ export interface PaymentSighting extends Partial<PaymentLogFields> {
    * For the dominant case, a third party's log, the invoice genuinely IS unpaid and paying it
    * once is correct. The case that deserves escalation is narrower: a log whose token and payee
    * match this invoice but whose amount or fee does not, because that is our own money moving
-   * under this reference in a shape we did not plan. `amountOrFeeConflict` below is that test,
+   * under this reference in a shape we did not plan. `conflictVerdict` below is that test,
    * and it is what the worker branches on.
    */
   readonly conflicts?: readonly string[];
@@ -326,13 +326,6 @@ export function conflictVerdict(sighting: { readonly conflictKinds?: readonly Co
   return wrongValue && !wrongCounterparty ? "OURS_AND_WRONG" : "NOT_OURS";
 }
 
-export function amountOrFeeConflict(sighting: { readonly conflictKinds?: readonly ConflictKind[] }): boolean {
-  const kinds = sighting.conflictKinds;
-  if (!kinds || kinds.length === 0) return false;
-  const wrongCounterparty = kinds.includes("token") || kinds.includes("to") || kinds.includes("emitter");
-  const wrongValue = kinds.includes("amount") || kinds.includes("fee") || kinds.includes("feeAddress");
-  return wrongValue && !wrongCounterparty;
-}
 
 /**
  * What a chain read ESTABLISHED about a payment, as three mutually exclusive answers.
@@ -653,7 +646,7 @@ async function scanForReference(
     //
     // Omitting it when there were none makes absence mean two different things — "this reader
     // looked and saw no conflicting log" and "this reader never looked" — and
-    // `amountOrFeeConflict` reads both as "no conflict", which releases. That is the exact shape
+    // a boolean reads both as "no conflict", which releases. That is the exact shape
     // that cost this project three separate duplicate-payment findings under `truncated` and
     // `confirmations`. A reader that concluded says what it saw; a reader that did not conclude
     // leaves the field off, and the callers treat that as unknown.

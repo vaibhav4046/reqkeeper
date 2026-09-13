@@ -421,16 +421,16 @@ to a relayer fleet, this needs the set of accounts, not one.
 | `POLICY_DENIED` / `LIMIT_EXCEEDED` | The invoice's total debit exceeds a ceiling. `settle:live`'s inline cap is 2 FAU; `policy.json`'s is 5 FAU; the lower of the standing and the caller's always wins. |
 | `SIMULATION_BLOCKED` / "payment would revert" | Almost always step 5: no FAU balance, or no allowance to the fee proxy. Zero sends, zero gas. |
 | `EXECUTION_OUTCOME_UNKNOWN` with "preflight did not answer" | The dry run did not come back (rate limit, timeout). A timed-out dry run can still have executed, so nothing here guesses: the reservation is held, an `OBSERVE_PREFLIGHT` job is already queued, and `npm run resolve` settles the question from the chain. Do not re-propose the obligation until it has. |
-| `ALREADY_DISPATCHED` | Correct on a second run. Step 8 of the protocol (`src/settle.ts:724`) is a compare-and-set on `first_send_at`; losing it means writing nothing and being told so. |
+| `ALREADY_DISPATCHED` | Correct on a second run. Step 8 of the protocol is a compare-and-set on `first_send_at` (`markSent` in `src/store.ts`); losing it means writing nothing and being told so. |
 | `REFERENCE_ALREADY_CLAIMED` | Another obligation already owns this payment reference. Same debt, different request id. |
 | `OBLIGATION_ID_MISMATCH` | The supplied obligation id does not derive from the namespace and request id it came with. One invoice is one obligation and the id is a function of the invoice, never an argument. |
 | `EVIDENCE_CONFLICT` with "the receipt carries no ERC20FeeProxy event" | The transaction succeeded and the payment did not. The real shape is a meta-transaction, and a forwarder that does not bubble an inner revert returns `status: 0x1` regardless. |
 | `no settlement database at .data/live.sqlite` from `npm run resolve` | Nothing has been settled from this checkout. Exit 1. |
-| `npm run gate-a` exits 2 with `0 failed` | Expected. See step 3. |
+| `npm run gate-a` exits non-zero with `0 failed` | It does not, and has not since the BLOCKED steps stopped being treated as failures. Blocked is "I could not check this", and a clean clone exits 0. See step 3. |
 | pnpm install fails with an `ssh://git@github.com` URL | You used npm. See step 2. |
 | `Cannot read properties of undefined (reading 'getAddress')` | ethers v6 got installed next to the Request packages. Pin 5.7.2. |
-| `eth_getLogs` "exceed maximum block range: 50000" | A reference scan asked for too wide a window. `src/chain.ts:245` caps ranges at 45,000 blocks; a caller bypassing `findPaymentByReference` will hit this. |
-| A receipt read returns `not_found` for a transaction Etherscan shows | Public endpoints prune receipts. `src/chain.ts:11-30` treats a null as "this endpoint does not know" and asks another before believing it. If you wrote your own reader, this is why it lied. |
+| `eth_getLogs` "exceed maximum block range: 50000" | A reference scan asked for too wide a window. `MAX_RANGE` in `src/chain.ts` caps ranges at 45,000 blocks; a caller bypassing `findPaymentByReference` will hit this. |
+| A receipt read returns `not_found` for a transaction Etherscan shows | Public endpoints prune receipts. `NULLABLE_IS_UNKNOWN` in `src/chain.ts` treats a null as "this endpoint does not know" and asks another before believing it. If you wrote your own reader, this is why it lied. |
 
 ---
 

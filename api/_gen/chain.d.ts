@@ -81,7 +81,7 @@ export interface PaymentSighting extends Partial<PaymentLogFields> {
      * For the dominant case, a third party's log, the invoice genuinely IS unpaid and paying it
      * once is correct. The case that deserves escalation is narrower: a log whose token and payee
      * match this invoice but whose amount or fee does not, because that is our own money moving
-     * under this reference in a shape we did not plan. `amountOrFeeConflict` below is that test,
+     * under this reference in a shape we did not plan. `conflictVerdict` below is that test,
      * and it is what the worker branches on.
      */
     readonly conflicts?: readonly string[];
@@ -149,9 +149,6 @@ export type ConflictVerdict = "OURS_AND_WRONG" | "NOT_OURS" | "UNKNOWN";
 export declare function conflictVerdict(sighting: {
     readonly conflictKinds?: readonly ConflictKind[];
 }): ConflictVerdict;
-export declare function amountOrFeeConflict(sighting: {
-    readonly conflictKinds?: readonly ConflictKind[];
-}): boolean;
 /**
  * What a chain read ESTABLISHED about a payment, as three mutually exclusive answers.
  *

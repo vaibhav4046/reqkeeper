@@ -18,7 +18,6 @@
 import { isTerminal, type State } from "./machine.ts";
 import type { ExecutionProvider } from "./provider.ts";
 import { belowConfirmationDepth, minConfirmations } from "./provider.ts";
-import { amountOrFeeConflict } from "./chain.ts";
 import { excludeByNonce, payerAddress, payerIsDedicated, type PayerReading } from "./exclusion.ts";
 import { conflictVerdict } from "./chain.ts";
 import type { PaymentExpectation, PaymentSighting } from "./chain.ts";

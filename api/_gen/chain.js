@@ -185,14 +185,6 @@ export function conflictVerdict(sighting) {
     const wrongValue = kinds.includes("amount") || kinds.includes("fee") || kinds.includes("feeAddress");
     return wrongValue && !wrongCounterparty ? "OURS_AND_WRONG" : "NOT_OURS";
 }
-export function amountOrFeeConflict(sighting) {
-    const kinds = sighting.conflictKinds;
-    if (!kinds || kinds.length === 0)
-        return false;
-    const wrongCounterparty = kinds.includes("token") || kinds.includes("to") || kinds.includes("emitter");
-    const wrongValue = kinds.includes("amount") || kinds.includes("fee") || kinds.includes("feeAddress");
-    return wrongValue && !wrongCounterparty;
-}
 /**
  * The single place a sighting becomes a decision.
  *
@@ -423,7 +415,7 @@ async function scanForReference(reference, rpcUrl, head, floor, expect) {
         //
         // Omitting it when there were none makes absence mean two different things — "this reader
         // looked and saw no conflicting log" and "this reader never looked" — and
-        // `amountOrFeeConflict` reads both as "no conflict", which releases. That is the exact shape
+        // a boolean reads both as "no conflict", which releases. That is the exact shape
         // that cost this project three separate duplicate-payment findings under `truncated` and
         // `confirmations`. A reader that concluded says what it saw; a reader that did not conclude
         // leaves the field off, and the callers treat that as unknown.

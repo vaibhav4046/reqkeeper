@@ -1041,6 +1041,56 @@ if (payeeSet.size === 0) {
   );
 }
 
+// ---- the citations the prose makes ----------------------------------------
+//
+// Every `src/x.ts:123` in the documentation is a claim, and claims here are checked. This one is
+// deliberately modest about what it proves: that the file exists and the line is in range. It
+// catches a citation to a deleted file or past the end of one; it does NOT catch drift, where the
+// file grew and the line now points at unrelated code.
+//
+// Drift is the failure that actually happened — a reviewer found `src/settle.ts:724` cited as a
+// compare-and-set on `first_send_at` while pointing at a quorum check, and two more like it in the
+// same table. Those were rewritten to name the SYMBOL instead of a line number, which cannot
+// drift, and that is the direction the rest should go. Saying so here rather than letting a
+// passing check imply more than it means.
+{
+  const NEWLINE = String.fromCharCode(10);
+  const docFiles = ["README.md", ...jsonFilesUnder("docs").filter(() => false)];
+  for (const dir of ["docs", "hackathon/audit"]) {
+    if (!existsSync(dir)) continue;
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isFile() && entry.name.endsWith(".md")) docFiles.push(`${dir}/${entry.name}`);
+    }
+  }
+  const pattern = /`((?:src|scripts|tools|api)\/[A-Za-z0-9_./-]+\.(?:ts|mjs|html)):(\d+)(?:-(\d+))?`/g;
+  const broken: string[] = [];
+  let counted = 0;
+  for (const doc of docFiles) {
+    if (!existsSync(doc)) continue;
+    for (const m of readFileSync(doc, "utf8").matchAll(pattern)) {
+      counted++;
+      const [, path, from, to] = m;
+      if (!existsSync(path)) {
+        broken.push(`${doc} cites ${path}, which does not exist`);
+        continue;
+      }
+      const lineCount = readFileSync(path, "utf8").split(NEWLINE).length;
+      const highest = Number(to ?? from);
+      if (highest > lineCount) broken.push(`${doc} cites ${path}:${to ?? from} but it has ${lineCount} lines`);
+    }
+  }
+  record(
+    "docs.citations",
+    "every file:line the documentation cites still exists",
+    broken.length === 0 ? "ok" : "FAIL",
+    broken.length > 0
+      ? `${broken.length} of ${counted} citation(s) do not resolve — ${broken.slice(0, 3).join(" · ")}`
+      : `${counted} citation(s) across ${docFiles.length} document(s) point at a file that exists and a line within it. ` +
+        `This does not prove the line still says what the prose claims — citations that name a symbol instead of a ` +
+        `number cannot drift, and the ones a reviewer caught drifting were rewritten that way.`,
+  );
+}
+
 // ---- report ----------------------------------------------------------------
 
 const failed = checks.filter((c) => c.status === "FAIL");
