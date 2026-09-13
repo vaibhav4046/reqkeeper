@@ -7,12 +7,14 @@ import { randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import rnPkg from "@requestnetwork/request-client.js";
 import epkPkg from "@requestnetwork/epk-signature";
+import web3SigPkg from "@requestnetwork/web3-signature";
 import detectionPkg from "@requestnetwork/payment-detection";
 import ethersPkg from "ethers";
 import { fileURLToPath } from "node:url";
 
 const { RequestNetwork, Types, Utils } = rnPkg;
 const { EthereumPrivateKeySignatureProvider } = epkPkg;
+const { Web3SignatureProvider } = web3SigPkg;
 const { Wallet, utils } = ethersPkg;
 
 const ENV = fileURLToPath(new URL("../../.env", import.meta.url));
@@ -34,12 +36,39 @@ if (!pk) {
 const burner = new Wallet(pk);
 console.log(`burner payee     : ${burner.address}`);
 
+
+/**
+ * Which of Request's two ECDSA methods the invoice is signed with.
+ *
+ * `ecdsa` signs the digest with the raw key. `ecdsa-ethereum` is what a browser wallet produces:
+ * `personal_sign` over the normalised text. Every invoice this deployment made used the first, so
+ * the reader's second branch was pinned only to Request's source; one live invoice signed the
+ * second way is what turns that into evidence. `INVOICE_SIGNATURE_METHOD=ecdsa-ethereum` selects it.
+ * The signature provider expects an EIP-1193 provider, so the burner wallet is wrapped in the
+ * smallest one that can answer it.
+ */
+function signatureProviderFor(privateKey, wallet) {
+  if ((process.env.INVOICE_SIGNATURE_METHOD ?? "ecdsa") !== "ecdsa-ethereum") {
+    return new EthereumPrivateKeySignatureProvider({ method: Types.Signature.METHOD.ECDSA, privateKey });
+  }
+  const eip1193 = {
+    request: async ({ method, params }) => {
+      switch (method) {
+        case "eth_chainId": return "0xaa36a7";
+        case "eth_accounts":
+        case "eth_requestAccounts": return [wallet.address];
+        case "personal_sign": return wallet.signMessage(utils.arrayify(params[0]));
+        case "eth_sign": return wallet.signMessage(utils.arrayify(params[1]));
+        default: throw new Error(`the burner wallet shim does not answer ${method}`);
+      }
+    },
+  };
+  return new Web3SignatureProvider(eip1193);
+}
+
 const rn = new RequestNetwork({
   nodeConnectionConfig: { baseURL: "https://sepolia.gateway.request.network/" },
-  signatureProvider: new EthereumPrivateKeySignatureProvider({
-    method: Types.Signature.METHOD.ECDSA,
-    privateKey: pk,
-  }),
+  signatureProvider: signatureProviderFor(pk, burner),
 });
 
 const signer = { type: Types.Identity.TYPE.ETHEREUM_ADDRESS, value: burner.address };

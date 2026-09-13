@@ -138,6 +138,14 @@ type Row = {
   independently_verified: boolean;
   request_id: string | null;
   payment_reference: string | null;
+  /**
+   * The KeeperHub execution that produced this row, read back from the attempt the store holds,
+   * and the surface that carried it. Every recorded REST row used to lack both, so "through the
+   * REST direct-execution API" was a fact about how the harness ran and not something any row
+   * stated -- the MCP rows carried an id each, the REST rows carried nothing.
+   */
+  keeperhub_execution_id: string | null;
+  transport: "rest" | "mcp" | null;
   mode: "LIVE_TESTNET";
 };
 
@@ -206,7 +214,14 @@ console.log("");
 console.log(`${"id".padEnd(6)}${"scenario".padEnd(34)}${"actual".padEnd(22)}${"sends".padEnd(7)}tx`);
 console.log("-".repeat(110));
 
-function record(row: Row): void {
+function record(partial: Omit<Row, "keeperhub_execution_id" | "transport">): void {
+  // Read back, never asserted: the attempt row is what the store knows about the send.
+  const attempt = partial.request_id ? store.sentAttemptFor(obligationId(NAMESPACE, partial.request_id)) : undefined;
+  const row: Row = {
+    ...partial,
+    keeperhub_execution_id: attempt?.executionId ?? null,
+    transport: attempt ? (attempt.endpoint.startsWith("mcp:") ? "mcp" : "rest") : null,
+  };
   rows.push(row);
   const ok = row.actual === row.expected ? "" : "  <- UNEXPECTED";
   console.log(
