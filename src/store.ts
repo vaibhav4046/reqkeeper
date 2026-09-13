@@ -1094,13 +1094,24 @@ export class Store {
     endpoint: string;
     bodyJson: string;
     now?: number;
-  }): { attemptId: number; reused: boolean } {
+  }): { attemptId: number; reused: boolean; idempotencyKey: string } {
     const now = a.now ?? Date.now();
     return this.tx(() => {
       const existing = this.#db
         .prepare("SELECT id FROM attempts WHERE plan_hash = ? AND step_index = ?")
         .get(a.planHash, a.stepIndex) as { id: number } | undefined;
-      if (existing) return { attemptId: existing.id, reused: true };
+      if (existing) {
+        // The key the row was OPENED with, not the one this call minted. They are equal today
+        // because the derivation is a function of (plan_hash, step_index) — but `provider.ts`
+        // states the contract as "must come from the persisted attempt, never minted at call
+        // time", and the day the key's version string changes, a reused row would be sent under a
+        // new key while recording the old one. Two keys, one attempt, and the provider's
+        // idempotency cache indexed under neither.
+        const stored = this.#db
+          .prepare("SELECT idempotency_key AS k FROM attempts WHERE id = ?")
+          .get(existing.id) as { k: string } | undefined;
+        return { attemptId: existing.id, reused: true, idempotencyKey: stored?.k ?? a.idempotencyKey };
+      }
 
       this.#db
         .prepare(
@@ -1127,7 +1138,7 @@ export class Store {
         .prepare("UPDATE jobs SET status = 'done', lease_expires_at = 0 WHERE dedupe_key LIKE ? AND status = 'pending'")
         .run(`preflight:${a.planHash}%`);
 
-      return { attemptId, reused: false };
+      return { attemptId, reused: false, idempotencyKey: a.idempotencyKey };
     });
   }
 

@@ -193,6 +193,49 @@ describe("a decision authorises the plan it was given for, and no other", () => 
     store.close();
   });
 
+  test("an invoice that moved after a human approved it is named as such", async () => {
+    // A plan hash commits to the facts hash, so a changed invoice always yields a DIFFERENT plan
+    // hash — which is why the PLAN_CHANGED branch could never fire and `factsAtDispatch` compared
+    // a hash to itself. A reviewer found it dead. The danger was being caught, under a name that
+    // described the mechanism ("something holds the reservation") rather than the cause.
+    const store = new Store();
+    const provider = new FixtureProvider();
+
+    const honest = plan(HONEST_PAYEE, ONE);
+    const proposed = await settle(store, provider, honest);
+    store.recordApproval({
+      planHash: proposed.planHash!,
+      obligationId: OID,
+      approver: HUMAN.approver,
+      decision: "APPROVED",
+      restatement: proposed.restatement ?? "",
+      now: 1_000,
+    });
+
+    // The invoice now says something else. The reservation is still held by the approved plan.
+    const moved = plan(HONEST_PAYEE, FIVE);
+    const outcome = await settle(store, provider, moved);
+
+    assert.equal(provider.totalSends(), 0);
+    assert.equal(outcome.refusal, "PLAN_CHANGED");
+    store.close();
+  });
+
+  test("a rival plan nobody approved is still just a rival, not a changed invoice", async () => {
+    // The control that C15 of the harness lost when this branch was first written: a concurrent
+    // proposal also has a different facts hash, and calling that "the invoice changed" sends an
+    // operator looking for a creditor who did nothing.
+    const store = new Store();
+    const provider = new FixtureProvider();
+
+    await settle(store, provider, plan(HONEST_PAYEE, ONE)); // reserves, unapproved
+    const outcome = await settle(store, provider, plan(HONEST_PAYEE, FIVE));
+
+    assert.equal(provider.totalSends(), 0);
+    assert.equal(outcome.refusal, "OBLIGATION_RESERVED");
+    store.close();
+  });
+
   test("a harness standing in for the human says so in the audit trail", async () => {
     // `"caller"` is the escape for fixtures and scripts, and the cost of using it is that the
     // trail records an asserted decision rather than a recorded one.

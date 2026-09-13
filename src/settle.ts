@@ -573,6 +573,45 @@ async function settleOrRefuse(deps: SettleDeps, input: SettleInput): Promise<Set
   // --- 3. exclusive ownership --------------------------------------------
   const reservation = store.reserveObligation(input.obligationId, planHash);
   if (!reservation.ok) {
+    // Why it is held decides what to call this.
+    //
+    // A plan hash commits to the facts hash, so a changed invoice always produces a DIFFERENT
+    // plan hash — which meant the PLAN_CHANGED branch further down could never fire, on any path,
+    // and `factsAtDispatch` compared a hash to itself. A reviewer found it dead. The danger it
+    // named is real and was being caught here, under a name that describes the mechanism
+    // ("something else holds the reservation") rather than the cause ("the invoice moved after a
+    // human approved it"). An operator reading OBLIGATION_RESERVED goes looking for a concurrent
+    // process; the actual answer is that the debt changed.
+    // Two different causes produce the same signal — the holding plan's facts hash differs from
+    // ours — and calling both PLAN_CHANGED was wrong: the harness's "a rival plan already holds
+    // the obligation" case is a concurrent proposal, not a changed invoice, and it started
+    // reporting a changed invoice the moment this branch existed.
+    //
+    // What separates them is whether a human has decided on the plan that holds it. A different
+    // plan nobody approved is a rival proposal. A different plan somebody DID approve means the
+    // invoice moved out from under that decision, which is the thing worth naming.
+    const holdingPlan = store.getPlan(reservation.heldBy);
+    const holdingApproval = store.getApproval(reservation.heldBy);
+    const invoiceMoved =
+      holdingPlan !== undefined &&
+      holdingPlan.sourceFactsHash !== factsHash &&
+      holdingApproval?.decision === "APPROVED";
+    if (invoiceMoved) {
+      // No state change. The obligation is held by the plan a human approved, and this call is a
+      // different plan being refused — it has no business moving the state of something it does
+      // not hold. (Trying to was also an illegal transition, which surfaced as ALREADY_DISPATCHED
+      // and hid the real answer.)
+      store.audit(input.obligationId, "system", "REFUSED", { code: "PLAN_CHANGED", heldBy: reservation.heldBy });
+      return out({
+        state: (store.getObligation(input.obligationId)?.state as State | undefined) ?? "OBLIGATION_RESERVED",
+        refusal: "PLAN_CHANGED",
+        detail:
+          "this invoice has changed since the plan a human approved; that approval does not carry " +
+          "over to the new facts, so it must be proposed and approved again",
+        providerWriteIssued: false,
+        planHash,
+      });
+    }
     store.setState(input.obligationId, "OBLIGATION_RESERVED", input.now);
     store.audit(input.obligationId, "system", "REFUSED", { code: "OBLIGATION_RESERVED" });
     return out({
@@ -838,12 +877,17 @@ async function settleOrRefuse(deps: SettleDeps, input: SettleInput): Promise<Set
   }
 
   // --- 7. commit the attempt BEFORE sending -------------------------------
-  const key = idempotencyKey(input.obligationId, planHash, stepIndex);
-  const { attemptId } = store.openAttempt({
+  // Derived here, but what is SENT is whatever the attempt row holds. `provider.ts` states the
+  // contract plainly -- "must come from the persisted attempt, never minted at call time" -- and
+  // this call site was quietly not honouring it: it sent the freshly derived value and discarded
+  // `reused`. Equal today, because the derivation is a function of (plan_hash, step_index). The
+  // day the key's version string changes, a reused row would be sent under a new key while
+  // recording the old one, and the provider's idempotency cache would hold neither.
+  const { attemptId, idempotencyKey: key } = store.openAttempt({
     obligationId: input.obligationId,
     planHash,
     stepIndex,
-    idempotencyKey: key,
+    idempotencyKey: idempotencyKey(input.obligationId, planHash, stepIndex),
     endpoint: "/api/execute/contract-call",
     bodyJson: JSON.stringify(body),
     now: input.now,

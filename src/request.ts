@@ -260,11 +260,39 @@ export async function fetchInvoice(
   //
   // These are applied below, after the create's own fields are parsed, because a delta has to be
   // applied to something.
-  const later = actions
-    .filter((a) => a.index > create.index)
-    .map((a) => ({ index: a.index, name: asString(dig(a.data, "name")), parameters: dig(a.data, "parameters") }));
+  const everyAction = actions.map((a) => ({
+    index: a.index,
+    name: asString(dig(a.data, "name")),
+    parameters: dig(a.data, "parameters"),
+  }));
+  const later = everyAction.filter((a) => a.index > create.index);
 
-  const cancelled = later.find((a) => a.name === "cancel");
+  // Refuse a name this reader does not understand, rather than skipping it.
+  //
+  // The loop below applies the actions it knows about and ignored everything else, which reads as
+  // "those do not change the debt" — a claim about Request's whole action set that this file is in
+  // no position to make. An action that moves the amount under a name nobody here has heard of is
+  // exactly the case where being quiet costs money, so an unknown name stops the settlement and
+  // says which one it was. All 46 recorded invoices carry nothing but a `create`, so nothing in
+  // this deployment is refused by it today.
+  const UNDERSTOOD = new Set(["create", "cancel", "accept", "increaseExpectedAmount", "reduceExpectedAmount"]);
+  const unknown = everyAction.find((a) => a.name === undefined || !UNDERSTOOD.has(a.name));
+  if (unknown) {
+    throw new RequestError(
+      "MALFORMED_TRANSACTION",
+      `invoice ${id} carries an action this reader does not understand (${unknown.name ?? "unnamed"} at ${unknown.index}); ` +
+        "refusing rather than assuming it leaves the debt unchanged",
+    );
+  }
+
+  // A cancel ANYWHERE on the channel cancels it.
+  //
+  // This searched only actions after the create, so a cancel that appeared earlier in the array
+  // was silently dropped and the invoice came back payable. A reviewer produced exactly that by
+  // replaying a real channel with the actions reordered. The code was already refusing to assume
+  // the create comes first — and then assumed everything before it was irrelevant, which is the
+  // same assumption wearing a different hat. There is no un-cancelling, so position cannot matter.
+  const cancelled = everyAction.find((a) => a.name === "cancel");
   if (cancelled) {
     throw new RequestError(
       "INVOICE_CANCELLED",
@@ -305,6 +333,18 @@ export async function fetchInvoice(
   // The amount as the channel stands now: the create's expectedAmount with every later
   // increase and reduction applied, in order. Request states deltas, not new totals.
   let amount = BigInt(assertBaseUnits("expectedAmount", asString(dig(p, "expectedAmount"))));
+  // Deltas that predate the create are malformed: there is nothing yet to adjust. Refused rather
+  // than ignored, for the same reason as the cancel above.
+  const earlyDelta = everyAction.find(
+    (a) => a.index < create.index && (a.name === "increaseExpectedAmount" || a.name === "reduceExpectedAmount"),
+  );
+  if (earlyDelta) {
+    throw new RequestError(
+      "MALFORMED_TRANSACTION",
+      `invoice ${id} adjusts its amount at action ${earlyDelta.index}, before the create at ${create.index}`,
+    );
+  }
+
   for (const a of later) {
     if (a.name === "increaseExpectedAmount") {
       amount += BigInt(assertBaseUnits(`action ${a.index} deltaAmount`, asString(dig(a.parameters, "deltaAmount"))));
