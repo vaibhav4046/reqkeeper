@@ -95,7 +95,16 @@ const RETRY_GUIDANCE: Record<string, string> = {
   PLAN_CHANGED: "The invoice changed after approval. Needs a new approval.",
   OBLIGATION_RESERVED: "Another plan holds this obligation. Do not race it.",
   SIMULATION_BLOCKED: "The payment would revert. A retry repeats the revert.",
-  EXECUTION_REVERTED: "The transaction reverted on chain. Needs a new plan and approval.",
+  // Deliberately not "needs a new plan and approval": EXECUTION_REVERTED is terminal and NOT
+  // replannable, so that sentence named a remedy no code path provides. A revert moves no
+  // money -- the receipt says status 0 -- but this obligation keeps the payment reference, so
+  // the debt cannot be re-proposed under it or under a second obligation without colliding
+  // with the reference index. Raising a fresh Request invoice is the honest answer, because
+  // that is the only route that yields a new reference.
+  EXECUTION_REVERTED:
+    "The transaction reverted on chain. Nothing moved, and this obligation is terminal: it " +
+    "keeps its payment reference, so the same debt cannot be re-proposed here. Fix what made " +
+    "it revert, raise a new Request invoice, and settle that.",
   EVIDENCE_CONFLICT: "The provider and the chain disagree. A human must look.",
   RECONCILIATION_PENDING: "Paid on chain, not yet indexed. Resolution, never a new payment.",
   EXECUTION_OUTCOME_UNKNOWN: "A send happened and its result is unknown. Observe it.",

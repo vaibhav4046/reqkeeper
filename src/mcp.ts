@@ -187,7 +187,12 @@ const TERMINAL_FOR_AGENTS: Record<string, string> = {
     "Another obligation already holds this payment reference. It is the same debt under a different name.",
   SOURCE_ALREADY_PAID: "The chain already shows this reference paid. There is nothing left to pay.",
   SIMULATION_BLOCKED: "The payment would revert. A retry repeats the revert.",
-  EXECUTION_REVERTED: "The transaction reverted on chain. A new plan and a new approval are required.",
+  // Not "a new plan and a new approval": the state is terminal and not replannable, so that
+  // was guidance for a route that does not exist. The reference stays attached to this
+  // obligation, so a new invoice is what actually unblocks the debt.
+  EXECUTION_REVERTED:
+    "The transaction reverted on chain. Nothing moved. This obligation is terminal and keeps " +
+    "its payment reference, so raise a new Request invoice for the debt and settle that.",
   SIMULATE_EXECUTED: "A dry run really executed. Treat as a real send and stop.",
 };
 

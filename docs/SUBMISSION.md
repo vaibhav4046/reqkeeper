@@ -121,7 +121,12 @@ checked for that specifically. The five worth a judge's time:
    every attempt whichever provider carries it, so that field is backed by the run that produced
    those rows, not by a record in the store. The execution ids, transactions and blocks beside it
    were read back from KeeperHub and from Sepolia.
-5. **`payeeOfRecord !== payee` is recorded, not refused.** Request lets an invoice's creditor
+5. **A reverted payment cannot be retried under the same obligation.** `EXECUTION_REVERTED` is
+   terminal and not replannable, and the obligation keeps its payment reference, so the same debt
+   cannot be re-proposed here or under a second obligation without colliding with the uniqueness
+   index. Nothing moved — the receipt says status 0 — and the exclusion is deliberate, but the
+   only route onward is a fresh Request invoice, which is now what both agent surfaces say.
+6. **`payeeOfRecord !== payee` is recorded, not refused.** Request lets an invoice's creditor
    differ from its payment address. An invoice where the two differ is something a human should
    see before settlement, and right now it is only written down.
 
