@@ -1181,6 +1181,15 @@ if (payeeSet.size === 0) {
       counted++;
       const [, prefix, rest, from, to, symbol] = m;
       const cited = `${prefix ?? ""}${rest}`;
+      // An absolute path is not a citation into this repository, and on the author's machine it
+      // RESOLVES: `/project/reqkeeper/src/store.ts`, the tail of a `file:///D:/...` stack trace,
+      // exists relative to the drive root on the box that produced it and nowhere else. CI failed
+      // on it while this check passed locally. Refused before existsSync gets to agree with the
+      // author's disk.
+      if (cited.startsWith("/")) {
+        broken.push(`${doc} cites ${cited}, an absolute path that resolves only on the machine that wrote it`);
+        continue;
+      }
       // A bare `settle.ts` names src/settle.ts. Resolved rather than skipped, because skipping is
       // what made these invisible.
       const path = existsSync(cited)
