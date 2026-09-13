@@ -342,7 +342,7 @@ heading("8", "The same race, once, against real money", "LIVE");
     say(`      transaction            ${hash}`);
     say("");
     say("  Live, the chain is the counter: one fee-proxy event carrying this reference");
-    say("  is one payment. That is the same question Request's own detection asks.");
+    say("  is one payment. That is the same query Request's own detection runs.");
   } else {
     say("  docs/evidence/race-live.json not present.");
   }

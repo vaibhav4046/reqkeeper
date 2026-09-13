@@ -50,9 +50,9 @@ Request's own indexer reads.
 `npm run gate-a` reads one of this project's invoices back out of Request's node by channel id,
 with no credential, and shows its Sepolia storage anchor.
 
-Request triggers, KeeperHub executes, and a human sits between them.
+An unpaid Request invoice is what starts the work, KeeperHub executes, and a human sits between them.
 
-1. **Request triggers.** `npm run watch` polls the invoices this deployment knows about and asks
+1. **An unpaid invoice starts it.** `npm run watch` polls the invoices this deployment knows about and asks
    the chain which are still unpaid. An unpaid Request invoice is what causes a payment proposal
    to exist — no human types a command to start it. The poller passes no approval, and beyond
    that it holds a provider whose every method throws, so it cannot dispatch anything even if a
@@ -170,13 +170,13 @@ writes `docs/TRUTH.md`.
   by key, because the losers never got that far.
 - **3 workers against real KeeperHub and real Sepolia**: one payment, reference
   `0xd9e6ee9360a89ed9`, and live the chain is the counter — one fee-proxy event carrying that
-  reference is one payment, which is the same question Request's own detection asks.
+  reference is one payment, which is the same query Request's own detection runs.
 - **9 crash checkpoints**, a real `SIGKILL` at each, kill points driven from outside `src/`: zero
   duplicate payments.
-- **46 of 46 payment references** re-derive from `keccak256(requestId + salt + paymentAddress)`.
+- **46 of 46 payment references** re-derive from `last8Bytes(keccak256(lowercase(requestId + salt + paymentAddress)))`.
 - `npm run harness` — 26 fault-injection cases, asserted against a provider that counts physical
   sends rather than reporting a status string.
-- 429 unit tests, `tsc --noEmit` clean, CI runs typecheck, tests and a build with a clean-tree
+- 435 unit tests, `tsc --noEmit` clean, CI runs typecheck, tests and a build with a clean-tree
   check on every push.
 
 ## What is honest about it

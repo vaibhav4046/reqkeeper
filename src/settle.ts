@@ -11,7 +11,7 @@ import { idempotencyKey, obligationId, planHash as hashPlan, policyHash as hashP
 import { checkPolicy, type Policy, type SourceFacts } from "./policy.ts";
 import { toHuman } from "./money.ts";
 import type { ExecutionProvider, SimulateOutcome } from "./provider.ts";
-import { ProviderError } from "./provider.ts";
+import { ProviderError, belowConfirmationDepth } from "./provider.ts";
 import type { Store } from "./store.ts";
 
 export interface SettleInput {
@@ -68,6 +68,14 @@ export interface SettleDeps {
    * for a human instead of being released.
    */
   readonly currentBlock?: () => Promise<number>;
+  /**
+   * The payer's mined nonce, read before the dry run.
+   *
+   * Optional, and its absence is not a failure: without it the recovery path simply cannot prove
+   * a leaked dry run is dead and hands the obligation to an operator instead. See
+   * src/exclusion.ts for why a nonce and not a timer.
+   */
+  readonly payerNonce?: () => Promise<number>;
   /**
    * How many DISTINCT humans must approve before anything is dispatched.
    *
@@ -626,7 +634,18 @@ async function settleOrRefuse(deps: SettleDeps, input: SettleInput): Promise<Set
       preflightBlock = undefined;
     }
   }
-  store.beginPreflight(input.obligationId, planHash, input.now, preflightBlock);
+  // Same discipline as the head above, and the same failure handling: a nonce that could not be
+  // read is left undefined rather than defaulted, because a wrong baseline would let the observer
+  // conclude the leak was excluded when it was not.
+  let preflightNonce: number | undefined;
+  if (deps.payerNonce) {
+    try {
+      preflightNonce = await deps.payerNonce();
+    } catch {
+      preflightNonce = undefined;
+    }
+  }
+  store.beginPreflight(input.obligationId, planHash, input.now, preflightBlock, preflightNonce);
   // --- 6b. the dry run, as a disposition rather than a pair of booleans ----
   //
   // Four duplicate-payment findings in three adversarial rounds all had the same shape: a caller
@@ -863,7 +882,7 @@ async function settleOrRefuse(deps: SettleDeps, input: SettleInput): Promise<Set
   // Depth. A receipt one block deep is a receipt that can still be reorged away, and this used
   // to settle on it. Not a refusal — the payment is almost certainly real — but not settlement
   // either, so it waits in the state this system already has for "true, not yet provable".
-  if (receipt.confirmations !== undefined && receipt.confirmations < MIN_CONFIRMATIONS) {
+  if (belowConfirmationDepth(receipt, MIN_CONFIRMATIONS)) {
     store.setState(input.obligationId, "RECONCILING", input.now);
     store.setState(input.obligationId, "RECONCILIATION_PENDING", input.now);
     store.enqueue({
@@ -884,16 +903,16 @@ async function settleOrRefuse(deps: SettleDeps, input: SettleInput): Promise<Set
     });
   }
 
-  // --- 10. reconcile with Request itself ---------------------------------
+  // --- 10. reconcile against the chain, by the query Request's detection uses ---------------------------------
   store.setState(input.obligationId, "RECONCILING", input.now);
   const paid = await deps.sourceSaysPaid(input.requestId, receipt.hash);
   if (!paid) {
     store.setState(input.obligationId, "RECONCILIATION_PENDING", input.now);
     store.enqueue({ kind: "RECONCILE_SOURCE", dedupeKey: `reconcile:${planHash}`, obligationId: input.obligationId, dueAt: input.now + 15_000 });
-    return out({ state: "RECONCILIATION_PENDING", detail: "paid on chain, Request has not indexed it yet", providerWriteIssued: true, txHash: receipt.hash, planHash });
+    return out({ state: "RECONCILIATION_PENDING", detail: "paid on chain; this deployment's own log scan has not matched it yet", providerWriteIssued: true, txHash: receipt.hash, planHash });
   }
 
   store.setState(input.obligationId, "SETTLED", input.now);
   store.audit(input.obligationId, "system", "SETTLED", { txHash: receipt.hash });
-  return out({ state: "SETTLED", detail: "chain receipt and Request reconciliation agree", providerWriteIssued: true, txHash: receipt.hash, planHash, restatement });
+  return out({ state: "SETTLED", detail: "the receipt and the fee-proxy event for that same transaction agree", providerWriteIssued: true, txHash: receipt.hash, planHash, restatement });
 }

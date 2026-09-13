@@ -48,6 +48,16 @@ const AMOUNT = toBaseUnits("50", 18).toString();
 const PLAN_HASH = "c".repeat(64);
 const LEAKED_TX = `0x${"7e".repeat(32)}`;
 
+/**
+ * Excluding a leaked dry run needs a payer whose nonce can be read, not a stopwatch. These
+ * fixtures state the proof the production path demands: the payer's mined nonce before the dry
+ * run, and a later reading showing it has moved. A nonce is spent once, so a nonce that has
+ * advanced means any transaction the dry run broadcast can never be included. See
+ * src/exclusion.ts and test/mempool-residency.test.ts.
+ */
+const PAYER = "0x00000000000000000000000000000000000ce111";
+const PREFLIGHT_NONCE = 42;
+
 const policy: Policy = {
   version: 1,
   chainId: 11155111,
@@ -109,7 +119,7 @@ function killedInsideSimulate(requestId: string) {
   assert.deepEqual(store.reserveObligation(oid, PLAN_HASH), { ok: true });
   // With the head the dry run was about to run at. A scan cannot see the mempool, so the
   // observer may only conclude once the chain has moved past this block.
-  store.beginPreflight(oid, PLAN_HASH, 1, PREFLIGHT_HEAD);
+  store.beginPreflight(oid, PLAN_HASH, 1, PREFLIGHT_HEAD, PREFLIGHT_NONCE);
 
   // The shape the probe reports, asserted rather than assumed.
   assert.equal(store.obligationForRecovery(oid)?.state, "PAYMENT_PREFLIGHT");
@@ -145,6 +155,8 @@ function drain(store: Store, sighting: PaymentSighting) {
       provider: { receipt },
       sourceSaysPaid: async () => true,
       sightPayment: async () => sighting,
+      payer: PAYER,
+      readPayerNonce: async () => ({ payer: PAYER, nonce: PREFLIGHT_NONCE + 1, head: sighting.scannedTo ?? 0 }),
     },
     { now: 1_000_000, maxPasses: 3, lookaheadMs: 120_000 },
   );
@@ -170,7 +182,8 @@ describe("a simulation that never came back is resolved by looking, not by assum
 
     const provider = new FixtureProvider("NONE");
     const outcome = await settleObligation(
-      { store, provider, policy, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD },
+      { store, provider, policy, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD,
+      payerNonce: async () => PREFLIGHT_NONCE },
       {
         namespace: NAMESPACE,
         requestId: "01req-sim-crash-then-pay",
@@ -208,7 +221,8 @@ describe("a simulation that never came back is resolved by looking, not by assum
 
     const provider = new FixtureProvider("NONE");
     const outcome = await settleObligation(
-      { store, provider, policy, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD },
+      { store, provider, policy, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD,
+      payerNonce: async () => PREFLIGHT_NONCE },
       {
         namespace: NAMESPACE,
         requestId: "01req-sim-crash-leaked-retry",
@@ -260,7 +274,8 @@ describe("the observation does not linger on a settlement that went fine", () =>
     const requestId = "01req-sim-clean";
 
     const outcome = await settleObligation(
-      { store, provider, policy, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD },
+      { store, provider, policy, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD,
+      payerNonce: async () => PREFLIGHT_NONCE },
       {
         namespace: NAMESPACE,
         requestId,

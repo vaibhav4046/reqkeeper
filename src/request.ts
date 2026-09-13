@@ -39,7 +39,8 @@ export type RequestErrorCode =
   | "NO_FEE_PROXY_EXTENSION"
   | "WRONG_NETWORK"
   | "REFERENCE_MISMATCH"
-  | "FACT_MISMATCH";
+  | "FACT_MISMATCH"
+  | "INVOICE_CANCELLED";
 
 export class RequestError extends Error {
   // See MoneyError: Node's strip-only TypeScript mode rejects constructor parameter
@@ -250,6 +251,28 @@ export async function fetchInvoice(
     );
   }
 
+  // A Request channel is an append-only log of ACTIONS, and `create` is only the first. A
+  // creditor can cancel the request, increase the expected amount or reduce it, and each of those
+  // is another action on the same channel. Reading `create` alone means reading the invoice as it
+  // was when it was raised, which is a different invoice from the one that exists now: a
+  // cancelled debt still settles, and a reduced one overpays. Neither is recoverable -- the money
+  // has moved.
+  //
+  // These are applied below, after the create's own fields are parsed, because a delta has to be
+  // applied to something.
+  const later = actions
+    .filter((a) => a.index > create.index)
+    .map((a) => ({ index: a.index, name: asString(dig(a.data, "name")), parameters: dig(a.data, "parameters") }));
+
+  const cancelled = later.find((a) => a.name === "cancel");
+  if (cancelled) {
+    throw new RequestError(
+      "INVOICE_CANCELLED",
+      `invoice ${id} was cancelled by a later action on its channel (action ${cancelled.index}); ` +
+        "there is no debt to settle, and paying it would move money nobody is owed",
+    );
+  }
+
   const p = dig(create.data, "parameters");
   const currencyType = asString(dig(p, "currency", "type"));
   if (currencyType !== "ERC20") {
@@ -279,7 +302,23 @@ export async function fetchInvoice(
   const payeeOfRecord = assertAddress("payee.value", asString(dig(p, "payee", "value")));
   const feeRecipient = assertAddress("feeAddress", asString(dig(ep, "feeAddress")));
   const salt = assertBareHex("salt", asString(dig(ep, "salt")));
-  const invoiceBaseUnits = assertBaseUnits("expectedAmount", asString(dig(p, "expectedAmount")));
+  // The amount as the channel stands now: the create's expectedAmount with every later
+  // increase and reduction applied, in order. Request states deltas, not new totals.
+  let amount = BigInt(assertBaseUnits("expectedAmount", asString(dig(p, "expectedAmount"))));
+  for (const a of later) {
+    if (a.name === "increaseExpectedAmount") {
+      amount += BigInt(assertBaseUnits(`action ${a.index} deltaAmount`, asString(dig(a.parameters, "deltaAmount"))));
+    } else if (a.name === "reduceExpectedAmount") {
+      amount -= BigInt(assertBaseUnits(`action ${a.index} deltaAmount`, asString(dig(a.parameters, "deltaAmount"))));
+    }
+  }
+  if (amount < 0n) {
+    throw new RequestError(
+      "MALFORMED_TRANSACTION",
+      `invoice ${id} reduces below zero across its channel; refusing rather than guessing at the debt`,
+    );
+  }
+  const invoiceBaseUnits = amount.toString();
   const feeBaseUnits = assertBaseUnits("feeAmount", asString(dig(ep, "feeAmount")));
 
   return {

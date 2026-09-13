@@ -210,6 +210,12 @@ function migrate(db: DatabaseSync): void {
     // which reads as "unknown" and keeps the observer inconclusive -- the fail-safe direction.
     db.exec("ALTER TABLE obligations ADD COLUMN preflight_block INTEGER");
   }
+  if (!columns.some((c) => c.name === "preflight_nonce")) {
+    // The payer's mined nonce as the dry run was about to be made. The block above bounds how
+    // far the chain has moved; this bounds whether the leak can still be mined at all, which is
+    // the question that actually decides whether a second payment is safe. See src/exclusion.ts.
+    db.exec("ALTER TABLE obligations ADD COLUMN preflight_nonce INTEGER");
+  }
   if (!columns.some((c) => c.name === "payment_reference")) {
     // The debt's real identity. A request id is free text supplied by the caller, so two
     // spellings of one invoice used to mint two obligations and pay it twice. The reference
@@ -629,7 +635,13 @@ export class Store {
    * look, and it is committed before the risky call, which is the same discipline `openAttempt`
    * applies one step later.
    */
-  beginPreflight(obligationId: string, planHash: string, now = Date.now(), preflightBlock?: number): void {
+  beginPreflight(
+    obligationId: string,
+    planHash: string,
+    now = Date.now(),
+    preflightBlock?: number,
+    preflightNonce?: number,
+  ): void {
     this.tx(() => {
       // The chain head as the risky call was about to be made. `eth_getLogs` cannot see the
       // mempool, so a scan that covers every block and finds nothing is NOT evidence that
@@ -645,9 +657,14 @@ export class Store {
       // the head, so the observer stays inconclusive" was true only for an obligation's very
       // first preflight. Every retry after a failed head read released on a number that
       // described a different attempt.
+      //
+      // `preflight_nonce` is written on the same terms and for the same reason. It is the payer's
+      // mined nonce before the risky call: a transaction the dry run broadcasts is bound to that
+      // nonce, and once some other transaction is mined at it the leak can never be included by
+      // any node. That is what makes a negative conclusive, rather than the passage of time.
       this.#db
-        .prepare("UPDATE obligations SET preflight_block = ? WHERE obligation_id = ?")
-        .run(preflightBlock ?? null, obligationId);
+        .prepare("UPDATE obligations SET preflight_block = ?, preflight_nonce = ? WHERE obligation_id = ?")
+        .run(preflightBlock ?? null, preflightNonce ?? null, obligationId);
       this.#setStateInTx(obligationId, "PAYMENT_PREFLIGHT", now);
       // The dedupe key carries `now` as well as the plan hash. Keyed on the plan hash alone, a
       // SECOND preflight of the same plan -- which is what a retry after a failed dry run is --
@@ -729,13 +746,16 @@ export class Store {
         anchorBlock: number | null;
         /** The chain head as the dry run was about to run. See beginPreflight. */
         preflightBlock: number | null;
+        /** The payer's mined nonce at the same moment. See src/exclusion.ts. */
+        preflightNonce: number | null;
       }
     | undefined {
     const row = this.#db
       .prepare(
         `SELECT obligation_id AS obligationId, request_id AS requestId, state,
                 payment_reference AS paymentReference, source_facts_json AS factsJson,
-                preflight_block AS preflightBlock
+                preflight_block AS preflightBlock,
+                preflight_nonce AS preflightNonce
            FROM obligations WHERE obligation_id = ?`,
       )
       .get(obligationId) as
@@ -746,6 +766,7 @@ export class Store {
           paymentReference: string | null;
           factsJson: string;
           preflightBlock: number | null;
+          preflightNonce: number | null;
         }
       | undefined;
     if (!row) return undefined;
@@ -786,6 +807,7 @@ export class Store {
       expectation,
       anchorBlock,
       preflightBlock: typeof row.preflightBlock === "number" ? row.preflightBlock : null,
+      preflightNonce: typeof row.preflightNonce === "number" ? row.preflightNonce : null,
     };
   }
 

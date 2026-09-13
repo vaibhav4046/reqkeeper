@@ -88,11 +88,25 @@ if (!race) {
     agrees ? "ok" : "FAIL",
     agrees ? `recomputed broadcasts=${broadcasts}, secondWave=${second}` : "summary disagrees with the rows it summarises",
   );
+  // `hashes.size` was computed and only printed. A review added three forged SETTLED workers
+  // carrying transaction hashes to this artifact and the run stayed green at 21 ok, because the
+  // status looked at `broadcasts` alone -- while the LIVE race check sixty lines below had already
+  // been hardened against exactly that tamper. The hardening was never carried back.
+  //
+  // A worker that claims a transaction is claiming a payment, whether or not the counter agrees,
+  // so the two have to agree with each other: one broadcast, one distinct hash, and no worker
+  // asserting a settlement the counters do not account for.
+  const claimedSettlements = race.waves
+    .flatMap((w) => w.workers)
+    .filter((x) => x.txHash || x.providerWriteIssued === true).length;
+  const raceConsistent = broadcasts === 1 && hashes.size <= 1 && claimedSettlements === broadcasts;
   record(
     "race.exactly-once",
     `${race.workers} concurrent workers, one payment`,
-    broadcasts === 1 ? "ok" : "FAIL",
-    `${broadcasts} broadcast, ${hashes.size} distinct transaction(s)`,
+    raceConsistent ? "ok" : "FAIL",
+    raceConsistent
+      ? `${broadcasts} broadcast, ${hashes.size} distinct transaction(s)`
+      : `${broadcasts} broadcast, ${hashes.size} distinct transaction(s), ${claimedSettlements} worker(s) claiming one — the rows do not agree with the counters`,
   );
   record(
     "race.not-the-provider",
@@ -523,7 +537,11 @@ for (const inv of invoiceRows) {
 const invoiceExpectation = (...keys: Array<string | null | undefined>): PaymentExpectation | null => {
   const inv = keys.map((k) => (k ? invoiceByKey.get(k.toLowerCase()) : undefined)).find(Boolean);
   const to = inv?.payee ?? inv?.paymentAddress;
+  // A row that cannot state its fee cannot be corroborated on its fee. Returning null makes it
+  // BLOCKED -- never a pass -- rather than quietly checking four fields while the detail line
+  // claims five.
   if (!inv || !to || !inv.amountBaseUnits) return null;
+  if (inv.feeAmount === undefined || inv.feeAddress === undefined) return null;
   return {
     // The invoice file records no token. FAU is the only token this deployment settles in and
     // the only one `npm run fund` approves, so it is stated here from `src/plan.ts` rather than
@@ -531,8 +549,16 @@ const invoiceExpectation = (...keys: Array<string | null | undefined>): PaymentE
     tokenAddress: FAU,
     to,
     amount: inv.amountBaseUnits,
-    ...(inv.feeAmount !== undefined ? { feeAmount: inv.feeAmount } : {}),
-    ...(inv.feeAddress !== undefined ? { feeAddress: inv.feeAddress } : {}),
+    // NOT conditional. Spreading these only when present meant deleting them from an invoice
+    // silently narrowed the check -- a wrong fee was caught, an absent one was not, and the
+    // detail line went on saying "matched emitter, token, payee, amount and fee" either way.
+    // That is the absent-reads-as-a-pass class this codebase refuses everywhere else, sitting in
+    // the verifier that exists to catch exactly this.
+    //
+    // A row that cannot state its fee cannot be corroborated on its fee, and `null` says so: the
+    // caller below turns it into a failure rather than a quieter check.
+    feeAmount: inv.feeAmount,
+    feeAddress: inv.feeAddress,
   };
 };
 

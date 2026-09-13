@@ -293,7 +293,7 @@ const hashes = new Set(first.workers.map((w) => w.txHash).filter(Boolean) as str
  * fixture. The run itself was correct; the number describing it was meaningless.
  *
  * The chain is the counter. One fee-proxy event carrying this reference is one payment, and it
- * is the same question Request's own detection asks. A worker claiming `providerWriteIssued` is
+ * is the same query Request's own detection runs. A worker claiming `providerWriteIssued` is
  * corroborating evidence, never the count: a process that died mid-send would not be there to
  * claim anything, and the payment would still have happened.
  */

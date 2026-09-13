@@ -446,6 +446,23 @@ export async function currentBlock(rpcUrl = DEFAULT_RPC) {
     return Number(BigInt((await rpcCall(rpcUrl, "eth_blockNumber", []))));
 }
 /**
+ * The payer's mined nonce, and the head it was true at.
+ *
+ * `"latest"` and never `"pending"`. A pending count includes the very transaction we are trying
+ * to exclude, so it would move on the strength of the leak itself and read as proof that the leak
+ * cannot happen -- the exact inversion this exists to prevent. Only mined transactions spend a
+ * nonce irreversibly.
+ *
+ * Nonce first, head second. The transactions that advanced the nonce to this value were mined at
+ * or below the head read immediately afterwards, so `head` is a sound upper bound on "the block
+ * by which this was true" -- which is what the log scan then has to cover. See src/exclusion.ts.
+ */
+export async function readPayerNonce(payer, rpcUrl = DEFAULT_RPC) {
+    const nonce = Number(BigInt((await rpcCall(rpcUrl, "eth_getTransactionCount", [payer, "latest"]))));
+    const head = await currentBlock(rpcUrl);
+    return { payer, nonce, head };
+}
+/**
  * The one receipt reader, for every transport.
  *
  * There were four private copies of this, and each one had to learn separately that publicnode

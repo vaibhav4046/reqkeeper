@@ -149,6 +149,30 @@ export interface Receipt {
   readonly confirmations?: number;
 }
 
+/**
+ * Is this receipt shallower than the depth we settle at -- or unable to say?
+ *
+ * Both callers used to spell this `confirmations !== undefined && confirmations < min`, which
+ * skips the gate entirely when the depth is unknown. Unknown depth is not deep enough: a
+ * `readReceipt` whose `eth_blockNumber` was rate-limited leaves `confirmations` undefined, and
+ * that reading settled terminally at depth 1. Same class as every duplicate-payment finding here,
+ * pointed at reorg safety instead of at sends.
+ *
+ * The discrimination that makes this safe without wedging every fixture is `blockNumber`. A
+ * receipt carrying a block is chain-backed, so a missing depth means the depth read failed and
+ * the answer is "I could not tell". A receipt with no block at all has no chain behind it -- the
+ * fixture provider -- and there is no depth to be shallow at.
+ *
+ * One function, because two spellings of one rule is how the two sites came to disagree.
+ */
+export function belowConfirmationDepth(
+  receipt: Pick<Receipt, "blockNumber" | "confirmations">,
+  minConfirmations: number,
+): boolean {
+  if (receipt.confirmations !== undefined) return receipt.confirmations < minConfirmations;
+  return receipt.blockNumber !== undefined;
+}
+
 export class ProviderError extends Error {
   readonly code: string;
   readonly retryable: boolean;

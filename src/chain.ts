@@ -5,6 +5,7 @@
 
 import { keccak256Hex } from "./keccak.ts";
 import { ERC20_FEE_PROXY } from "./plan.ts";
+import type { PayerReading } from "./exclusion.ts";
 
 export const DEFAULT_RPC = process.env.SEPOLIA_RPC ?? "https://ethereum-sepolia-rpc.publicnode.com";
 
@@ -653,6 +654,24 @@ async function corroborate(
 
 export async function currentBlock(rpcUrl = DEFAULT_RPC): Promise<number> {
   return Number(BigInt((await rpcCall(rpcUrl, "eth_blockNumber", [])) as string));
+}
+
+/**
+ * The payer's mined nonce, and the head it was true at.
+ *
+ * `"latest"` and never `"pending"`. A pending count includes the very transaction we are trying
+ * to exclude, so it would move on the strength of the leak itself and read as proof that the leak
+ * cannot happen -- the exact inversion this exists to prevent. Only mined transactions spend a
+ * nonce irreversibly.
+ *
+ * Nonce first, head second. The transactions that advanced the nonce to this value were mined at
+ * or below the head read immediately afterwards, so `head` is a sound upper bound on "the block
+ * by which this was true" -- which is what the log scan then has to cover. See src/exclusion.ts.
+ */
+export async function readPayerNonce(payer: string, rpcUrl = DEFAULT_RPC): Promise<PayerReading> {
+  const nonce = Number(BigInt((await rpcCall(rpcUrl, "eth_getTransactionCount", [payer, "latest"])) as string));
+  const head = await currentBlock(rpcUrl);
+  return { payer, nonce, head };
 }
 
 

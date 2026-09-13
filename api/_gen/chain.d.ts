@@ -2,6 +2,7 @@
  * Independent chain reads. Nothing here talks to the execution provider, deliberately:
  * these are the functions that get to contradict it.
  */
+import type { PayerReading } from "./exclusion.ts";
 export declare const DEFAULT_RPC: string;
 /**
  * `TransferWithReferenceAndFee`'s `paymentReference` is an INDEXED bytes parameter, so the
@@ -232,6 +233,19 @@ export declare function findPaymentByReference(reference: string, opts?: {
     expect?: PaymentExpectation;
 }): Promise<PaymentSighting>;
 export declare function currentBlock(rpcUrl?: string): Promise<number>;
+/**
+ * The payer's mined nonce, and the head it was true at.
+ *
+ * `"latest"` and never `"pending"`. A pending count includes the very transaction we are trying
+ * to exclude, so it would move on the strength of the leak itself and read as proof that the leak
+ * cannot happen -- the exact inversion this exists to prevent. Only mined transactions spend a
+ * nonce irreversibly.
+ *
+ * Nonce first, head second. The transactions that advanced the nonce to this value were mined at
+ * or below the head read immediately afterwards, so `head` is a sound upper bound on "the block
+ * by which this was true" -- which is what the log scan then has to cover. See src/exclusion.ts.
+ */
+export declare function readPayerNonce(payer: string, rpcUrl?: string): Promise<PayerReading>;
 /** The raw JSON-RPC receipt, as the node returns it. */
 export interface RawReceipt {
     status?: string;

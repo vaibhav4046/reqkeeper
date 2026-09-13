@@ -106,7 +106,7 @@ const RETRY_GUIDANCE = {
         "keeps its payment reference, so the same debt cannot be re-proposed here. Fix what made " +
         "it revert, raise a new Request invoice, and settle that.",
     EVIDENCE_CONFLICT: "The provider and the chain disagree. A human must look.",
-    RECONCILIATION_PENDING: "Paid on chain, not yet indexed. Resolution, never a new payment.",
+    RECONCILIATION_PENDING: "Paid on chain, not yet matched to the obligation here. Resolution, never a new payment.",
     EXECUTION_OUTCOME_UNKNOWN: "A send happened and its result is unknown. Observe it.",
     CACHED_FAILURE: "The provider replays a cached failure. Rotating the key would pay twice.",
     SIMULATE_EXECUTED: "A dry run really executed. Treat as a real send and stop.",

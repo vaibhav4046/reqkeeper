@@ -23,7 +23,8 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { encodeCall } from "../src/abi.ts";
-import { currentBlock, DEFAULT_RPC, findPaymentByReference } from "../src/chain.ts";
+import { currentBlock, readPayerNonce, DEFAULT_RPC, findPaymentByReference } from "../src/chain.ts";
+import { payerAddress } from "../src/exclusion.ts";
 import { obligationId } from "../src/identity.ts";
 import { KeeperHubProvider } from "../src/keeperhub.ts";
 import {
@@ -217,6 +218,11 @@ for (const inv of payable) {
     provider,
     policy: buildPolicy(facts),
     currentBlock: () => currentBlock(DEFAULT_RPC),
+    payerNonce: async () => {
+      const payer = payerAddress();
+      if (!payer) throw new Error("no payer configured");
+      return (await readPayerNonce(payer, DEFAULT_RPC)).nonce;
+    },
     sourceSaysPaid: async (_requestId: string, txHash: string) => {
             // Not just "the reference appears somewhere": it must be OUR transaction for
             // OUR amount. A boolean over the reference alone accepts another payment's

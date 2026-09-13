@@ -39,6 +39,16 @@ const ANCHOR_BLOCK = 11_690_278;
 const PREFLIGHT_HEAD = 11_691_000;
 const AGED_CEILING = PREFLIGHT_HEAD + 10;
 
+/**
+ * Excluding a leaked dry run needs a payer whose nonce can be read, not a stopwatch. These
+ * fixtures state the proof the production path demands: the payer's mined nonce before the dry
+ * run, and a later reading showing it has moved. A nonce is spent once, so a nonce that has
+ * advanced means any transaction the dry run broadcast can never be included. See
+ * src/exclusion.ts and test/mempool-residency.test.ts.
+ */
+const PAYER = "0x00000000000000000000000000000000000ce111";
+const PREFLIGHT_NONCE = 42;
+
 const policy: Policy = {
   version: 1,
   chainId: 11155111,
@@ -78,7 +88,8 @@ const steps = [
 async function wedge(store: Store, requestId: string, anchorBlock: number | undefined) {
   const provider = new FixtureProvider("RATE_LIMITED");
   const outcome = await settleObligation(
-    { store, provider, policy, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD },
+    { store, provider, policy, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD,
+      payerNonce: async () => PREFLIGHT_NONCE },
     {
       namespace: NAMESPACE,
       requestId,
@@ -127,6 +138,8 @@ describe("an obligation wedged by a failed dry run can actually be recovered", (
         provider: { receipt: async () => null as unknown as Receipt },
         sourceSaysPaid: async () => true,
         sightPayment: scanner(seen),
+        payer: PAYER,
+        readPayerNonce: async () => ({ payer: PAYER, nonce: PREFLIGHT_NONCE + 1, head: ANCHOR_BLOCK }),
       },
       { now: 1_000_000, maxPasses: 3, lookaheadMs: 120_000 },
     );

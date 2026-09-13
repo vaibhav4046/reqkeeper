@@ -24,7 +24,8 @@
 
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { encodeCall } from "../src/abi.ts";
-import { currentBlock, DEFAULT_LOOKBACK, findPaymentByReference, verdictFor, type PaymentExpectation } from "../src/chain.ts";
+import { currentBlock, readPayerNonce, DEFAULT_LOOKBACK, findPaymentByReference, verdictFor, type PaymentExpectation } from "../src/chain.ts";
+import { payerAddress } from "../src/exclusion.ts";
 import { obligationId } from "../src/identity.ts";
 import { KeeperHubProvider } from "../src/keeperhub.ts";
 import { KeeperHubMcpProvider } from "../src/keeperhub-mcp.ts";
@@ -265,6 +266,11 @@ const outcome = await settleObligation(
     // See settle.ts: the head before the dry run is what lets a later scan distinguish a
     // leaked send still in the mempool from a send that never happened.
     currentBlock: () => currentBlock(RPC),
+    payerNonce: async () => {
+      const payer = payerAddress();
+      if (!payer) throw new Error("no payer configured");
+      return (await readPayerNonce(payer, RPC)).nonce;
+    },
     sourceSaysPaid: async (_requestId: string, txHash: string) => {
       const seen = await scanForThisInvoice();
       return (

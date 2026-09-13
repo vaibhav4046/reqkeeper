@@ -17,7 +17,9 @@
 
 import { isTerminal, type State } from "./machine.ts";
 import type { ExecutionProvider } from "./provider.ts";
+import { belowConfirmationDepth } from "./provider.ts";
 import { amountOrFeeConflict } from "./chain.ts";
+import { excludeByNonce, payerAddress, type PayerReading } from "./exclusion.ts";
 import type { PaymentExpectation, PaymentSighting } from "./chain.ts";
 import type { Fence, Job, Store } from "./store.ts";
 
@@ -35,6 +37,23 @@ export interface WorkerDeps {
    * with no transaction hash and no way out: it is not replannable, and no observation has
    * anything to observe. The reference is the one identifier that survives the crash.
    */
+  /**
+   * The payer's mined nonce and the head it was true at, for excluding a leaked dry run.
+   *
+   * Optional the same way `sightPayment` is: a deployment that cannot read it does not get the
+   * automatic release, it gets an obligation waiting for an operator. That is the fail-safe
+   * direction and the only one available -- there is no reading of "I could not check" that
+   * justifies a second payment.
+   */
+  readonly readPayerNonce?: (payer: string) => Promise<PayerReading>;
+  /**
+   * The account whose nonce excludes a leaked dry run. Defaults to `REQKEEPER_PAYER_ADDRESS`.
+   *
+   * Injectable rather than read from the environment at the point of use, so that the property
+   * -- "a conclusive negative needs a consumed nonce" -- can be exercised without a process-wide
+   * variable, and so the one place that decides it is visible in the dependency list.
+   */
+  readonly payer?: string;
   readonly findPaidReference?: (
     reference: string,
     expect?: PaymentExpectation,
@@ -217,6 +236,18 @@ async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Reso
       return { done: false, reason: "CANNOT_OBSERVE", advanced };
     }
 
+    // Read before the scan, never after. See the exclusion block below for why the order is the
+    // whole proof. A read that throws leaves `reading` undefined, which is "I could not tell".
+    const payer = deps.payer ?? payerAddress();
+    let reading: PayerReading | undefined;
+    if (payer && deps.readPayerNonce) {
+      try {
+        reading = await deps.readPayerNonce(payer);
+      } catch {
+        reading = undefined;
+      }
+    }
+
     const sighting = await deps.sightPayment(
       obligation.paymentReference,
       obligation.expectation ?? undefined,
@@ -252,25 +283,44 @@ async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Reso
     // field.
     if (sighting.truncated !== false) return { done: false, reason: "SCAN_TRUNCATED", advanced };
 
-    // Covered the window is not the same as looked recently enough.
+    // Covered the window is not the same as: the leak can no longer be mined.
     //
-    // `eth_getLogs` cannot see the mempool. A transaction the dry run leaked (#1959) is invisible
-    // to a scan that covered every block in range and is being entirely honest when it reports
-    // `truncated: false` -- it simply is not in a block yet. An adversarial pass drove exactly
-    // that: a real scan, a real worker, a real settle, a fixture node whose only behaviour was a
-    // node's, and the losing timing is the ORDINARY one. OBSERVE_PREFLIGHT comes due 30s after
-    // the preflight and Sepolia takes ~12s a block, so the observer routinely looks before the
-    // leak can have been mined. Two physical sends.
+    // Two earlier answers stood here and both were wrong in the same direction. The first read
+    // the scan's own silence as evidence -- but `eth_getLogs` reads blocks, and a leaked
+    // transaction sitting in the mempool is not in one. The second measured elapsed chain
+    // (`scannedTo >= preflightBlock + minConfirmations()`) and an adversarial pass proved it
+    // costs money: it measures how far the chain has moved, while what has to be excluded is how
+    // long a transaction can sit pending, which has no bound at all. Ten thousand blocks later a
+    // low-fee leak is still mineable, and the gate had grown MORE willing to release, not less.
+    // Two physical sends on one human approval. test/mempool-residency.test.ts is that repro.
     //
-    // So the question is not "did I cover the window" but "has enough chain passed since the send
-    // could have happened". `preflightBlock` is the head as the dry run was about to run, and the
-    // scan's own ceiling says how far past it this read reached. A NULL preflight block -- rows
-    // written before the column existed, or a head that could not be read -- is unknown, and
-    // unknown waits.
-    const preflightBlock = obligation.preflightBlock;
-    const scannedTo = sighting.scannedTo;
-    if (preflightBlock === null || scannedTo === undefined || scannedTo < preflightBlock + minConfirmations()) {
-      return { done: false, reason: "SEND_WINDOW_TOO_RECENT", advanced };
+    // Both were the same defect: a value meaning "I do not know" consumed as "no". Eight
+    // instances now, and what has worked every time is changing the shape of the answer rather
+    // than tightening a threshold. So there is no threshold here. A transaction is bound to a
+    // nonce and a nonce is spent once: when another transaction is mined at the nonce the leak
+    // would have used, the leak is permanently unmineable by every node. That is a fact about
+    // the payment, and unlike a timer it does not decay.
+    //
+    // The reading is taken BEFORE the scan, so the scan's ceiling is guaranteed to cover the
+    // block the proof is anchored at. Taken afterwards it would prove exclusion over blocks the
+    // scan never looked at.
+    const exclusion = excludeByNonce({
+      reading,
+      preflightNonce: obligation.preflightNonce,
+      scannedTo: sighting.scannedTo,
+      payerConfigured: payer !== undefined,
+    });
+    switch (exclusion.kind) {
+      case "NONCE_CONSUMED":
+        break; // proven dead; fall through to the release below
+      case "NOT_PROVEN":
+        // No timeout and no escalating retry. An unexcluded leak waits for a human, because the
+        // only thing worse than an invoice that is late is an invoice that is paid twice.
+        return { done: false, reason: `LEAK_NOT_EXCLUDED:${exclusion.code}`, advanced };
+      default: {
+        const exhaustive: never = exclusion;
+        return exhaustive;
+      }
     }
 
     // A conflicting log usually means a stranger paid somebody else under our public reference,
@@ -418,7 +468,7 @@ async function resolveJob(deps: WorkerDeps, job: Job, now: number): Promise<Reso
 
     // Depth, here too. Without it the settle path's gate is decorative: it hands the obligation
     // to this job, and this job settles it one block deep anyway.
-    if (receipt.confirmations !== undefined && receipt.confirmations < minConfirmations()) {
+    if (belowConfirmationDepth(receipt, minConfirmations())) {
       move("RECONCILING");
       move("RECONCILIATION_PENDING");
       return { done: false, reason: "AWAITING_CONFIRMATIONS", advanced };

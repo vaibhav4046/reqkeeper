@@ -17,7 +17,8 @@
  * An agent calling it before a human has decided gets `AWAITING_APPROVAL` and no send.
  */
 
-import { currentBlock, findPaymentByReference, verdictFor, type PaymentExpectation } from "./chain.ts";
+import { currentBlock, findPaymentByReference, readPayerNonce, verdictFor, type PaymentExpectation } from "./chain.ts";
+import { payerAddress } from "./exclusion.ts";
 import { assertReferenceMatches, fetchInvoice } from "./request.ts";
 import { obligationId } from "./identity.ts";
 import type { ExecutionProvider } from "./provider.ts";
@@ -118,7 +119,7 @@ export const TOOLS = [
     name: "resolve_pending",
     description:
       "Close out a payment that already went out but has not finished: a receipt not yet " +
-      "mined, or a Request indexer that has not caught up. Reads chain receipts and the " +
+      "mined, or a log this deployment has not matched yet. Reads chain receipts and the " +
       "event log and moves state accordingly. It has no send path at all, so it can never " +
       "pay anything — which is why it is the correct answer to RECONCILIATION_PENDING and " +
       "EXECUTION_OUTCOME_UNKNOWN, and calling settle_obligation again is not.",
@@ -178,7 +179,7 @@ const TERMINAL_FOR_AGENTS: Record<string, string> = {
   CACHED_FAILURE: "The provider is replaying a cached failure. Rotating the key would pay twice; do not.",
   EVIDENCE_CONFLICT: "The provider and the chain disagree. A human must look before anything else happens.",
   RECONCILIATION_PENDING:
-    "Paid on chain, not yet indexed by Request. Call resolve_pending; never settle_obligation.",
+    "Paid on chain; this deployment has not matched the log to the obligation yet. Call resolve_pending; never settle_obligation.",
   EXECUTION_OUTCOME_UNKNOWN:
     "A send happened and its result is unknown. Call resolve_pending to observe it. A retry would pay twice.",
   CALLDATA_MISMATCH:
@@ -341,6 +342,10 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
           // obligation stays wedged for ever -- safe, and never recovered.
           sightPayment: (reference: string, expect?: PaymentExpectation, anchorBlock?: number) =>
             findPayment(reference, { rpcUrl: ctx.rpcUrl, lookbackBlocks: 300_000, expect, anchorBlock }),
+          // What turns the scan's silence into an answer. Absent REQKEEPER_PAYER_ADDRESS the
+          // worker cannot prove a leaked dry run is dead and hands the obligation to an operator
+          // rather than releasing it on a timer. See src/exclusion.ts.
+          readPayerNonce: (payer: string) => readPayerNonce(payer, ctx.rpcUrl),
           sourceSaysPaid: async (requestId: string, txHash: string) => {
             const row = ctx.store.obligationForRecovery(obligationId(NAMESPACE, requestId));
             if (!row?.paymentReference) return false;
@@ -543,6 +548,11 @@ async function callTool(ctx: McpContext, name: string, args: Record<string, unkn
           // mined yet from one that never happened. Without it the observer can never
           // conclude and the obligation waits for a human -- safe, but never recovered.
           currentBlock: () => currentBlock(ctx.rpcUrl),
+          payerNonce: async () => {
+            const payer = payerAddress();
+            if (!payer) throw new Error("no payer configured");
+            return (await readPayerNonce(payer, ctx.rpcUrl)).nonce;
+          },
           sourceSaysPaid: async (_requestId: string, txHash: string) => {
             // Not just "the reference appears somewhere": it must be OUR transaction for
             // OUR amount. A boolean over the reference alone accepts another payment's

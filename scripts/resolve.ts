@@ -2,7 +2,7 @@
  * Drain the outbox against the real chain. The operational half of settlement.
  *
  * `settle` gets a payment sent and durably recorded. It cannot finish the job on its own:
- * a transaction that has not been mined yet, or a Request indexer that has not caught up,
+ * a transaction that has not been mined yet, or a log this deployment has not matched to the obligation yet,
  * leaves the obligation in RECONCILIATION_PENDING or EXECUTION_OUTCOME_UNKNOWN. Those are
  * honest states, not failures — but something has to come back and look, or they are
  * permanent. This is that something.

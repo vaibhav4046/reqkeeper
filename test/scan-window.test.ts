@@ -42,6 +42,16 @@ const REFERENCE = "0x0056a1b2c3d4e5f6";
 const AMOUNT = toBaseUnits("50", 18).toString();
 const PLAN_HASH = "c".repeat(64);
 
+/**
+ * Excluding a leaked dry run needs a payer whose nonce can be read, not a stopwatch. These
+ * fixtures state the proof the production path demands: the payer's mined nonce before the dry
+ * run, and a later reading showing it has moved. A nonce is spent once, so a nonce that has
+ * advanced means any transaction the dry run broadcast can never be included. See
+ * src/exclusion.ts and test/mempool-residency.test.ts.
+ */
+const PAYER = "0x00000000000000000000000000000000000ce111";
+const PREFLIGHT_NONCE = 42;
+
 const expectation: PaymentExpectation = {
   tokenAddress: FAU,
   to: PAYEE,
@@ -172,7 +182,7 @@ function wedgedInsideSimulate(requestId: string) {
   assert.deepEqual(store.reserveObligation(oid, PLAN_HASH), { ok: true });
   // The head as the dry run ran. The stubbed chain is at HEAD, so by the time the observer
   // looks the chain has moved well past this and absence can mean something.
-  store.beginPreflight(oid, PLAN_HASH, 1, HEAD - 100);
+  store.beginPreflight(oid, PLAN_HASH, 1, HEAD - 100, PREFLIGHT_NONCE);
   assert.equal(store.obligationForRecovery(oid)?.state, "PAYMENT_PREFLIGHT");
   assert.equal(store.sentAttemptFor(oid), undefined, "nothing was ever dispatched");
   return { store, oid };
@@ -187,6 +197,8 @@ function drainAgainstChain(store: Store, opts: { anchorBlock?: number }) {
       sourceSaysPaid: async () => true,
       sightPayment: (reference, expect) =>
         findPaymentByReference(reference, { lookbackBlocks: LOOKBACK, expect, ...opts }),
+      payer: PAYER,
+      readPayerNonce: async () => ({ payer: PAYER, nonce: PREFLIGHT_NONCE + 1, head: ANCHOR }),
     },
     { now: 1_000_000, maxPasses: 3, lookaheadMs: 120_000 },
   );

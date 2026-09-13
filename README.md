@@ -92,7 +92,7 @@ Last run: **21 ok · 0 failed · 0 blocked**, including — checked against the 
 successful receipt for `0xb90a0771…` at block 11,665,983, the ERC20FeeProxy event inside that
 receipt's own logs, that same payment found again by its reference through the event query
 Request's own detection uses, and **46 of 46** recorded payment references re-deriving from
-`keccak256(requestId + salt + paymentAddress)`.
+`last8Bytes(keccak256(lowercase(requestId + salt + paymentAddress)))`.
 
 ## Run everything else
 
@@ -102,7 +102,7 @@ dependencies. `typecheck` and `build` call `tsc`, so those two want `npm install
 ```bash
 npm install           # only for typecheck and build; everything above runs without it
 
-npm test              # 429 tests, 86 suites
+npm test              # 435 tests, 88 suites
 npm run typecheck     # tsc --noEmit
 npm run build         # console + api; the tree must stay clean afterwards
 npm run gate-a        # Request <-> KeeperHub <-> Sepolia end to end
@@ -139,7 +139,7 @@ read-only and imports no store and no provider at all — the payment tools are 
 | | Source of truth | Where |
 |---|---|---|
 | Invoice facts: payee, amount, fee, token, salt | Request's Sepolia gateway, unauthenticated | [`src/request.ts`](src/request.ts) |
-| Payment reference | **Derived**, `last8Bytes(keccak256(requestId + salt + paymentAddress))` | [`src/request.ts`](src/request.ts) |
+| Payment reference | **Derived**, `last8Bytes(keccak256(lowercase(requestId + salt + paymentAddress)))` | [`src/request.ts`](src/request.ts) |
 | Obligation identity | `sha256("reqkeeper.obligation.v1:" + ns + requestId)` | [`src/identity.ts`](src/identity.ts) |
 | Payment calldata | Encoded locally, proved byte-identical to KeeperHub's encoder | [`src/abi.ts`](src/abi.ts), `npm run verify:seam` |
 | Execution | `POST /api/execute/contract-call` with an `Idempotency-Key` | [`src/keeperhub.ts`](src/keeperhub.ts) |

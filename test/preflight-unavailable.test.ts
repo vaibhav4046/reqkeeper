@@ -43,6 +43,16 @@ const FEE_ADDR = "0xAaAa000000000000000000000000000000000001";
 const PROXY = "0x399F5EE127ce7432E4921a61b8CF52b0af52cbfE";
 const REFERENCE = "0x0056a1b2c3d4e5f6";
 
+/**
+ * Excluding a leaked dry run needs a payer whose nonce can be read, not a stopwatch. These
+ * fixtures state the proof the production path demands: the payer's mined nonce before the dry
+ * run, and a later reading showing it has moved. A nonce is spent once, so a nonce that has
+ * advanced means any transaction the dry run broadcast can never be included. See
+ * src/exclusion.ts and test/mempool-residency.test.ts.
+ */
+const PAYER = "0x00000000000000000000000000000000000ce111";
+const PREFLIGHT_NONCE = 42;
+
 const policy: Policy = {
   version: 1,
   chainId: 11155111,
@@ -80,7 +90,8 @@ function stepsFor(amount: string) {
 
 function propose(store: Store, provider: FixtureProvider, requestId: string, amount: string, now: number) {
   return settleObligation(
-    { store, provider, policy, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD },
+    { store, provider, policy, sourceSaysPaid: async () => true, currentBlock: async () => PREFLIGHT_HEAD,
+      payerNonce: async () => PREFLIGHT_NONCE },
     {
       namespace: NAMESPACE,
       requestId,
@@ -189,6 +200,10 @@ function drain(store: Store, sighting: PaymentSighting) {
       provider: { receipt: async () => null as unknown as Receipt },
       sourceSaysPaid: async () => true,
       sightPayment: async () => sighting,
+      payer: PAYER,
+      // The nonce moved, proven as of a block this scan reached. Both halves are required:
+      // a nonce that moved past a block nobody looked at proves nothing about what was in it.
+      readPayerNonce: async () => ({ payer: PAYER, nonce: PREFLIGHT_NONCE + 1, head: sighting.scannedTo ?? 0 }),
     },
     { now: 1_000_000, maxPasses: 3, lookaheadMs: 120_000 },
   );

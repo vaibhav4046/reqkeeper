@@ -16,10 +16,14 @@
  * seconds after the preflight, the resolver claims it with a sixty-second lookahead, and Sepolia
  * takes about twelve seconds a block. The observer routinely looks before a leak could be mined.
  *
- * So the question the observer has to answer is not "did I cover the window" but "has enough
- * chain passed since the send could have happened". `preflightBlock` is the head as the dry run
- * was about to run; `scannedTo` is how recently the scan looked. Absence is evidence only once the
- * second has passed the first by the confirmation depth.
+ * The fix first attempted here was "has enough chain passed since the send could have happened",
+ * measured as `scannedTo >= preflightBlock + minConfirmations()`. A later adversarial pass showed
+ * that question is also the wrong one, and this file's own control test was asserting the wrong
+ * answer as intended behaviour: elapsed chain measures how far the chain has moved, while what
+ * must be excluded is how long a transaction can sit pending — which has no bound. Eight instances
+ * of one class now. The sound answer is a spent nonce, in src/exclusion.ts.
+ *
+ * What survives here is the half that was always right: a scan taken too early proves nothing.
  */
 
 import assert from "node:assert/strict";
@@ -44,6 +48,7 @@ const REFERENCE = "0x0056a1b2c3d4e5f6";
 const ANCHOR_BLOCK = 11_690_000;
 const PREFLIGHT_HEAD = 11_691_000;
 const AMOUNT = toBaseUnits("50", 18).toString();
+const PAYER = "0x00000000000000000000000000000000000ce111";
 
 const policy: Policy = {
   version: 1,
@@ -152,20 +157,72 @@ describe("absence is only evidence once the chain has moved past the send", () =
     store.close();
   });
 
-  test("once the chain has moved past the preflight, the same scan does release it", async () => {
-    // The control. The age gate must not become a permanent wedge — that was the bug this whole
-    // mechanism replaced, one round earlier.
+  test("chain moving past the preflight is NOT what releases it", async () => {
+    // This test used to assert the opposite, and asserting it is how the hole shipped. The gate
+    // it guarded measured elapsed chain, and elapsed chain says nothing about a transaction
+    // sitting in the mempool: there is no number of blocks after which a pending transaction
+    // becomes unmineable. test/mempool-residency.test.ts is the repro that cost two sends.
     const store = new Store();
     const provider = new LeakyProvider();
     const requestId = "01req-mempool-aged";
 
     await settle(store, provider, requestId, 1_000);
-    await drain(store, honestScan(PREFLIGHT_HEAD + 10));
+    await drain(store, honestScan(PREFLIGHT_HEAD + 10_000));
+
+    assert.equal(
+      store.getObligation(obligationId(NAMESPACE, requestId))?.state,
+      "PAYMENT_PREFLIGHT",
+      "ten thousand blocks is still not evidence that nothing is pending",
+    );
+    store.close();
+  });
+
+  test("a consumed nonce is what releases it, and the debt is payable again", async () => {
+    // The control the age gate was reaching for, done with a fact instead of a clock. The payer's
+    // nonce has moved, so any transaction the dry run broadcast is bound to a nonce some other
+    // transaction has already spent and can never be included. Liveness is preserved — this is
+    // still the way out of a failed dry run — but it is bought with a proof.
+    const store = new Store();
+    const provider = new LeakyProvider();
+    const requestId = "01req-mempool-excluded";
+
+    await settleObligation(
+      {
+        store,
+        provider,
+        policy,
+        sourceSaysPaid: async () => true,
+        currentBlock: async () => PREFLIGHT_HEAD,
+        payerNonce: async () => 42,
+      },
+      {
+        namespace: NAMESPACE,
+        requestId,
+        obligationId: obligationId(NAMESPACE, requestId),
+        paymentReference: REFERENCE,
+        facts,
+        steps,
+        approval: { approver: "human:owner", decision: "APPROVED" },
+        now: 1_000,
+      },
+    );
+
+    await drainUntilQuiet(
+      {
+        store,
+        provider: { receipt: async () => null as unknown as Receipt },
+        sourceSaysPaid: async () => true,
+        sightPayment: honestScan(PREFLIGHT_HEAD + 10),
+        payer: PAYER,
+        readPayerNonce: async () => ({ payer: PAYER, nonce: 43, head: PREFLIGHT_HEAD }),
+      },
+      { now: 1_000_000, maxPasses: 3, lookaheadMs: 120_000 },
+    );
 
     assert.equal(
       store.getObligation(obligationId(NAMESPACE, requestId))?.state,
       "PREFLIGHT_UNAVAILABLE",
-      "with enough chain past the send window, a conclusive silence is an answer",
+      "a spent nonce makes the silence conclusive, so the debt becomes payable again",
     );
     store.close();
   });
