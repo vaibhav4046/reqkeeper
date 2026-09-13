@@ -315,16 +315,16 @@ describe("job leasing and fencing", () => {
   test("a stale worker's write is rejected but no new payment identity appears", () => {
     const { s, jobId, gen } = withJob();
     s.claimJobs({ limit: 10, now: 999_999, leaseMs: 30_000 });
-    try {
-      s.assertFencing(jobId, gen);
-      assert.fail("expected a stale fence");
-    } catch {
-      // The attempt row and its idempotency key are unchanged, so the takeover worker
-      // resumes the same provider operation rather than starting a second one.
-      const a = s.getAttempt(1);
-      assert.equal(a?.idempotencyKey, idempotencyKey(OID, PLAN, 0));
-      assert.equal(a?.stepIndex, 0);
-    }
+    // Asserted outside any catch. This used to be `try { assertFencing; assert.fail() } catch {}`,
+    // which swallowed its own AssertionError: a fence that did nothing still went green.
+    assert.throws(() => s.assertFencing(jobId, gen), /stale fencing/);
+    // The attempt row and its idempotency key are unchanged, so the takeover worker
+    // resumes the same provider operation rather than starting a second one.
+    const a = s.getAttempt(1);
+    assert.equal(a?.idempotencyKey, idempotencyKey(OID, PLAN, 0));
+    assert.equal(a?.stepIndex, 0);
+    // ...and no second payment identity was minted alongside it.
+    assert.equal(s.getAttempt(2), undefined, "the rejected write must not create a second attempt");
     s.close();
   });
 

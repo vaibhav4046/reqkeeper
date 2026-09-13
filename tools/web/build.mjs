@@ -210,15 +210,61 @@ export const EVIDENCE: {
 }
 const compiledEvidence = writeCompiledEvidence();
 
+/**
+ * Every command the page prints has to be a command a reader can actually run.
+ *
+ * Two Surfaces cards printed `npm run verify:mcp` for months after the script was renamed to
+ * `probe:mcp`; a judge who typed it got `npm error Missing script`. Nothing caught it because
+ * the page is checked by eye and the eye does not read package.json. So the build reads it:
+ * the rendered page is scanned for every `npm run <script>` and the build refuses to write a
+ * page naming a script that does not exist.
+ *
+ * The scan is textual, which is only sound because the page names its commands in full. A
+ * template that builds a command by interpolation (`npm run ${cmd}`) hides the script name
+ * from this check, so that form is refused outright — put the whole command in the data.
+ */
+function assertCommandsExist(html) {
+  const names = scriptNames();
+  if (!names) throw new Error("cannot read package.json scripts: refusing to write a page whose commands nobody checked");
+  const known = new Set(names);
+
+  if (html.includes("npm run ${")) {
+    throw new Error(
+      "the page builds an npm command by interpolation, so the script name cannot be checked.\n" +
+        '  Put the whole command in the data ("npm run probe:mcp"), not a bare fragment.',
+    );
+  }
+
+  // Script names here carry letters, digits, : _ - and . — a trailing full stop belongs to the
+  // sentence, not the name ("Run npm run evidence:mcp.").
+  const missing = new Map();
+  for (const m of html.matchAll(/npm run ([A-Za-z0-9][A-Za-z0-9:._-]*)/g)) {
+    const name = m[1].replace(/\.$/, "");
+    if (!known.has(name)) missing.set(name, (missing.get(name) ?? 0) + 1);
+  }
+  if (missing.size) {
+    const lines = [...missing].map(([n, c]) => `  npm run ${n}  (${c} occurrence${c === 1 ? "" : "s"})`);
+    throw new Error(
+      `the console prints ${missing.size} npm command(s) package.json does not define:\n${lines.join("\n")}\n` +
+        `  defined scripts: ${names.join(", ")}`,
+    );
+  }
+  return known.size;
+}
+
 const template = readFileSync(path("tools/web/template.html"), "utf8");
 if (!template.includes("__DATA__")) throw new Error("template lost its __DATA__ placeholder");
 
 // The payload sits in a JSON script tag, so it must not be able to close that tag early.
 const payload = JSON.stringify(data).replace(/</g, "\\u003c");
-writeFileSync(path("web/index.html"), template.replace("__DATA__", payload), "utf8");
+const html = template.replace("__DATA__", payload);
+// Checked before it is written: a page naming a command nobody can run must never reach disk.
+const knownScripts = assertCommandsExist(html);
+writeFileSync(path("web/index.html"), html, "utf8");
 
 console.log(
-  `web/index.html written — ${refusals.rows.length} fixture rows, ` +
+  `commands checked — every \`npm run\` on the page resolves to one of ${knownScripts} package.json scripts\n` +
+    `web/index.html written — ${refusals.rows.length} fixture rows, ` +
     `${live ? `${live.rows.length} live rows, ${live.totals.payments} real payments, ` : "no live artifact, "}` +
     `${race ? `race ${race.workers} workers / ${race.totals.distinctTransactions} transactions, ` : "no race artifact, "}` +
     `${crash ? "crash artifact present, " : "no crash artifact, "}` +

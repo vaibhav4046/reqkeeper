@@ -145,13 +145,15 @@ BLOCKED 5  payment calldata fetched from the hosted REST API — optional: …
 10 ok · 0 failed · 2 blocked
 ```
 
-**`npm run gate-a` exits 2 on this, the expected path.** `scripts/gate-a.ts` exits 2 whenever
-any step is BLOCKED, and steps 4 and 5 are BLOCKED by design: they exercise Request's hosted
-REST API, which needs a dashboard Client ID and which this project deliberately does not
-depend on. Two consequences:
+**`npm run gate-a` exits 0 on this, the expected path.** Steps 4 and 5 are BLOCKED by design:
+they exercise Request's hosted REST API, which needs a dashboard Client ID and which this project
+deliberately does not depend on. Blocked is not failed — it is "I could not check this", the same
+distinction every other command here draws — so a clean clone exits 0 and the commands chain with
+`&&` safely. Only a FAIL exits non-zero (`scripts/gate-a.ts:322`).
 
-- Do not chain the README's four commands with `&&`. The sequence stops here on a pass.
-- A CI job that treats a non-zero exit as failure will fail on a clean gate.
+This paragraph used to say the opposite, because the script used to exit 2 on any BLOCKED step and
+that was the first hard failure a stranger hit on a clean clone. The code was fixed and the page
+was not, which is its own lesson: a runbook that teaches a bug outlives the bug.
 
 Also understand what Gate A does *not* prove. Steps 6, 7 and 8 re-derive the **recorded** live
 settlement from `docs/refusals-live.json` against a public RPC. They say nothing about your
@@ -341,6 +343,45 @@ npm run verify:all                    # re-derives every recorded claim from the
 these two is that neither reads back the file that reported the payment.
 
 ---
+
+## REQKEEPER_PAYER_ADDRESS, and why an unset one costs you liveness
+
+Optional, and everything works without it — but a dry run that never comes back will then wait for
+you instead of recovering on its own.
+
+`?simulate=true` is not a safety boundary on KeeperHub's transfer routes (issues #1959 / #1929):
+the call can really execute. When the reply is also lost, one question decides whether the debt may
+be proposed again: is there a transaction out there that will pay this invoice? A log scan cannot
+answer it, because `eth_getLogs` reads blocks and a pending transaction is not in one. Elapsed time
+cannot answer it either — there is no number of blocks after which a pending transaction becomes
+unmineable.
+
+What answers it is a nonce. A transaction is bound to one, a nonce is spent once, and the moment
+another transaction is mined at the nonce the leak would have used, the leak can never be included
+by any node. So ReqKeeper records the broadcasting account's mined nonce before the dry run and
+releases the obligation only once that nonce has moved. With no account configured there is no
+nonce to read, the obligation stays in `PAYMENT_PREFLIGHT`, and the resolver reports
+`LEAK_NOT_EXCLUDED:NO_PAYER_CONFIGURED`.
+
+It is the account that **broadcasts**, which is KeeperHub's relayer — not your funding account.
+The payment is a `transferFrom`, so the funding account's tokens move while the relayer's nonce is
+the one spent. Discover it from any settled transaction:
+
+```bash
+curl -s https://ethereum-sepolia-rpc.publicnode.com -H 'content-type: application/json'   -d '{"jsonrpc":"2.0","id":1,"method":"eth_getTransactionByHash","params":["0xe02fd64ced29c8e147817077c66eeac6b71b23a629dac6a3f33d73fcd8959119"]}'   | grep -o '"from":"0x[0-9a-f]*"'
+```
+
+For this deployment that is `0x809d8252aa4f9b8f7d9be7213855b289fe7d0444`. Confirm it is the
+broadcaster and not a contract — `eth_getCode` must return `0x`:
+
+```bash
+export REQKEEPER_PAYER_ADDRESS=0x809d8252aa4f9b8f7d9be7213855b289fe7d0444
+```
+
+Verify it against your own settlement before trusting it. A relayer can rotate accounts, and
+excluding a leak against the wrong account's nonce would be worse than not excluding it at all —
+which is why an unreadable or unconfigured nonce refuses rather than assuming. If KeeperHub moves
+to a relayer fleet, this needs the set of accounts, not one.
 
 ## Failure modes, and what each one means
 

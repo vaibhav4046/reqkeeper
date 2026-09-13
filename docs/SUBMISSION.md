@@ -176,7 +176,7 @@ writes `docs/TRUTH.md`.
 - **46 of 46 payment references** re-derive from `last8Bytes(keccak256(lowercase(requestId + salt + paymentAddress)))`.
 - `npm run harness` — 26 fault-injection cases, asserted against a provider that counts physical
   sends rather than reporting a status string.
-- 435 unit tests, `tsc --noEmit` clean, CI runs typecheck, tests and a build with a clean-tree
+- 455 unit tests, `tsc --noEmit` clean, CI runs typecheck, tests and a build with a clean-tree
   check on every push.
 
 ## What is honest about it
@@ -184,8 +184,11 @@ writes `docs/TRUTH.md`.
 The README concedes, in its own "When you should not use this" section, that **MetaMask's Delegation Framework already ships both
 of these gates on-chain and that is better**: `IdEnforcer` keeps a BitMap of used ids,
 `ExactCalldataEnforcer` requires `keccak256(termsCallData) == keccak256(callData)`. If your payer
-can be an ERC-7710 delegator smart account, use those. This exists for the payer that cannot be: a
-custodial or relayed EOA, where there is no smart account to attach a caveat to.
+can be an ERC-7710 delegator smart account, use those. This exists for the payer that has no
+delegation to attach a caveat to — which is not the same as "not a smart account". This
+deployment's own funding account is an EIP-7702 delegated EOA (`eth_getCode` returns
+`0xef0100955d84…`); what it lacks is an ERC-7710 delegation carrying enforcers, and the payment is
+a `transferFrom` broadcast by a relayer, so no caveat sits in the path.
 
 It also carries a published retraction of a platform bug that did not reproduce when probed, a
 self-reported bug the harness found in this codebase, and a limitations list that includes the

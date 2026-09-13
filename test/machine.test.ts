@@ -155,14 +155,20 @@ describe("the graph is well formed", () => {
   });
 
   test("assertTransition reports both ends of an illegal move", () => {
-    try {
-      assertTransition("SETTLED", "IMPORTED");
-      assert.fail("expected a throw");
-    } catch (e) {
-      assert.ok(e instanceof TransitionError);
-      assert.equal(e.from, "SETTLED");
-      assert.equal(e.to, "IMPORTED");
-      assert.equal(e.code, "ILLEGAL_TRANSITION");
-    }
+    // `assert.throws`, not try/catch. Written as a try/catch this test hung on one line: the
+    // `assert.ok(e instanceof TransitionError)` was the only thing stopping its own
+    // `assert.fail("expected a throw")` from being swallowed by the same catch, so deleting that
+    // line would have made the test unfailable. A sweep found three tests that had already lost
+    // that race; this one was one edit away from joining them.
+    assert.throws(
+      () => assertTransition("SETTLED", "IMPORTED"),
+      (e: unknown) => {
+        assert.ok(e instanceof TransitionError);
+        assert.equal(e.from, "SETTLED");
+        assert.equal(e.to, "IMPORTED");
+        assert.equal(e.code, "ILLEGAL_TRANSITION");
+        return true;
+      },
+    );
   });
 });

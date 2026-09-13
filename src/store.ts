@@ -195,6 +195,28 @@ function migrate(db: DatabaseSync): void {
   // remains is a perfectly consistent chain, so the check returned ok. A chain of hashes proves
   // nothing about its own length unless something outside it remembers where the end was.
   db.exec("CREATE TABLE IF NOT EXISTS audit_head (id INTEGER PRIMARY KEY CHECK (id = 1), row_hash TEXT NOT NULL, rows INTEGER NOT NULL)");
+  // Backfill the tip for a database whose audit rows predate this table.
+  //
+  // Without it there is a legitimate state -- rows present, no head -- and `verifyAuditChain` had
+  // to tolerate a missing head to avoid failing those databases. Tolerating it is the hole: an
+  // attacker who can DELETE audit rows can DELETE FROM audit_head in the same breath, at the same
+  // privilege, and the chain then verifies clean over whatever is left. Absence read as "nothing
+  // to check" -- the same defect as the duplicate-payment class, pointed at the audit trail.
+  //
+  // Backfilling removes the legitimate case, so after this a missing head with rows present can
+  // only be tampering, and the verifier says so.
+  {
+    const head = db.prepare("SELECT rows FROM audit_head WHERE id = 1").get() as { rows: number } | undefined;
+    if (!head) {
+      const tip = db.prepare("SELECT row_hash AS rowHash FROM audit ORDER BY id DESC LIMIT 1").get() as
+        | { rowHash: string }
+        | undefined;
+      const count = (db.prepare("SELECT COUNT(*) AS n FROM audit").get() as { n: number }).n;
+      if (count > 0 && tip) {
+        db.prepare("INSERT INTO audit_head (id, row_hash, rows) VALUES (1, ?, ?)").run(tip.rowHash, count);
+      }
+    }
+  }
   const auditColumns = db.prepare("PRAGMA table_info(audit)").all() as Array<{ name: string }>;
   for (const col of ["prev_hash", "row_hash"]) {
     if (!auditColumns.some((c) => c.name === col)) {
@@ -488,6 +510,35 @@ export class Store {
     const head = this.#db.prepare("SELECT row_hash AS rowHash, rows FROM audit_head WHERE id = 1").get() as
       | { rowHash: string; rows: number }
       | undefined;
+    // A missing head with rows present is tampering, not an old database: the migration above
+    // backfills the tip, so there is no honest way to have one without the other.
+    // Total erasure — every audit row AND the tip — leaves a state that is, inside the audit
+    // tables alone, identical to a database that has never been used. There is no link left to
+    // break. What gives it away is the rest of the file: an obligation exists only because it was
+    // proposed, and proposing writes an audit row, so obligations with an empty log is a
+    // contradiction no honest sequence produces.
+    //
+    // This is a cross-check, not a hash chain, and it is worth being plain about the limit: an
+    // attacker with write access who erases both tables and the obligations too leaves nothing to
+    // detect in-band. Detecting that needs append-only storage or an external anchor, neither of
+    // which this deployment has.
+    if (rows.length === 0) {
+      const obligations = (this.#db.prepare("SELECT COUNT(*) AS n FROM obligations").get() as { n: number }).n;
+      if (obligations > 0) {
+        return {
+          ok: false,
+          rows: 0,
+          reason: `the audit log is empty while ${obligations} obligation(s) exist — the log was erased`,
+        };
+      }
+    }
+    if (!head && rows.length > 0) {
+      return {
+        ok: false,
+        rows: rows.length,
+        reason: "the audit head is missing while rows are present — the tip record was deleted",
+      };
+    }
     if (head && (head.rowHash !== expectedPrev || head.rows !== rows.length)) {
       return {
         ok: false,

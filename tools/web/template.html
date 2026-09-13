@@ -22,7 +22,14 @@
     --line-2: #24393F;
     --text: #DCEAE6;
     --dim: #7C918F;
-    --faint: #4A5C5C;
+    /* The label/muted step. #4A5C5C was 2.71:1 on --panel and 2.59:1 on --panel-2 — every
+       stat label, every table header and 129 body nodes failed WCAG AA, which wants 4.5:1
+       for text this size (3:1 is for >=24px, or >=18.66px bold; nothing here is either).
+       #6D8787 keeps the same desaturated phosphor hue and clears 4.5:1 on all three
+       surfaces (bg 5.23, panel 4.98, panel-2 4.76) while staying a visible step below
+       --dim (5.49 on panel-2), so the hierarchy still reads. Raised here, not at the call
+       sites: there are 20 of them. */
+    --faint: #6D8787;
     --signal: #35F0A0;
     --amber: #F5C451;
     --alarm: #FF6B6B;
@@ -819,16 +826,22 @@
 
   // --- surfaces -----------------------------------------------------------
   el("surfaces").innerHTML = [
-    ["Direct execution", "/api/execute/contract-call", "src/keeperhub.ts", "verify:seam"],
-    ["MCP server", "app.keeperhub.com/mcp · 44 tools", "src/keeperhub-mcp.ts", "verify:mcp"],
-    ["Audit trail", "get_direct_execution_status", "src/keeperhub-mcp.ts", "verify:mcp"],
+    // Whole command, not a bare script name: the build scans the page it writes for
+    // "npm run <script>" and refuses a command package.json does not define. A fragment
+    // that only becomes a command after interpolation is invisible to that check, which is
+    // how both MCP cards went on printing a dead verify:mcp command for months after the
+    // script was renamed to probe:mcp. The check reads the built page as bytes, comments
+    // included, so a dead command must not be spelled out in full anywhere in here either.
+    ["Direct execution", "/api/execute/contract-call", "src/keeperhub.ts", "npm run verify:seam"],
+    ["MCP server", "app.keeperhub.com/mcp · 44 tools", "src/keeperhub-mcp.ts", "npm run probe:mcp"],
+    ["Audit trail", "get_direct_execution_status", "src/keeperhub-mcp.ts", "npm run probe:mcp"],
   ]
     .map(
       ([n, ep, f, cmd]) => `<div class="card"><header>${n}<span class="tag ok">wired</span></header>
       <div class="body"><dl class="kv">
         <dt>endpoint</dt><dd><code>${ep}</code></dd>
         <dt>provider</dt><dd><code>${f}</code></dd>
-        <dt>verified</dt><dd><code>npm run ${cmd}</code></dd>
+        <dt>verified</dt><dd><code>${cmd}</code></dd>
         <dt>gate</dt><dd>src/calldata-gate.ts</dd>
       </dl></div></div>`,
     )

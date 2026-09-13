@@ -95,7 +95,15 @@ export interface SettleDeps {
  * sentence about an invoice, a payment is 260 bytes, and until something compares them the
  * approval is only evidence that a human read a summary.
  */
-function calldataDisagreesWithFacts(
+/**
+ * Exported for the table in test/calldata-gate-fields.test.ts.
+ *
+ * A reviewer deleted the token check and then the payee check from this function and the whole
+ * suite stayed green at 429/429, exit 0 — the seam this project is named for was asserted
+ * nowhere. Testing it through `settleObligation` alone means one fixture per field and nobody
+ * writes them; a pure function takes a table.
+ */
+export function calldataDisagreesWithFacts(
   steps: ReadonlyArray<{ kind: string; to: string; data: string; value: string }>,
   facts: SourceFacts,
   totalDebitBaseUnits: string,
@@ -285,15 +293,34 @@ function refusalForLostRace(e: unknown, store: Store, input: SettleInput): Settl
   // caller: somebody else is already past the point of no return on this debt.
   if (code === "REPLAN_REFUSED" || code === "ILLEGAL_TRANSITION") {
     const state = store.getObligation(input.obligationId)?.state as State | undefined;
-    store.audit(input.obligationId, "system", "REFUSED_REENTRY", { state: state ?? null, via: code });
+    // This wrapper catches a signature, not a place: it is reached from anywhere in the flow,
+    // INCLUDING after `provider.execute` has already broadcast. A concurrent winner moving the
+    // obligation to SETTLED makes this call's next `setState` throw ILLEGAL_TRANSITION, and this
+    // branch then answered `providerWriteIssued: false` with the words "Nothing sent" about a
+    // call that had sent. An agent reading that is being told the one thing that would make
+    // proposing again look safe.
+    //
+    // A catch block cannot know what happened before the throw, so it must not assert it. The
+    // store can: an attempt row with `first_send_at` set is a write that was issued, and
+    // `markSent` writes it before the provider call precisely so this question survives a crash.
+    const sent = store.sentAttemptFor(input.obligationId) !== undefined;
+    store.audit(input.obligationId, "system", "REFUSED_REENTRY", {
+      state: state ?? null,
+      via: code,
+      providerWriteIssued: sent,
+    });
     return out({
       state: state ?? "OBLIGATION_RESERVED",
       refusal: state === "SETTLED" ? "ALREADY_SETTLED" : "ALREADY_DISPATCHED",
       detail:
         `another process reached ${state ?? "this obligation"} while this one was still ` +
         "planning; a payment past that point is resolved by observing the one that was sent, " +
-        "never by proposing another. Nothing sent.",
-      providerWriteIssued: false,
+        "never by proposing another. " +
+        (sent
+          ? "This call had already issued a provider write — reconcile it, do not propose again."
+          : "Nothing sent."),
+      providerWriteIssued: sent,
+      ...(sent ? { txHash: store.sentAttemptFor(input.obligationId)?.txHash ?? undefined } : {}),
     });
   }
 

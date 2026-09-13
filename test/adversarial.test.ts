@@ -748,6 +748,7 @@ describe("5. Fuzzing and Stress Testing Suite", () => {
     const base = ETHERS_REFERENCE;
     const hexChars = "0123456789abcdefABCDEF";
     const nonHexChars = "!@#$%^&*()_+-=[]{}|;':,./<>?~` \t\r\n";
+    let accepted = 0;
 
     for (let i = 0; i < 500; i++) {
       let mutated: string = base;
@@ -792,16 +793,38 @@ describe("5. Fuzzing and Stress Testing Suite", () => {
         }
       }
 
+      let call: ReturnType<typeof decodeAllowedCall> | undefined;
       try {
-        decodeAllowedCall({ to: ERC20_FEE_PROXY, data: mutated });
+        call = decodeAllowedCall({ to: ERC20_FEE_PROXY, data: mutated });
       } catch (e: unknown) {
         // Must always fail safely as ProviderError
         assert.ok(
           e instanceof ProviderError,
           `Expected ProviderError on mutation ${mutationType}, got ${(e as Error).name}: ${(e as Error).message}`,
         );
+        continue;
       }
+
+      // Some mutations land back on valid calldata (an offset word randomised to 0xc0, a
+      // zero-length insertion, a substitution of the same character). "Did not throw" is not a
+      // result on its own: what the gate hands back has to mean exactly the bytes it was given,
+      // or the dispatcher sends arguments nobody approved.
+      accepted++;
+      assert.ok(call, `mutation ${mutationType} returned nothing`);
+      assert.equal(call.signature, PAY_SIG, `mutation ${mutationType} decoded as another function`);
+      assert.equal(call.to, ERC20_FEE_PROXY, `mutation ${mutationType} retargeted the call`);
+      assert.equal(call.value, "0", `mutation ${mutationType} smuggled native value`);
+      assert.equal(
+        encodeCall(call.signature, call.args).toLowerCase(),
+        mutated.toLowerCase(),
+        `mutation ${mutationType} passed the gate but its arguments do not re-encode to its calldata`,
+      );
     }
+
+    // Guard against this test quietly going back to asserting nothing: if every mutation
+    // started throwing, the block above would never run and the loop would pass empty.
+    // Measured 20-38 acceptances per 500 mutations over 40 runs, none zero.
+    assert.ok(accepted > 0, "no mutation was accepted — the success-path assertions never ran");
   });
 
   test("money fuzzer: random decimal conversions maintain safety or fail gracefully", () => {

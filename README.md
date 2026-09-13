@@ -70,9 +70,19 @@ a BitMap of spent ids, and `ExactCalldataEnforcer` requires
 `keccak256(termsCallData) == keccak256(callData)`. On-chain enforcement cannot be bypassed by a
 bug in software like this one.
 
-ReqKeeper exists for the payer that cannot be a smart account: a custodial or relayed EOA, where
-there is no account to attach a caveat to. KeeperHub's Turnkey wallet is exactly that case, which
-is why this project exists at all.
+ReqKeeper exists for the payer that has no delegation to attach a caveat to. That is not the same
+as "not a smart account", and this deployment is the proof: its funding account
+`0x027d54a6…` answers `eth_getCode` with `0xef0100955d84…`, an EIP-7702 delegation designator, so
+it *is* code-bearing. What it does not have is an ERC-7710 delegation with enforcers on it. The
+tokens move by `transferFrom` under an allowance, broadcast by KeeperHub's relayer
+(`0x809d8252…`, `eth_getCode` = `0x`), so there is no caveat in the path to enforce and nothing
+on-chain that can refuse a second payment. The gate has to live where the decision is made.
+
+Read both accounts yourself, no credentials needed:
+
+```bash
+curl -s https://ethereum-sepolia-rpc.publicnode.com -H 'content-type: application/json'   -d '{"jsonrpc":"2.0","id":1,"method":"eth_getCode","params":["0x027d54a692e0e80173141777bdb847c1726fa1f3","latest"]}'
+```
 
 ## Verify without credentials
 
@@ -102,7 +112,7 @@ dependencies. `typecheck` and `build` call `tsc`, so those two want `npm install
 ```bash
 npm install           # only for typecheck and build; everything above runs without it
 
-npm test              # 435 tests, 88 suites
+npm test              # 455 tests, 91 suites
 npm run typecheck     # tsc --noEmit
 npm run build         # console + api; the tree must stay clean afterwards
 npm run gate-a        # Request <-> KeeperHub <-> Sepolia end to end

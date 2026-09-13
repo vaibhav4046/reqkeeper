@@ -159,8 +159,20 @@ describe("idempotencyKey", () => {
   const oid = "a".repeat(64);
   const phash = "b".repeat(64);
 
+  // Known-answer vectors: sha256("reqkeeper.step.v1:<oid>:<planHash>:<stepIndex>") for
+  // oid = "a" x 64, planHash = "b" x 64. Frozen literals, not a recomputation — comparing the
+  // function to itself proved nothing, and any change to the preimage (prefix, version tag,
+  // separator, field order) silently re-keys every in-flight payment at the provider.
+  const VECTORS = [
+    "0575982a6612bde7a9bfd35163a59749484dc923b27a900819e39833d3ba54bd",
+    "32091a72ba51ec0b5153efcba8b8baa75e2620263017f1cdc0ff86965c37f32d",
+    "2a18bf7c474b121eb91bbc811ef17aef1061070833b844f5cd3040ad7b0ed510",
+  ];
+
   test("is deterministic, so a retry reproduces it exactly", () => {
-    assert.equal(idempotencyKey(oid, phash, 0), idempotencyKey(oid, phash, 0));
+    VECTORS.forEach((expected, step) => {
+      assert.equal(idempotencyKey(oid, phash, step), expected, `step ${step} vector`);
+    });
     assert.match(idempotencyKey(oid, phash, 0), HEX64);
   });
 
