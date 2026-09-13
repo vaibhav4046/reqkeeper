@@ -152,7 +152,7 @@ produce that order:
 
 | § | Line | What | Why here and not elsewhere |
 |---|---|---|---|
-| 0 | 374 | reference index + `OBLIGATION_ID_MISMATCH` | The request id is caller-supplied free text. The reference is derived by Request and is what the chain carries, so it is the identity that actually binds. The id check costs one hash and stops a caller describing two debts at once. |
+| 0 | 374 | reference index + `OBLIGATION_ID_MISMATCH` | The request id is caller-supplied free text. The reference is derived here from the invoice's own salt and payment address, by the same rule Request's calculator uses, and it is what the chain actually carries — so it is the identity that binds. The id check costs one hash and stops a caller describing two debts at once. |
 | 0b | 413 | re-entry guard | Without it the pipeline re-runs on a settled obligation and `setState` drags it back to `PAYMENT_PREFLIGHT` before later guards refuse. Money stays safe; the recorded state regresses and the agent surface reports a finished payment as pre-dispatch. |
 | 1 | 444 | policy | First, because it is the cheapest thing that can say no. |
 | 1b | 458 | calldata vs facts | The only place both halves are in scope. Policy clears an *invoice*; the provider is handed *bytes*. The gate at the provider proves the bytes decode to an allowlisted call and has no idea what this invoice says. |

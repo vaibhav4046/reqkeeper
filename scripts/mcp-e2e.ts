@@ -134,6 +134,10 @@ const server = new ServerUnderTest({
   KEEPERHUB_API_KEY: "kh_e2e_fixture",
   KEEPERHUB_BASE_URL: fx.baseUrl,
   SEPOLIA_RPC: fx.rpcUrl,
+  // Pinned to the fixture. Without this the negative from the fixture is corroborated
+  // against real public endpoints, where these invoices really are paid -- two different
+  // worlds, and the run refuses on the contradiction between them.
+  REQKEEPER_RPC_ENDPOINTS: fx.rpcUrl,
   REQKEEPER_DB: dbPath,
 });
 
@@ -167,7 +171,7 @@ try {
 
   // ---- 3. propose stops at the human --------------------------------------
   const proposed = await server.call("propose_payment", INVOICE);
-  check(proposed.json?.state === "AWAITING_APPROVAL", "propose_payment stops at AWAITING_APPROVAL", String(proposed.json?.state));
+  check(proposed.json?.state === "AWAITING_APPROVAL", "propose_payment stops at AWAITING_APPROVAL", `${proposed.json?.state} ${proposed.json?.refusal ?? ""} ${String(proposed.json?.detail ?? "").slice(0, 120)}`);
   check(typeof proposed.json?.approvalSentence === "string", "and returns the sentence a human must read", String(proposed.json?.approvalSentence).slice(0, 58));
   check(fx.counters().broadcasts === 0, "nothing was sent", `${fx.counters().broadcasts} broadcast`);
 

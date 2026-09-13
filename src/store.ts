@@ -190,6 +190,11 @@ CREATE TABLE IF NOT EXISTS audit (
  * process start.
  */
 function migrate(db: DatabaseSync): void {
+  // The audit chain links each row to the one before it, which catches an edited row and a
+  // removed row in the middle. It cannot catch TRUNCATION: delete the last three rows and what
+  // remains is a perfectly consistent chain, so the check returned ok. A chain of hashes proves
+  // nothing about its own length unless something outside it remembers where the end was.
+  db.exec("CREATE TABLE IF NOT EXISTS audit_head (id INTEGER PRIMARY KEY CHECK (id = 1), row_hash TEXT NOT NULL, rows INTEGER NOT NULL)");
   const auditColumns = db.prepare("PRAGMA table_info(audit)").all() as Array<{ name: string }>;
   for (const col of ["prev_hash", "row_hash"]) {
     if (!auditColumns.some((c) => c.name === col)) {
@@ -384,11 +389,18 @@ export class Store {
         | undefined;
       const prev = tip?.h ?? "";
       const rowHash = auditHash(prev, obligationId, actor, action, detailJson, now);
+      // Written in the same transaction as the row, so the tip cannot disagree with the chain
+      // unless somebody edits the database behind the process -- which is exactly the case this
+      // is here to catch.
       this.#db
         .prepare(
           "INSERT INTO audit (obligation_id, actor, action, detail_json, at, prev_hash, row_hash) VALUES (?,?,?,?,?,?,?)",
         )
         .run(obligationId, actor, action, detailJson, now, prev, rowHash);
+      const count = (this.#db.prepare("SELECT COUNT(*) AS n FROM audit").get() as { n: number }).n;
+      this.#db
+        .prepare("INSERT INTO audit_head (id, row_hash, rows) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET row_hash = excluded.row_hash, rows = excluded.rows")
+        .run(rowHash, count);
     };
 
     try {
@@ -461,6 +473,24 @@ export class Store {
         return { ok: false, rows: rows.length, brokenAtId: r.id, reason: "a row's contents were edited" };
       }
       expectedPrev = r.rowHash;
+    }
+
+    // The end of the chain, checked against the tip recorded when the last row was written. A
+    // hash chain is only evidence of what it still contains: an adversarial pass deleted the last
+    // three rows and this returned ok, because every remaining link was intact. Now a truncated
+    // log fails on its length and its last hash, and an empty log with a recorded tip fails too.
+    const head = this.#db.prepare("SELECT row_hash AS rowHash, rows FROM audit_head WHERE id = 1").get() as
+      | { rowHash: string; rows: number }
+      | undefined;
+    if (head && (head.rowHash !== expectedPrev || head.rows !== rows.length)) {
+      return {
+        ok: false,
+        rows: rows.length,
+        reason:
+          head.rows !== rows.length
+            ? `the log holds ${rows.length} rows and the recorded tip was written at ${head.rows}: rows were removed from the end`
+            : "the last row does not match the recorded tip: the end of the log was rewritten",
+      };
     }
     return { ok: true, rows: rows.length };
   }

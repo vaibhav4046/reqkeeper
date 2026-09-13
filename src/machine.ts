@@ -3,8 +3,11 @@
  * move is a conflict and an audit event rather than a silently corrupted row.
  *
  * Two rules the rest of the system leans on:
- *   - CHAIN_CONFIRMED is not SETTLED. Settlement needs an independently read receipt AND
- *     Request's own reconciliation. A provider status string is never sufficient.
+ *   - CHAIN_CONFIRMED is not SETTLED. Settlement needs an independently read receipt AND the
+ *     fee-proxy event for that same transaction carrying this reference, token, payee and
+ *     amount -- both read here from a public RPC, by the query Request's own detection uses.
+ *     Request is not asked; claiming it was would be borrowing someone else's word for our own
+ *     read. A provider status string is never sufficient either.
  *   - EXECUTION_OUTCOME_UNKNOWN never decays into failure. It resolves only by observing
  *     the work that was already dispatched.
  */

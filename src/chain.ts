@@ -18,11 +18,30 @@ export const DEFAULT_RPC = process.env.SEPOLIA_RPC ?? "https://ethereum-sepolia-
  * Order matters: publicnode stays first because its `eth_getLogs` range cap is what MAX_RANGE
  * below is tuned against.
  */
-const RPC_FALLBACKS = [
+const RPC_FALLBACKS = (process.env.REQKEEPER_RPC_ENDPOINTS ?? "")
+  .split(",")
+  .map((u) => u.trim())
+  .filter(Boolean);
+
+/**
+ * The endpoints a negative is corroborated against.
+ *
+ * Overridable because "which nodes do you trust" is an operator's decision, not a library's: a
+ * deployment with its own endpoints should not be forced to consult three public ones, and a
+ * harness running against a fixture chain should not silently reach the real Sepolia behind it.
+ * That second case was a real failure -- an end-to-end run paired a fixture with a real invoice,
+ * the fixture correctly said "not paid", the fallbacks asked the real chain where the invoice IS
+ * paid, and the run refused on a contradiction between two different worlds.
+ *
+ * `REQKEEPER_RPC_ENDPOINTS` is a comma-separated list. Unset means these three.
+ */
+const DEFAULT_RPC_FALLBACKS = [
   "https://ethereum-sepolia-rpc.publicnode.com",
   "https://sepolia.gateway.tenderly.co",
   "https://sepolia.drpc.org",
 ];
+
+const rpcFallbacks = (): readonly string[] => (RPC_FALLBACKS.length > 0 ? RPC_FALLBACKS : DEFAULT_RPC_FALLBACKS);
 
 /** Methods where a null result may mean "pruned" rather than "absent". */
 const NULLABLE_IS_UNKNOWN = new Set([
@@ -121,7 +140,7 @@ export async function rpcCall(
 
   // The endpoint disclaimed knowledge of a transaction. Ask the others before
   // concluding it does not exist; only agreement across endpoints is evidence.
-  for (const alt of RPC_FALLBACKS) {
+  for (const alt of rpcFallbacks()) {
     if (alt === rpcUrl) continue;
     try {
       const second = await rpcCallOnce(alt, method, params, timeoutMs);
@@ -496,7 +515,7 @@ export async function findPaymentByReference(
    * return, with no error — so a single endpoint's silence is not evidence of absence.
    * Only re-scan on a negative, so the common path still costs one pass.
    */
-  for (const alt of RPC_FALLBACKS) {
+  for (const alt of rpcFallbacks()) {
     if (alt === rpcUrl) continue;
     try {
       await ensureChain(alt);
@@ -619,7 +638,7 @@ async function corroborate(
   expect?: PaymentExpectation,
 ): Promise<boolean> {
   if (sighting.block === undefined || sighting.txHash === undefined) return false;
-  for (const alt of RPC_FALLBACKS) {
+  for (const alt of rpcFallbacks()) {
     if (alt === primaryUrl) continue;
     try {
       await ensureChain(alt);

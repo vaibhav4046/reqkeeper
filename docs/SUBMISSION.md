@@ -58,7 +58,7 @@ Request triggers, KeeperHub executes, and a human sits between them.
    that it holds a provider whose every method throws, so it cannot dispatch anything even if a
    later edit let an unapproved plan through.
 
-   Real output, against 41 live Request invoices (`docs/request-trigger.txt`):
+   Real output, against the 46 live Request invoices this deployment knows about (`docs/request-trigger.txt`):
 
    ```
    016ff0225b1dd706b7…  0xd9e6ee9360a89ed9  unpaid   AWAITING_APPROVAL
@@ -176,7 +176,7 @@ writes `docs/TRUTH.md`.
 - **46 of 46 payment references** re-derive from `keccak256(requestId + salt + paymentAddress)`.
 - `npm run harness` — 26 fault-injection cases, asserted against a provider that counts physical
   sends rather than reporting a status string.
-- 422 unit tests, `tsc --noEmit` clean, CI runs typecheck, tests and a build with a clean-tree
+- 427 unit tests, `tsc --noEmit` clean, CI runs typecheck, tests and a build with a clean-tree
   check on every push.
 
 ## What is honest about it

@@ -46,6 +46,13 @@ jobs:
       - name: crash lottery — nine checkpoints, zero duplicates
         run: npm run crash
 
+      # The agent surface, end to end against a fixture: propose, a human approval written by a
+      # separate process, settle once, then ten replays that pay nothing. It is deterministic and
+      # needs no credential, and it was broken for a whole round by a safety fix in the chain read
+      # because nothing in CI ran it. A harness nobody runs is a harness that documents the past.
+      - name: agent surface end to end
+        run: npm run mcp:e2e
+
       # Credential-free by construction: it imports no provider and cannot move money.
       - name: verify every public claim
         run: npm run verify:all

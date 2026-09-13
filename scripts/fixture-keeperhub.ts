@@ -52,7 +52,13 @@ interface Executed {
 }
 
 const SEPOLIA_HEX = "0xaa36a7";
-const HEAD_BLOCK = 1_000_000;
+// Above the anchor block of the real Request invoices this harness pairs itself with (~11.69M
+// on Sepolia). It used to be 1,000,000, which was harmless until the chain read started
+// discarding an anchor above the head -- correctly, since a block that does not exist yet
+// cannot be a create block. The fixture then made every scan inconclusive and the whole
+// end-to-end run refused at SOURCE_UNVERIFIABLE. A fixture chain shorter than the invoices it
+// serves is not a simplification, it is a different chain.
+const HEAD_BLOCK = 11_700_000;
 const sameAddress = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const word = (hex: string) => hex.replace(/^0x/, "").toLowerCase().padStart(64, "0");
 

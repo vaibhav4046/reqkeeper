@@ -186,6 +186,14 @@ const TERMINAL_FOR_AGENTS: Record<string, string> = {
   REFERENCE_ALREADY_CLAIMED:
     "Another obligation already holds this payment reference. It is the same debt under a different name.",
   SOURCE_ALREADY_PAID: "The chain already shows this reference paid. There is nothing left to pay.",
+  // Added when the already-paid gate learned to carry an unknown. It was missing from the
+  // vocabulary for a round, on a tool whose description promises every code this system can
+  // answer with -- so an agent that hit it had no guidance and a promise had a hole in it.
+  SOURCE_UNVERIFIABLE:
+    "The chain could not be read far enough to say whether this invoice is already paid. Nothing " +
+    "was proposed and nothing was sent. This is a read failure, not a refusal of the payment: " +
+    "retry when an endpoint answers, or once Request has confirmed the invoice so its anchor " +
+    "block bounds the search.",
   SIMULATION_BLOCKED: "The payment would revert. A retry repeats the revert.",
   // Not "a new plan and a new approval": the state is terminal and not replannable, so that
   // was guidance for a route that does not exist. The reference stays attached to this

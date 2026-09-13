@@ -24,7 +24,7 @@
 
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { encodeCall } from "../src/abi.ts";
-import { currentBlock, DEFAULT_LOOKBACK, findPaymentByReference, type PaymentExpectation } from "../src/chain.ts";
+import { currentBlock, DEFAULT_LOOKBACK, findPaymentByReference, verdictFor, type PaymentExpectation } from "../src/chain.ts";
 import { obligationId } from "../src/identity.ts";
 import { KeeperHubProvider } from "../src/keeperhub.ts";
 import { KeeperHubMcpProvider } from "../src/keeperhub-mcp.ts";
@@ -222,6 +222,22 @@ console.log(
 // A log that carries the reference and pays something else stops the run too: it is not this
 // invoice's settlement, and it is not nothing either -- it is a question for a human, and
 // paying over the top of it would bury the question.
+// An inconclusive scan is not permission either. This is the script that moves real money, and
+// it was the one place still proceeding on a negative the MCP gate would refuse: a window that
+// did not reach the invoice's anchor, or a read no endpoint answered, says nothing about whether
+// the debt is already settled.
+const beforeVerdict = verdictFor(before, { requireCorroboration: true });
+if (beforeVerdict.kind === "UNKNOWN" && !before.conflicts?.length) {
+  console.error(
+    `\nREFUSED before any write: searching ${searchedDescription} could not establish whether ` +
+      `${REFERENCE} has already been paid (${beforeVerdict.reason}). A scan that did not cover the ` +
+      `window, or that no endpoint answered, is not evidence the debt is unpaid. Retry when an ` +
+      `endpoint answers, or once Request has confirmed the invoice so its anchor bounds the search.\n`,
+  );
+  store.close();
+  process.exit(2);
+}
+
 if (before.found || before.conflicts?.length) {
   console.error(
     `\nREFUSED before any write: searching ${searchedDescription}, the fee proxy already ` +

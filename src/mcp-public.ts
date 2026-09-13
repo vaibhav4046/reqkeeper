@@ -97,6 +97,12 @@ const RETRY_GUIDANCE: Record<string, string> = {
   FEE_RECIPIENT_UNKNOWN: "The fee would go somewhere the policy does not name.",
   TOKEN_DECIMALS_MISMATCH: "The token's decimals disagree with policy. A retry repeats it.",
   SOURCE_ALREADY_PAID: "The chain already shows this reference paid.",
+  // The hosted vocabulary promises every code this system can answer with. This one was
+  // added to the money gate and not to the promise.
+  SOURCE_UNVERIFIABLE:
+    "The chain could not be read far enough to say whether the invoice is already paid. " +
+    "Nothing was proposed and nothing was sent; a read that could not conclude is not a " +
+    "refusal of the payment.",
   PLAN_EXPIRED: "The approval aged out. Propose again.",
   PLAN_CHANGED: "The invoice changed after approval. Needs a new approval.",
   OBLIGATION_RESERVED: "Another plan holds this obligation. Do not race it.",
