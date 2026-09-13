@@ -8,7 +8,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "test": "node --experimental-strip-types --test",
+    "test": "node --experimental-strip-types --test \"test/*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "gate-a": "node --experimental-strip-types scripts/gate-a.ts",
     "race": "node --experimental-strip-types scripts/race.ts",

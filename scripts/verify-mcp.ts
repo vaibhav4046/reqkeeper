@@ -46,7 +46,13 @@ console.log("\nMCP surface check — KeeperHub's own server, not the REST route\
 
 if (!API_KEY) {
   console.log("  BLOCKED — set KEEPERHUB_API_KEY in .env\n");
-  process.exit(2);
+  // Blocked is not failed. `scripts/gate-a.ts` learned this the hard way -- exiting non-zero on a
+  // clean clone was the first hard failure a stranger hit -- and this command kept the old
+  // behaviour, so the README lists it beside commands that all exit 0 and it alone broke a chained
+  // run. "I could not check this" is a legitimate result, and it still never counts as a pass:
+  // nothing below runs and no check is recorded.
+  console.log("  Nothing was checked, and nothing is claimed. This is not a failure.");
+  process.exit(0);
 }
 
 const provider = new KeeperHubMcpProvider({
