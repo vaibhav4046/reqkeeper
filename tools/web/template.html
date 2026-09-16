@@ -129,10 +129,56 @@
   .strip {
     display: flex; align-items: stretch; border-bottom: 1px solid var(--line);
     background: var(--panel); position: sticky; top: 0; z-index: 20; overflow-x: auto;
+    position: relative;
   }
-  .stat { padding: 11px 18px; border-right: 1px solid var(--line); min-width: 116px; flex: none; }
-  .stat .k { color: var(--faint); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
-  .stat .v { font-family: var(--pixel); font-size: 13px; margin-top: 7px; color: var(--text); }
+  .strip-fx-canvas {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 15;
+  }
+  .strip-pet {
+    position: absolute; top: 12px; left: 6px; width: 34px; height: 34px;
+    z-index: 25; cursor: pointer; user-select: none;
+    transition: transform 0.28s steps(4, end);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .strip-pet img {
+    width: 30px; height: 30px; display: block;
+    image-rendering: pixelated; image-rendering: crisp-edges;
+    filter: drop-shadow(0 0 5px rgba(53, 240, 160, 0.65));
+  }
+  .strip-pet.pet-running img {
+    animation: petRunSteps 0.16s steps(2, start) infinite alternate;
+  }
+  @keyframes petRunSteps {
+    0% { transform: translateY(0) rotate(0deg); }
+    100% { transform: translateY(-3px) rotate(4deg); }
+  }
+  .strip-pet.pet-writing img {
+    transform: translateY(1px) rotate(-4deg);
+    filter: drop-shadow(0 0 8px #35F0A0) drop-shadow(0 0 16px rgba(53, 240, 160, 0.4));
+  }
+  .strip-pet.pet-celebrating img {
+    animation: petHop 0.35s ease infinite alternate;
+  }
+  @keyframes petHop {
+    0% { transform: translateY(0) scale(1); }
+    100% { transform: translateY(-9px) scale(1.12); filter: drop-shadow(0 0 12px #00FF4F); }
+  }
+  .strip-pet.pet-idle img {
+    animation: petBreathe 2.2s ease-in-out infinite;
+  }
+  @keyframes petBreathe {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(1.5px); }
+  }
+  .stat .k.chalk-write {
+    color: var(--signal); text-shadow: 0 0 8px var(--signal);
+  }
+  .stat .v.chalk-write {
+    color: #FFFFFF; text-shadow: 0 0 10px #00FF4F, 0 0 20px #00FF4F;
+  }
+  .stat { padding: 11px 18px; border-right: 1px solid var(--line); min-width: 116px; flex: none; position: relative; }
+  .stat .k { color: var(--faint); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; min-height: 16px; }
+  .stat .v { font-family: var(--pixel); font-size: 13px; margin-top: 7px; color: var(--text); min-height: 16px; }
   .stat .v.good { color: var(--signal); }
   .stat .v.warn { color: var(--amber); }
   main { min-width: 0; }
@@ -449,6 +495,12 @@
   .vmode-btn.pulse-trigger:hover {
     background: rgba(0, 255, 79, 0.22); box-shadow: 0 0 10px rgba(0, 255, 79, 0.4);
   }
+  .vmode-btn.pulse-refuse {
+    color: var(--amber); border-color: rgba(255, 180, 84, 0.5);
+  }
+  .vmode-btn.pulse-refuse:hover {
+    background: rgba(255, 180, 84, 0.18); box-shadow: 0 0 10px rgba(255, 180, 84, 0.35);
+  }
 
   /* Dino Pet Companion Card */
   .dino-pet-card {
@@ -598,15 +650,8 @@
 <div class="app">
   <aside>
     <div class="brand">
-      <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:8px">
-        <svg aria-label="KeeperHub Logo" viewBox="0 0 318 500" width="18" height="28" fill="none" xmlns="http://www.w3.org/2000/svg" title="KeeperHub Official Logo">
-          <path d="M317.77 204.279H226.98V295.069H317.77V204.279Z" fill="#00FF4F"></path>
-          <path d="M204.28 90.79V0H113.49V90.79C113.456 120.879 101.488 149.725 80.2115 171.002C58.9355 192.278 30.0889 204.246 0 204.28V295.07C30.0889 295.104 58.9355 307.072 80.2115 328.348C101.488 349.625 113.456 378.471 113.49 408.56V499.35H204.28V408.56C204.28 378.075 197.445 347.977 184.279 320.482C171.113 292.987 151.95 268.793 128.2 249.68C151.948 230.563 171.109 206.367 184.275 178.871C197.441 151.374 204.277 121.276 204.28 90.79Z" fill="#00FF4F"></path>
-        </svg>
-        <span style="font-family:var(--pixel);font-size:8px;color:var(--faint)">&times;</span>
-        <div class="mark-wrap"><canvas id="mark" class="mark" width="34" height="30" role="img"
-          aria-label="ReqKeeper: a pixel tyrannosaur holding a coin, its tail breaking into loose pixels"></canvas></div>
-      </div>
+      <div class="mark-wrap"><canvas id="mark" class="mark" width="34" height="30" role="img"
+        aria-label="ReqKeeper: a pixel tyrannosaur holding a coin, its tail breaking into loose pixels"></canvas></div>
       <div class="name" id="wordmark" style="cursor:pointer" title="ReqKeeper Home"></div>
       <div class="sub">KEEPERHUB &times; REQUEST NETWORK</div>
 
@@ -620,7 +665,7 @@
           <span id="dino-fact-text">Initializing proof ledger...</span><span class="dino-caret">_</span>
         </div>
         <div class="dino-foot">
-          <button type="button" id="dino-next-btn">NEXT FACT &#10142;</button>
+          <span style="color:var(--signal);font-size:7px">VERIFIED ON-CHAIN PROOFS</span>
           <span id="dino-fact-idx">1/7</span>
         </div>
       </div>
@@ -680,22 +725,24 @@
                   <path d="M317.77 204.279H226.98V295.069H317.77V204.279Z" fill="#00FF4F"></path>
                   <path d="M204.28 90.79V0H113.49V90.79C113.456 120.879 101.488 149.725 80.2115 171.002C58.9355 192.278 30.0889 204.246 0 204.28V295.07C30.0889 295.104 58.9355 307.072 80.2115 328.348C101.488 349.625 113.456 378.471 113.49 408.56V499.35H204.28V408.56C204.28 378.075 197.445 347.977 184.279 320.482C171.113 292.987 151.95 268.793 128.2 249.68C151.948 230.563 171.109 206.367 184.275 178.871C197.441 151.374 204.277 121.276 204.28 90.79Z" fill="#00FF4F"></path>
                 </svg>
-                <i class="live-dot"></i>3D KEEPERHUB &#8644; REQKEEPER DOCK
+                <i class="live-dot"></i>SETTLEMENT PIPELINE &#8644; KEEPERHUB
               </span>
-              <span id="vault-telemetry">SECP256K1 // ROT: 0&deg; // ARMED</span>
+              <span id="vault-telemetry">WYSIWYS CALLDATA GATE // ARMED // 0 GAS</span>
             </header>
             <div class="vault-canvas-wrap" id="vault-canvas-box">
-              <canvas id="vault3d" width="600" height="300" aria-label="Interactive 3D Cryptographic Safe and KeeperHub Integration Model in Phosphor Green"></canvas>
+              <canvas id="vault3d" width="600" height="300" aria-label="Interactive Settlement Architecture: ReqKeeper deterministic safety layer around KeeperHub execution"></canvas>
               <div class="vault-hud">
-                <span id="vault-hud-left">DRAG TO ROTATE &middot; CLICK CANVAS TO DISPATCH</span>
+                <span id="vault-hud-left">DRAG TO ROTATE &middot; CLICK NODES TO INSPECT</span>
                 <span id="vault-hud-right">GATE: WYSIWYS ARMED &middot; 0 GAS</span>
               </div>
             </div>
             <div class="vault-modes" id="vault-modes">
-              <button class="vmode-btn active" data-mode="dock" type="button">KEEPERHUB &#8644; REQ DOCK</button>
-              <button class="vmode-btn" data-mode="keeperhub" type="button">KEEPERHUB 3D</button>
-              <button class="vmode-btn" data-mode="vault" type="button">REQ VAULT 3D</button>
-              <button class="vmode-btn pulse-trigger" id="btn-pulse-exec" type="button">&#9889; DISPATCH PULSE</button>
+              <button class="vmode-btn active" data-mode="flow" type="button">FLOW</button>
+              <button class="vmode-btn" data-mode="gate" type="button">GATE</button>
+              <button class="vmode-btn" data-mode="keeperhub" type="button">KEEPERHUB</button>
+              <button class="vmode-btn" data-mode="vault" type="button">REQ VAULT</button>
+              <button class="vmode-btn pulse-trigger" id="btn-pulse-exec" type="button">&#9889; DISPATCH</button>
+              <button class="vmode-btn pulse-refuse" id="btn-pulse-refuse" type="button">&#10005; SIMULATE REPLAY</button>
             </div>
           </div>
         </div>
@@ -1178,24 +1225,38 @@
   })();
 
   // --- synthesized retro audio blip (no external assets) -------------------
+  let sharedAudioCtx = null;
   function playRetroBlip(freq = 640) {
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
-      const actx = new AudioCtx();
-      const osc = actx.createOscillator();
-      const gain = actx.createGain();
+      if (!sharedAudioCtx) return; // wait for user gesture
+      if (sharedAudioCtx.state === "suspended") {
+        sharedAudioCtx.resume().catch(() => {});
+        return;
+      }
+      const osc = sharedAudioCtx.createOscillator();
+      const gain = sharedAudioCtx.createGain();
       osc.type = "triangle";
-      osc.frequency.setValueAtTime(freq, actx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(freq * 1.6, actx.currentTime + 0.05);
-      gain.gain.setValueAtTime(0.04, actx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.07);
+      osc.frequency.setValueAtTime(freq, sharedAudioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(freq * 1.6, sharedAudioCtx.currentTime + 0.05);
+      gain.gain.setValueAtTime(0.04, sharedAudioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, sharedAudioCtx.currentTime + 0.07);
       osc.connect(gain);
-      gain.connect(actx.destination);
+      gain.connect(sharedAudioCtx.destination);
       osc.start();
-      osc.stop(actx.currentTime + 0.07);
+      osc.stop(sharedAudioCtx.currentTime + 0.07);
     } catch {}
   }
+  window.addEventListener("pointerdown", () => {
+    try {
+      if (!sharedAudioCtx) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) sharedAudioCtx = new AudioCtx();
+      }
+      if (sharedAudioCtx && sharedAudioCtx.state === "suspended") sharedAudioCtx.resume();
+    } catch {}
+  }, { once: true });
 
   // --- dino pet fact typewriter & sync engine -----------------------------
   const DINO_FACTS = [
@@ -1279,10 +1340,7 @@
 
   function initDinoPet() {
     renderDinoFact();
-    document.getElementById("dino-next-btn")?.addEventListener("click", () => nextDinoFact(true));
-    document.getElementById("dino-pet")?.addEventListener("click", (e) => {
-      if (e.target.id !== "dino-next-btn") nextDinoFact(true);
-    });
+    document.getElementById("dino-pet")?.addEventListener("click", () => nextDinoFact(true));
   }
   // Provenance, stated once and used everywhere. The live artifact says LIVE_TESTNET, but it is
   // a run that finished on its generatedAt date — nothing on this page is happening now. RECORDED
@@ -1300,22 +1358,219 @@
       ? `<span class="tag rec" title="recorded on ${runDate}">RECORDED</span>`
       : '<span class="tag test">TEST</span>';
 
-  // --- top strip ----------------------------------------------------------
+  // --- top strip pet writer -----------------------------------------------
+  const DINO_SPRITE = "data:image/png;base64,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";
+
+  function initMetricPetWriter(metricsData) {
+    const strip = el("strip");
+    if (!strip) return;
+
+    strip.innerHTML = `
+      <canvas id="strip-fx-canvas" class="strip-fx-canvas"></canvas>
+      <div id="strip-pet" class="strip-pet" role="button" aria-label="ReqKeeper Metric Worker Dino" title="ReqKeeper Metric Worker (Click to rewrite)"><img id="strip-pet-img" src="${DINO_SPRITE}" alt="Dino Pet Worker" /></div>
+      ${metricsData.map(([k, v, c], idx) => `<div class="stat" data-idx="${idx}"><div class="k">${still ? k : ""}</div><div class="v ${c}">${still ? v : ""}</div></div>`).join("")}
+    `;
+
+    const fxCanvas = el("strip-fx-canvas");
+    const pet = el("strip-pet");
+    const stats = strip.querySelectorAll(".stat");
+
+    function resizeFx() {
+      fxCanvas.width = strip.scrollWidth;
+      fxCanvas.height = strip.clientHeight || 54;
+    }
+    resizeFx();
+    window.addEventListener("resize", resizeFx);
+
+    const fxCtx = fxCanvas.getContext("2d");
+    const particles = [];
+
+    function addParticle(x, y, color = "#35F0A0", vx = 0, vy = 0, size = 2) {
+      particles.push({
+        x, y, color,
+        vx: vx || (Math.random() - 0.5) * 1.5,
+        vy: vy || (Math.random() - 0.5) * 1.5,
+        size,
+        life: 1.0,
+        decay: 0.04 + Math.random() * 0.03
+      });
+    }
+
+    function renderFx() {
+      fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= p.decay;
+        if (p.life <= 0) {
+          particles.splice(i, 1);
+        } else {
+          fxCtx.fillStyle = p.color;
+          fxCtx.globalAlpha = p.life;
+          fxCtx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+        }
+      }
+      fxCtx.globalAlpha = 1.0;
+      requestAnimationFrame(renderFx);
+    }
+    requestAnimationFrame(renderFx);
+
+    if (still) {
+      pet.className = "strip-pet pet-idle";
+      if (stats.length > 0) {
+        const lastStat = stats[stats.length - 1];
+        pet.style.transform = `translate3d(${lastStat.offsetLeft + lastStat.offsetWidth + 8}px, 0, 0)`;
+      }
+      return;
+    }
+
+    let isBusy = false;
+
+    async function writeAll() {
+      if (isBusy) return;
+      isBusy = true;
+      pet.className = "strip-pet";
+      pet.style.transform = "translate3d(6px, 0, 0)";
+
+      // Spawn / glitch effect
+      pet.style.opacity = "0";
+      await new Promise((r) => setTimeout(r, 60));
+      pet.style.opacity = "1";
+      playRetroBlip(540);
+      for (let p = 0; p < 8; p++) addParticle(20, 24, "#00FF4F", (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 3);
+      await new Promise((r) => setTimeout(r, 100));
+
+      for (let i = 0; i < metricsData.length; i++) {
+        const [label, val] = metricsData[i];
+        const statEl = stats[i];
+        const targetX = Math.max(0, statEl.offsetLeft - 4);
+
+        // Run to metric
+        pet.className = "strip-pet pet-running";
+        const startX = parseFloat((pet.style.transform || "").replace(/[^\d.-]/g, "")) || 0;
+        const dist = targetX - startX;
+        const stepsCount = 8;
+        const stepTime = 16;
+
+        for (let s = 1; s <= stepsCount; s++) {
+          const curX = startX + (dist * (s / stepsCount));
+          pet.style.transform = `translate3d(${curX}px, 0, 0)`;
+          if (s % 2 === 0) {
+            addParticle(curX + 6, 28, "#35F0A0", -1 - Math.random(), 0.5 - Math.random(), 2);
+          }
+          await new Promise((r) => setTimeout(r, stepTime));
+        }
+
+        // Write label
+        pet.className = "strip-pet pet-writing";
+        const kEl = statEl.querySelector(".k");
+        kEl.textContent = "";
+        kEl.classList.add("chalk-write");
+
+        for (let c = 0; c < label.length; c++) {
+          kEl.textContent = label.slice(0, c + 1);
+          if (c % 2 === 0) {
+            const rect = kEl.getBoundingClientRect();
+            const sRect = strip.getBoundingClientRect();
+            const charX = rect.left - sRect.left + (c * 6.5);
+            addParticle(charX, rect.top - sRect.top + 8, "#35F0A0", 0.5, -0.5, 2);
+          }
+          await new Promise((r) => setTimeout(r, 14));
+        }
+        kEl.classList.remove("chalk-write");
+        await new Promise((r) => setTimeout(r, 30));
+
+        // Write value
+        const vEl = statEl.querySelector(".v");
+        const valStr = String(val);
+        vEl.textContent = "";
+        vEl.classList.add("chalk-write");
+
+        for (let c = 0; c < valStr.length; c++) {
+          vEl.textContent = valStr.slice(0, c + 1);
+          const rect = vEl.getBoundingClientRect();
+          const sRect = strip.getBoundingClientRect();
+          const digitX = rect.left - sRect.left + (c * 9);
+          for (let sp = 0; sp < 2; sp++) {
+            addParticle(digitX, rect.top - sRect.top + 8, "#00FF4F", (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 2.5);
+          }
+          await new Promise((r) => setTimeout(r, 22));
+        }
+        vEl.classList.remove("chalk-write");
+        await new Promise((r) => setTimeout(r, 45));
+      }
+
+      // Celebrate
+      const last = stats[stats.length - 1];
+      const endX = last.offsetLeft + last.offsetWidth + 12;
+      pet.style.transform = `translate3d(${endX}px, 0, 0)`;
+      pet.className = "strip-pet pet-celebrating";
+      playRetroBlip(780);
+      for (let sp = 0; sp < 16; sp++) {
+        addParticle(endX + 16, 20, sp % 2 === 0 ? "#00FF4F" : "#DCEAE6", (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 3);
+      }
+      await new Promise((r) => setTimeout(r, 700));
+
+      // Idle
+      pet.className = "strip-pet pet-idle";
+      isBusy = false;
+    }
+
+    // Easter Egg on click: rewrite a random metric
+    pet.addEventListener("click", async () => {
+      if (isBusy) return;
+      isBusy = true;
+      playRetroBlip(680);
+      pet.className = "strip-pet pet-celebrating";
+      const randomIdx = Math.floor(Math.random() * metricsData.length);
+      const [label, val] = metricsData[randomIdx];
+      const statEl = stats[randomIdx];
+      const targetX = Math.max(0, statEl.offsetLeft - 4);
+
+      await new Promise((r) => setTimeout(r, 180));
+      pet.className = "strip-pet pet-running";
+      pet.style.transform = `translate3d(${targetX}px, 0, 0)`;
+      await new Promise((r) => setTimeout(r, 220));
+
+      pet.className = "strip-pet pet-writing";
+      const vEl = statEl.querySelector(".v");
+      vEl.textContent = "";
+      vEl.classList.add("chalk-write");
+      const valStr = String(val);
+      for (let c = 0; c < valStr.length; c++) {
+        vEl.textContent = valStr.slice(0, c + 1);
+        addParticle(targetX + 24, 28, "#00FF4F", (Math.random() - 0.5) * 2, -1, 2.5);
+        await new Promise((r) => setTimeout(r, 30));
+      }
+      vEl.classList.remove("chalk-write");
+      await new Promise((r) => setTimeout(r, 160));
+
+      const last = stats[stats.length - 1];
+      const endX = last.offsetLeft + last.offsetWidth + 12;
+      pet.className = "strip-pet pet-running";
+      pet.style.transform = `translate3d(${endX}px, 0, 0)`;
+      await new Promise((r) => setTimeout(r, 220));
+      pet.className = "strip-pet pet-idle";
+      isBusy = false;
+    });
+
+    writeAll();
+  }
+
   const paidRows = liveRows.filter((r) => r.tx_hash);
   const settled = paidRows.length;
   const replays = liveRows.filter((r) => r.expected === "ALREADY_SETTLED");
   const replaySends = replays.reduce((a, r) => a + r.physical_sends, 0);
-  el("strip").innerHTML =
-    [
-      ["payments", settled, "good"],
-      ["replays refused", replays.length, "good"],
-      ["sends by replays", replaySends, replaySends === 0 ? "good" : "warn"],
-      ["recorded rows", liveRows.length, ""],
-      ["test cases", D.refusals.totals.cases, ""],
-      ["tests", D.tests, ""],
-    ]
-      .map(([k, v, c]) => `<div class="stat"><div class="k">${k}</div><div class="v ${c}">${v}</div></div>`)
-      .join("");
+  const metricsData = [
+    ["payments", settled, "good"],
+    ["replays refused", replays.length, "good"],
+    ["sends by replays", replaySends, replaySends === 0 ? "good" : "warn"],
+    ["recorded rows", liveRows.length, ""],
+    ["test cases", D.refusals.totals.cases, ""],
+    ["tests", D.tests, ""],
+  ];
+  initMetricPetWriter(metricsData);
 
   el("dash-sub").textContent = T
     ? `${T.asSpecified}/${T.rows} rows as specified · recorded ${runDate}`
@@ -1988,26 +2243,66 @@
   if (el("land-kpi-crash") && D.crash) el("land-kpi-crash").textContent = `${D.crash.totals?.settledAfterRecovery ?? 7}/${D.crash.totals?.checkpoints ?? 9}`;
   if (el("land-kpi-sepolia")) el("land-kpi-sepolia").textContent = String(settled || 38);
 
-  // Interactive 3D Cryptographic Safe & KeeperHub Integration Dock
+  // Interactive Settlement Architecture Pipeline & KeeperHub Execution Canvas
   (function initVault3D() {
     const canvas = el("vault3d");
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     const container = el("vault-canvas-box");
     const tele = el("vault-telemetry");
+    const hudLeft = el("vault-hud-left");
+    const hudRight = el("vault-hud-right");
     const modesWrap = el("vault-modes");
     const btnPulse = el("btn-pulse-exec");
+    const btnPulseRefuse = el("btn-pulse-refuse");
 
-    let currentMode = "dock"; // "dock" | "keeperhub" | "vault"
-    let pulseProgress = -1; // -1 = idle, 0..1 = active transaction pulse
-    let shockwaveRadius = 0;
+    let currentMode = "flow"; // "flow" | "gate" | "keeperhub" | "vault"
+    let isDragging = false;
+    let lastMouseX = 0, lastMouseY = 0;
+
+    // Rotation & camera
+    let rotX = 0.22, rotY = 0.04;
+    let targetRotX = 0.22, targetRotY = 0.04;
+    let camX = 0, camDist = 3.6, fov = 320;
+
+    // Tiny dino sprite for proof intake celebration
+    const petImg = new Image();
+    petImg.src = DINO_SPRITE;
+    let dinoHop = 0;
+
+    // Cycles state
+    const settleCycle = {
+      active: false,
+      phase: "idle", // "dispatch" | "verifying" | "accepted" | "executing" | "proof" | "settled"
+      progress: 0,
+      t: 0,
+      settledTimer: 0,
+      shockwaveRad: 0
+    };
+
+    const refuseCycle = {
+      active: false,
+      phase: "idle", // "dispatch" | "refused" | "shatter"
+      progress: 0,
+      t: 0,
+      particles: []
+    };
+
+    // Ambient background packets
+    const ambientPackets = [
+      { path: "upper", phase: 0.15, speed: 0.0032 },
+      { path: "upper", phase: 0.65, speed: 0.0028 },
+      { path: "lower", phase: 0.40, speed: 0.0030 },
+      { path: "lower", phase: 0.88, speed: 0.0026 },
+    ];
 
     // Dynamic resolution adjustment
     function resize() {
       const rect = container.getBoundingClientRect();
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
       canvas.width = rect.width * dpr;
       canvas.height = rect.height * dpr;
+      ctx.resetTransform?.();
       ctx.scale(dpr, dpr);
     }
     window.addEventListener("resize", resize);
@@ -2038,12 +2333,12 @@
       (-(y - 250) * 0.0028)
     ]);
 
-    // Build KeeperHub 3D vertices (front at +0.16, back at -0.16)
+    // KeeperHub 3D vertices & edges
     const khVerts = [];
     const khEdges = [];
     const N = khMain2D.length;
-    for (const [x, y] of khMain2D) khVerts.push([x, y, 0.16]);
-    for (const [x, y] of khMain2D) khVerts.push([x, y, -0.16]);
+    for (const [x, y] of khMain2D) khVerts.push([x, y, 0.15]);
+    for (const [x, y] of khMain2D) khVerts.push([x, y, -0.15]);
     for (let i = 0; i < N; i++) {
       khEdges.push([i, (i + 1) % N]);
       khEdges.push([i + N, ((i + 1) % N) + N]);
@@ -2051,38 +2346,83 @@
         khEdges.push([i, i + N]);
       }
     }
-    // Square block vertices and edges
     const sqOffset = khVerts.length;
-    for (const [x, y] of khSquare2D) khVerts.push([x, y, 0.16]);
-    for (const [x, y] of khSquare2D) khVerts.push([x, y, -0.16]);
+    for (const [x, y] of khSquare2D) khVerts.push([x, y, 0.15]);
+    for (const [x, y] of khSquare2D) khVerts.push([x, y, -0.15]);
     for (let i = 0; i < 4; i++) {
       khEdges.push([sqOffset + i, sqOffset + ((i + 1) % 4)]);
       khEdges.push([sqOffset + i + 4, sqOffset + (((i + 1) % 4) + 4)]);
       khEdges.push([sqOffset + i, sqOffset + i + 4]);
     }
 
-    // ReqKeeper 3D Vault Geometry
-    const s1 = 0.65, s2 = 0.34;
-    const vaultVerts = [
-      // Outer cube [0..7]
-      [-s1, -s1, -s1], [ s1, -s1, -s1], [ s1,  s1, -s1], [-s1,  s1, -s1],
-      [-s1, -s1,  s1], [ s1, -s1,  s1], [ s1,  s1,  s1], [-s1,  s1,  s1],
-      // Inner core [8..15]
-      [-s2, -s2, -s2], [ s2, -s2, -s2], [ s2,  s2, -s2], [-s2,  s2, -s2],
-      [-s2, -s2,  s2], [ s2, -s2,  s2], [ s2,  s2,  s2], [-s2,  s2,  s2],
-    ];
-    const vaultEdges = [
-      [0,1],[1,2],[2,3],[3,0], [4,5],[5,6],[6,7],[7,4], [0,4],[1,5],[2,6],[3,7],
-      [8,9],[9,10],[10,11],[11,8], [12,13],[13,14],[14,15],[15,12], [8,12],[9,13],[10,14],[11,15],
-      [0,8],[1,9],[2,10],[3,11], [4,12],[5,13],[6,14],[7,15],
-    ];
+    // ReqKeeper 3D Faceted Crystal Vault Geometry
+    const rkV = [];
+    const rkE = [];
+    // Top apex: 0, bottom apex: 1
+    rkV.push([0, 0.46, 0]);
+    rkV.push([0, -0.46, 0]);
+    // Upper ring [2..7] at y = 0.16
+    for (let a = 0; a < 6; a++) {
+      const ang = (a * Math.PI) / 3;
+      rkV.push([Math.cos(ang) * 0.38, 0.16, Math.sin(ang) * 0.38]);
+    }
+    // Lower ring [8..13] at y = -0.16
+    for (let a = 0; a < 6; a++) {
+      const ang = (a * Math.PI) / 3;
+      rkV.push([Math.cos(ang) * 0.38, -0.16, Math.sin(ang) * 0.38]);
+    }
+    // Inner core [14..19] at y = 0
+    for (let a = 0; a < 6; a++) {
+      const ang = (a * Math.PI) / 3 + 0.52;
+      rkV.push([Math.cos(ang) * 0.20, 0, Math.sin(ang) * 0.20]);
+    }
+    rkV.push([0, 0.22, 0]); // 20: inner top
+    rkV.push([0, -0.22, 0]); // 21: inner bottom
 
-    let rotX = 0.32, rotY = 0.40;
-    let targetRotX = 0.32, targetRotY = 0.40;
-    let isDragging = false;
-    let lastMouseX = 0, lastMouseY = 0;
+    // Outer crystal edges
+    for (let a = 0; a < 6; a++) {
+      const u1 = 2 + a, u2 = 2 + ((a + 1) % 6);
+      const l1 = 8 + a, l2 = 8 + ((a + 1) % 6);
+      rkE.push([0, u1]); // top apex to upper ring
+      rkE.push([u1, u2]); // upper ring loop
+      rkE.push([u1, l1]); // vertical strut
+      rkE.push([l1, l2]); // lower ring loop
+      rkE.push([1, l1]); // bottom apex to lower ring
+      // cross bracing
+      if (a % 2 === 0) rkE.push([u1, l2]);
+    }
+    // Inner core edges
+    for (let a = 0; a < 6; a++) {
+      const c1 = 14 + a, c2 = 14 + ((a + 1) % 6);
+      rkE.push([c1, c2]);
+      rkE.push([20, c1]);
+      rkE.push([21, c1]);
+    }
 
-    // Interactive Drag Controls
+    // CallData Gate Geometry: Twin vertical pylons
+    const gateV = [];
+    const gateE = [];
+    const pylonX = [-0.18, 0.18];
+    const pw = 0.05, pd = 0.08, ph = 0.52;
+    for (const px of pylonX) {
+      const baseIdx = gateV.length;
+      // 8 vertices per pylon
+      gateV.push([px - pw, -ph, -pd]);
+      gateV.push([px + pw, -ph, -pd]);
+      gateV.push([px + pw, -ph,  pd]);
+      gateV.push([px - pw, -ph,  pd]);
+      gateV.push([px - pw,  ph, -pd]);
+      gateV.push([px + pw,  ph, -pd]);
+      gateV.push([px + pw,  ph,  pd]);
+      gateV.push([px - pw,  ph,  pd]);
+      // Box edges
+      const b = baseIdx;
+      gateE.push([b, b+1],[b+1, b+2],[b+2, b+3],[b+3, b]);
+      gateE.push([b+4, b+5],[b+5, b+6],[b+6, b+7],[b+7, b+4]);
+      gateE.push([b, b+4],[b+1, b+5],[b+2, b+6],[b+3, b+7]);
+    }
+
+    // Interactive Drag Controls (bounded rotation +/-22 deg)
     container.addEventListener("pointerdown", (e) => {
       isDragging = true;
       lastMouseX = e.clientX;
@@ -2090,20 +2430,11 @@
       container.setPointerCapture?.(e.pointerId);
     });
     window.addEventListener("pointermove", (e) => {
-      if (!isDragging) {
-        const rect = container.getBoundingClientRect();
-        if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) {
-          const nx = (e.clientX - rect.left) / rect.width - 0.5;
-          const ny = (e.clientY - rect.top) / rect.height - 0.5;
-          targetRotY += nx * 0.02;
-          targetRotX += ny * 0.02;
-        }
-        return;
-      }
+      if (!isDragging) return;
       const dx = e.clientX - lastMouseX;
       const dy = e.clientY - lastMouseY;
-      targetRotY += dx * 0.012;
-      targetRotX += dy * 0.012;
+      targetRotY = Math.max(-0.35, Math.min(0.35, targetRotY + dx * 0.008));
+      targetRotX = Math.max(0.14, Math.min(0.34, targetRotX + dy * 0.008));
       lastMouseX = e.clientX;
       lastMouseY = e.clientY;
     });
@@ -2119,38 +2450,75 @@
         b.classList.toggle("active", b === btn);
       }
       playRetroBlip(520);
+      if (currentMode === "gate") {
+        if (hudLeft) hudLeft.textContent = "CALLDATA GATE: INSPECTING ZERO-DRIFT SPEC";
+        if (hudRight) hudRight.textContent = "STATE: WYSIWYS ARMED";
+      } else if (currentMode === "keeperhub") {
+        if (hudLeft) hudLeft.textContent = "KEEPERHUB: 7 YR INFRA · NONCE MGR · PRIVATE ROUTING";
+        if (hudRight) hudRight.textContent = "EXEC: DETERMINISTIC";
+      } else if (currentMode === "vault") {
+        if (hudLeft) hudLeft.textContent = "REQKEEPER: OBLIGATION STORE · SECP256K1 · NONCE 38";
+        if (hudRight) hudRight.textContent = "STATUS: ARMED";
+      } else {
+        if (hudLeft) hudLeft.textContent = "DRAG TO ROTATE · CLICK NODES TO INSPECT";
+        if (hudRight) hudRight.textContent = "GATE: WYSIWYS ARMED · 0 GAS";
+      }
     });
 
-    function triggerPulse() {
-      pulseProgress = 0;
-      shockwaveRadius = 0;
-      playRetroBlip(880);
-      if (tele) {
-        tele.textContent = "DISPATCHING -> WYSIWYS VERIFY -> 0 DUP";
-        setTimeout(() => {
-          if (tele) tele.textContent = "EXEC 0x41b01a14... // SEPOLIA VERIFIED // 0 DUP";
-        }, 800);
-        setTimeout(() => {
-          if (tele) tele.textContent = "SECP256K1 // ROT: " + Math.round(((rotY * 180 / Math.PI) % 360 + 360) % 360) + "\u00B0 // ARMED";
-        }, 3200);
-      }
+    // Pulse & Refusal Triggers
+    function triggerDispatch() {
+      if (settleCycle.active || refuseCycle.active) return;
+      settleCycle.active = true;
+      settleCycle.phase = "dispatch";
+      settleCycle.progress = 0;
+      settleCycle.t = 0;
+      settleCycle.settledTimer = 0;
+      settleCycle.shockwaveRad = 0;
+      dinoHop = 0;
+      playRetroBlip(620);
+      if (tele) tele.textContent = "DISPATCHING -> WYSIWYS VERIFY -> 0 DUP";
+      if (hudLeft) hudLeft.textContent = "DISPATCHING OBLIGATION -> CALLDATA GATE";
+      if (hudRight) hudRight.textContent = "GATE: WYSIWYS ARMED · 0 GAS";
     }
 
-    btnPulse?.addEventListener("click", triggerPulse);
+    function triggerRefusal() {
+      if (settleCycle.active || refuseCycle.active) return;
+      refuseCycle.active = true;
+      refuseCycle.phase = "dispatch";
+      refuseCycle.progress = 0;
+      refuseCycle.t = 0;
+      refuseCycle.particles = [];
+      playRetroBlip(440);
+      if (tele) tele.textContent = "REPLAY PACKET SENT -> CALLDATA GATE";
+      if (hudLeft) hudLeft.textContent = "SIMULATING REPLAY ATTACK (DUPLICATE NONCE)";
+      if (hudRight) hudRight.textContent = "GATE: ARMED · 0 GAS";
+    }
+
+    btnPulse?.addEventListener("click", triggerDispatch);
+    btnPulseRefuse?.addEventListener("click", triggerRefusal);
+
     container.addEventListener("click", (e) => {
-      if (!isDragging) triggerPulse();
+      if (isDragging) return;
+      const rect = container.getBoundingClientRect();
+      const clickX = (e.clientX - rect.left) / rect.width;
+      if (clickX > 0.38 && clickX < 0.62) {
+        triggerRefusal();
+      } else {
+        triggerDispatch();
+      }
     });
 
-    // 3D Projection Engine
-    function projectPoint(x, y, z, cosX, sinX, cosY, sinY, W, H, cameraDist = 3.6, fov = 310) {
-      const x1 = x * cosY + z * sinY;
+    // 3D Projection Helper
+    function project(x, y, z, cosX, sinX, cosY, sinY, W, H, camXOffset, cameraDist, fieldOfView) {
+      const nx = x - camXOffset;
+      const x1 = nx * cosY + z * sinY;
       const y1 = y;
-      const z1 = -x * sinY + z * cosY;
+      const z1 = -nx * sinY + z * cosY;
       const x2 = x1;
       const y2 = y1 * cosX - z1 * sinX;
       const z2 = y1 * sinX + z1 * cosX;
       const pz = z2 + cameraDist;
-      const scale = fov / Math.max(0.2, pz);
+      const scale = fieldOfView / Math.max(0.2, pz);
       return {
         x: W / 2 + x2 * scale,
         y: H / 2 + y2 * scale,
@@ -2160,247 +2528,571 @@
     }
 
     function render(time) {
-      if (!still) {
-        if (!isDragging) {
-          targetRotY += 0.006;
-          targetRotX = 0.22 + 0.10 * Math.sin(time * 0.0008);
-        }
-        rotX += (targetRotX - rotX) * 0.1;
-        rotY += (targetRotY - rotY) * 0.1;
-      }
-
       const rect = container.getBoundingClientRect();
       const W = rect.width;
       const H = rect.height;
       ctx.clearRect(0, 0, W, H);
 
-      // Coordinate telemetry
-      if (tele && !tele.textContent.includes("EXEC") && !tele.textContent.includes("DISPATCHING")) {
-        const degY = Math.round(((rotY * 180 / Math.PI) % 360 + 360) % 360);
-        tele.textContent = `SECP256K1 // ROT: ${degY}\u00B0 // ARMED`;
+      const isMobile = W < 460;
+      const nodeSpread = isMobile ? 0.94 : 1.18;
+
+      // Mode Camera Interpolation
+      let targetCamX = 0;
+      let targetCamDist = isMobile ? 4.0 : 3.6;
+      let targetFov = isMobile ? 260 : 310;
+      if (currentMode === "gate") {
+        targetCamX = 0; targetCamDist = 2.6; targetFov = 340;
+      } else if (currentMode === "keeperhub") {
+        targetCamX = nodeSpread * 0.82; targetCamDist = 2.8; targetFov = 340;
+      } else if (currentMode === "vault") {
+        targetCamX = -nodeSpread * 0.82; targetCamDist = 2.8; targetFov = 340;
+      }
+
+      camX += (targetCamX - camX) * 0.08;
+      camDist += (targetCamDist - camDist) * 0.08;
+      fov += (targetFov - fov) * 0.08;
+
+      if (!still) {
+        if (!isDragging) {
+          targetRotY = Math.sin(time * 0.0006) * 0.12;
+          targetRotX = 0.22 + Math.sin(time * 0.0004) * 0.04;
+        }
+        rotX += (targetRotX - rotX) * 0.08;
+        rotY += (targetRotY - rotY) * 0.08;
+      } else {
+        rotX = 0.22;
+        rotY = 0.0;
       }
 
       const cosX = Math.cos(rotX), sinX = Math.sin(rotX);
       const cosY = Math.cos(rotY), sinY = Math.sin(rotY);
 
-      // Layout coordinates based on mode
-      let khOffset = -1.18, khScale = 0.95;
-      let vaultOffset = 1.18, vaultScale = 0.95;
-      let showConduits = true;
-
-      if (currentMode === "keeperhub") {
-        khOffset = 0; khScale = 1.45;
-        vaultOffset = 999;
-        showConduits = false;
-      } else if (currentMode === "vault") {
-        vaultOffset = 0; vaultScale = 1.45;
-        khOffset = -999;
-        showConduits = false;
+      // Gate dynamic status
+      let gateState = "IDLE"; // "IDLE" | "VERIFYING" | "ACCEPTED" | "REFUSED"
+      if (settleCycle.active) {
+        if (settleCycle.phase === "verifying") gateState = "VERIFYING";
+        else if (settleCycle.phase === "accepted") gateState = "ACCEPTED";
+      }
+      if (refuseCycle.active) {
+        if (refuseCycle.phase === "refused" || refuseCycle.phase === "shatter") gateState = "REFUSED";
       }
 
-      // 1. Draw KeeperHub 3D Model
-      if (khOffset < 50) {
-        const khProjected = khVerts.map(([vx, vy, vz]) =>
-          projectPoint(vx * khScale + khOffset, vy * khScale, vz * khScale, cosX, sinX, cosY, sinY, W, H)
-        );
+      // 1. Draw Conduits (Upper Request Conduit + Lower Proof Loop)
+      const conduitYUpper = 0.26;
+      const conduitYLower = -0.26;
+      const conduitXStart = -nodeSpread + 0.25;
+      const conduitXEnd = nodeSpread - 0.25;
 
-        for (const [i, j] of khEdges) {
-          const p1 = khProjected[i];
-          const p2 = khProjected[j];
-          if (!p1 || !p2) continue;
-          const avgZ = (p1.z + p2.z) / 2;
-          const alpha = Math.max(0.18, Math.min(0.95, (avgZ + 1.8) / 3.4));
-          ctx.beginPath();
-          ctx.moveTo(p1.x, p1.y);
-          ctx.lineTo(p2.x, p2.y);
-          ctx.strokeStyle = `rgba(0, 255, 79, ${alpha.toFixed(3)})`;
-          ctx.lineWidth = avgZ > 0 ? 1.5 : 1.0;
-          if (avgZ > 0.3) {
-            ctx.shadowColor = "#00FF4F";
-            ctx.shadowBlur = 6;
-          } else {
-            ctx.shadowBlur = 0;
-          }
-          ctx.stroke();
-        }
-        ctx.shadowBlur = 0;
+      // Draw Upper Conduit (ReqKeeper -> Gate -> KeeperHub)
+      const upP1 = project(conduitXStart, conduitYUpper, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      const upP2 = project(conduitXEnd, conduitYUpper, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
 
-        // KeeperHub vertices glow
-        ctx.fillStyle = "#00FF4F";
-        for (let k = 0; k < khProjected.length; k += 3) {
-          const p = khProjected[k];
-          ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3);
-        }
+      ctx.beginPath();
+      ctx.setLineDash([4, 4]);
+      ctx.lineDashOffset = -time * 0.024;
+      ctx.moveTo(upP1.x, upP1.y);
+      ctx.lineTo(upP2.x, upP2.y);
+      ctx.strokeStyle = "rgba(53, 240, 160, 0.45)";
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      ctx.setLineDash([]);
 
-        // 3D Label for KeeperHub
-        if (showConduits) {
-          const topPoint = projectPoint(khOffset, 0.85, 0, cosX, sinX, cosY, sinY, W, H);
-          ctx.font = "8px 'Press Start 2P', monospace";
-          ctx.fillStyle = "rgba(0, 255, 79, 0.85)";
-          ctx.textAlign = "center";
-          ctx.fillText("KEEPERHUB AGENT", topPoint.x, topPoint.y);
-        }
+      // Upper conduit direction arrow markers
+      for (let m = 0.2; m <= 0.8; m += 0.3) {
+        const mx = conduitXStart + (conduitXEnd - conduitXStart) * m;
+        const mp = project(mx, conduitYUpper + 0.06, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+        ctx.font = "6px monospace";
+        ctx.fillStyle = "rgba(53, 240, 160, 0.5)";
+        ctx.textAlign = "center";
+        ctx.fillText(">", mp.x, mp.y);
       }
 
-      // 2. Draw ReqKeeper 3D Vault
-      if (vaultOffset < 50) {
-        const vaultProjected = vaultVerts.map(([vx, vy, vz]) =>
-          projectPoint(vx * vaultScale + vaultOffset, vy * vaultScale, vz * vaultScale, cosX, sinX, cosY, sinY, W, H)
-        );
+      // Draw Lower Conduit (KeeperHub -> Gate -> ReqKeeper return path)
+      const dnP1 = project(conduitXEnd, conduitYLower, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      const dnP2 = project(conduitXStart, conduitYLower, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
 
-        for (const [i, j] of vaultEdges) {
-          const p1 = vaultProjected[i];
-          const p2 = vaultProjected[j];
-          if (!p1 || !p2) continue;
-          const avgZ = (p1.z + p2.z) / 2;
-          const alpha = Math.max(0.20, Math.min(0.95, (avgZ + 1.8) / 3.4));
-          ctx.beginPath();
-          ctx.moveTo(p1.x, p1.y);
-          ctx.lineTo(p2.x, p2.y);
-          ctx.strokeStyle = `rgba(53, 240, 160, ${alpha.toFixed(3)})`;
-          ctx.lineWidth = avgZ > 0 ? 1.6 : 1.0;
-          if (avgZ > 0.4) {
-            ctx.shadowColor = "#35F0A0";
-            ctx.shadowBlur = 7;
-          } else {
-            ctx.shadowBlur = 0;
-          }
-          ctx.stroke();
-        }
-        ctx.shadowBlur = 0;
+      ctx.beginPath();
+      ctx.setLineDash([4, 4]);
+      ctx.lineDashOffset = time * 0.024;
+      ctx.moveTo(dnP1.x, dnP1.y);
+      ctx.lineTo(dnP2.x, dnP2.y);
+      ctx.strokeStyle = "rgba(0, 255, 79, 0.40)";
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      ctx.setLineDash([]);
 
-        // Vault vertices glow
-        for (let k = 0; k < vaultProjected.length; k++) {
-          const p = vaultProjected[k];
-          const isCore = k >= 8;
-          ctx.fillStyle = isCore ? "#35F0A0" : "#DCEAE6";
-          ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3);
-        }
-
-        // 3D Label for ReqKeeper
-        if (showConduits) {
-          const topPoint = projectPoint(vaultOffset, 0.85, 0, cosX, sinX, cosY, sinY, W, H);
-          ctx.font = "8px 'Press Start 2P', monospace";
-          ctx.fillStyle = "rgba(53, 240, 160, 0.85)";
-          ctx.textAlign = "center";
-          ctx.fillText("REQ VAULT", topPoint.x, topPoint.y);
-        }
+      // Lower conduit return arrow markers
+      for (let m = 0.2; m <= 0.8; m += 0.3) {
+        const mx = conduitXEnd - (conduitXEnd - conduitXStart) * m;
+        const mp = project(mx, conduitYLower - 0.04, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+        ctx.font = "6px monospace";
+        ctx.fillStyle = "rgba(0, 255, 79, 0.5)";
+        ctx.textAlign = "center";
+        ctx.fillText("<", mp.x, mp.y);
       }
 
-      // 3. Draw Conduits and Calldata Gate (Dock Mode)
-      if (showConduits) {
-        const conduitY = [0.26, 0.0, -0.26];
-        const xStart = -0.75, xEnd = 0.75;
-
-        for (let c = 0; c < conduitY.length; c++) {
-          const cy = conduitY[c];
-          const pStart = projectPoint(xStart, cy, 0, cosX, sinX, cosY, sinY, W, H);
-          const pEnd = projectPoint(xEnd, cy, 0, cosX, sinX, cosY, sinY, W, H);
-
-          // Draw conduit line
+      // Ambient circulating packets
+      if (!still && !settleCycle.active && !refuseCycle.active) {
+        for (const ap of ambientPackets) {
+          ap.phase = (ap.phase + ap.speed) % 1;
+          const ay = ap.path === "upper" ? conduitYUpper : conduitYLower;
+          const ax = ap.path === "upper"
+            ? conduitXStart + (conduitXEnd - conduitXStart) * ap.phase
+            : conduitXEnd - (conduitXEnd - conduitXStart) * ap.phase;
+          const apt = project(ax, ay, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+          ctx.fillStyle = ap.path === "upper" ? "#35F0A0" : "#00FF4F";
+          ctx.shadowColor = ctx.fillStyle;
+          ctx.shadowBlur = 6;
           ctx.beginPath();
-          ctx.setLineDash([4, 4]);
-          ctx.lineDashOffset = -time * 0.02;
-          ctx.moveTo(pStart.x, pStart.y);
-          ctx.lineTo(pEnd.x, pEnd.y);
-          ctx.strokeStyle = "rgba(53, 240, 160, 0.4)";
-          ctx.lineWidth = 1.2;
-          ctx.stroke();
-          ctx.setLineDash([]);
-
-          // Animated travelling photon packet
-          const photonPhase = ((time * 0.0006 + c * 0.33) % 1);
-          const px = xStart + (xEnd - xStart) * photonPhase;
-          const photonPoint = projectPoint(px, cy, 0, cosX, sinX, cosY, sinY, W, H);
-          ctx.fillStyle = c === 1 ? "#00FF4F" : "#35F0A0";
-          ctx.shadowColor = "#00FF4F";
-          ctx.shadowBlur = 8;
-          ctx.beginPath();
-          ctx.arc(photonPoint.x, photonPoint.y, 2.5, 0, Math.PI * 2);
+          ctx.arc(apt.x, apt.y, 2.2, 0, Math.PI * 2);
           ctx.fill();
           ctx.shadowBlur = 0;
         }
-
-        // Central WYSIWYS Calldata Gate Ring at X = 0
-        const gateRad = 0.38;
-        const gateVerts = [];
-        for (let a = 0; a < 6; a++) {
-          const ang = (a * Math.PI / 3) + time * 0.0012;
-          const gy = Math.cos(ang) * gateRad;
-          const gz = Math.sin(ang) * gateRad;
-          gateVerts.push(projectPoint(0, gy, gz, cosX, sinX, cosY, sinY, W, H));
-        }
-
-        ctx.beginPath();
-        for (let a = 0; a < 6; a++) {
-          const p1 = gateVerts[a];
-          if (a === 0) ctx.moveTo(p1.x, p1.y);
-          else ctx.lineTo(p1.x, p1.y);
-        }
-        ctx.closePath();
-        ctx.strokeStyle = "rgba(220, 234, 230, 0.75)";
-        ctx.lineWidth = 1.4;
-        ctx.shadowColor = "#35F0A0";
-        ctx.shadowBlur = 9;
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-
-        // Gate center label
-        const gateLabel = projectPoint(0, -0.56, 0, cosX, sinX, cosY, sinY, W, H);
-        ctx.font = "7px 'Press Start 2P', monospace";
-        ctx.fillStyle = "rgba(220, 234, 230, 0.7)";
-        ctx.textAlign = "center";
-        ctx.fillText("CALLDATA GATE", gateLabel.x, gateLabel.y);
       }
 
-      // 4. Interactive Transaction Pulse Animation
-      if (pulseProgress >= 0) {
-        pulseProgress += 0.022;
-        const px = -1.18 + (1.18 - (-1.18)) * pulseProgress;
-        const pulsePt = projectPoint(px, 0, 0, cosX, sinX, cosY, sinY, W, H);
+      // 2. Draw ReqKeeper 3D Vault (Left Node)
+      const rkX = -nodeSpread;
+      const rkProjected = rkV.map(([x, y, z]) =>
+        project(x * 0.95 + rkX, y * 0.95, z * 0.95, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov)
+      );
 
-        // Blazing execution bullet
-        ctx.fillStyle = "#FFFFFF";
-        ctx.shadowColor = "#00FF4F";
-        ctx.shadowBlur = 18;
+      const isSettledFlash = settleCycle.phase === "settled";
+      ctx.strokeStyle = isSettledFlash ? "rgba(0, 255, 79, 0.95)" : "rgba(53, 240, 160, 0.75)";
+      ctx.lineWidth = isSettledFlash ? 1.8 : 1.2;
+      ctx.shadowColor = isSettledFlash ? "#00FF4F" : "#35F0A0";
+      ctx.shadowBlur = isSettledFlash ? 12 : 5;
+
+      for (const [i, j] of rkE) {
+        const p1 = rkProjected[i];
+        const p2 = rkProjected[j];
+        if (!p1 || !p2) continue;
         ctx.beginPath();
-        ctx.arc(pulsePt.x, pulsePt.y, 5, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.stroke();
+      }
+      ctx.shadowBlur = 0;
 
-        // Tail trail
-        for (let t = 1; t <= 4; t++) {
-          const trailX = px - t * 0.08;
-          const trailPt = projectPoint(trailX, 0, 0, cosX, sinX, cosY, sinY, W, H);
-          ctx.fillStyle = `rgba(0, 255, 79, ${0.8 - t * 0.18})`;
+      // ReqKeeper core vertex dots
+      ctx.fillStyle = isSettledFlash ? "#FFFFFF" : "#35F0A0";
+      for (let k = 0; k < rkProjected.length; k += 2) {
+        const p = rkProjected[k];
+        ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3);
+      }
+
+      // Labels on ReqKeeper
+      const rkLabel = project(rkX, 0.68, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      ctx.font = "8px 'Press Start 2P', monospace";
+      ctx.fillStyle = isSettledFlash ? "#00FF4F" : "#35F0A0";
+      ctx.textAlign = "center";
+      ctx.fillText("REQKEEPER", rkLabel.x, rkLabel.y);
+
+      const rkSub = project(rkX, 0.54, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      ctx.font = "6px monospace";
+      ctx.fillStyle = "rgba(220, 234, 230, 0.75)";
+      ctx.fillText("OBLIGATION READY // NONCE 38", rkSub.x, rkSub.y);
+
+      // Status Badge under ReqKeeper
+      const rkBadge = project(rkX, -0.62, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      ctx.font = "7px 'Press Start 2P', monospace";
+      ctx.fillStyle = isSettledFlash ? "#00FF4F" : "rgba(53, 240, 160, 0.85)";
+      ctx.fillText(isSettledFlash ? "[✓ SETTLED]" : "[ARMED · 0 DUP]", rkBadge.x, rkBadge.y);
+
+      // Proof Intake Funnel & Tiny Dino Pet
+      const intakePt = project(rkX + 0.32, conduitYLower, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      ctx.strokeStyle = "rgba(0, 255, 79, 0.7)";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(intakePt.x, intakePt.y, 5, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Draw Tiny Dino Pet Worker beside proof intake
+      if (petImg.complete && petImg.naturalWidth > 0) {
+        const petPt = project(rkX + 0.44, conduitYLower - 0.05, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+        const curDinoHop = settleCycle.phase === "settled" ? dinoHop : 0;
+        ctx.drawImage(petImg, petPt.x - 8, petPt.y - 12 + curDinoHop, 18, 18);
+        if (settleCycle.phase === "settled") {
+          // Sparkles around dino
+          ctx.fillStyle = "#00FF4F";
+          ctx.fillRect(petPt.x - 10, petPt.y - 16 + curDinoHop, 2, 2);
+          ctx.fillRect(petPt.x + 8, petPt.y - 14 + curDinoHop, 2, 2);
+          ctx.fillRect(petPt.x - 2, petPt.y - 20 + curDinoHop, 3, 3);
+        }
+      }
+
+      // 3. Draw CallData Gate (Center Node)
+      const gateProjected = gateV.map(([x, y, z]) =>
+        project(x, y, z, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov)
+      );
+
+      // Pylon lines color based on gateState
+      let gateColor = "rgba(53, 240, 160, 0.6)";
+      let gateGlow = "#35F0A0";
+      if (gateState === "VERIFYING") {
+        gateColor = "rgba(255, 184, 0, 0.9)";
+        gateGlow = "#FFB800";
+      } else if (gateState === "ACCEPTED") {
+        gateColor = "rgba(0, 255, 79, 0.95)";
+        gateGlow = "#00FF4F";
+      } else if (gateState === "REFUSED") {
+        gateColor = "rgba(255, 59, 48, 0.95)";
+        gateGlow = "#FF3B30";
+      }
+
+      ctx.strokeStyle = gateColor;
+      ctx.lineWidth = 1.3;
+      ctx.shadowColor = gateGlow;
+      ctx.shadowBlur = 6;
+      for (const [i, j] of gateE) {
+        const p1 = gateProjected[i];
+        const p2 = gateProjected[j];
+        if (!p1 || !p2) continue;
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.stroke();
+      }
+      ctx.shadowBlur = 0;
+
+      // Pylon Status LEDs
+      for (let side = 0; side < 2; side++) {
+        const px = pylonX[side];
+        for (let led = 0; led < 4; led++) {
+          const ly = -0.38 + led * 0.25;
+          const lPt = project(px, ly, 0.08, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+          ctx.fillStyle = gateGlow;
+          ctx.fillRect(lPt.x - 1.5, lPt.y - 1.5, 3, 3);
+        }
+      }
+
+      // Laser Scanfield between pylons
+      const scanNumLines = 7;
+      const scanTop = project(0, 0.48, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      const scanBot = project(0, -0.48, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+
+      ctx.save();
+      for (let s = 0; s < scanNumLines; s++) {
+        const sx = -0.14 + (0.28 * (s / (scanNumLines - 1)));
+        const s1 = project(sx, 0.48, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+        const s2 = project(sx, -0.48, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+        ctx.beginPath();
+        ctx.setLineDash([2, 4]);
+        ctx.moveTo(s1.x, s1.y);
+        ctx.lineTo(s2.x, s2.y);
+        ctx.strokeStyle = gateColor;
+        ctx.lineWidth = 1.0;
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // Moving Laser Scan Beam
+      const scanBeamY = Math.sin(time * (gateState === "VERIFYING" ? 0.018 : 0.005)) * 0.42;
+      const b1 = project(-0.16, scanBeamY, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      const b2 = project(0.16, scanBeamY, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      ctx.beginPath();
+      ctx.moveTo(b1.x, b1.y);
+      ctx.lineTo(b2.x, b2.y);
+      ctx.strokeStyle = gateGlow;
+      ctx.lineWidth = 2.0;
+      ctx.shadowColor = gateGlow;
+      ctx.shadowBlur = 8;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Gate Labels
+      const gateLabel = project(0, 0.68, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      ctx.font = "8px 'Press Start 2P', monospace";
+      ctx.fillStyle = "rgba(220, 234, 230, 0.9)";
+      ctx.textAlign = "center";
+      ctx.fillText("CALLDATA GATE", gateLabel.x, gateLabel.y);
+
+      const gateSub = project(0, -0.62, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      ctx.font = "7px 'Press Start 2P', monospace";
+      ctx.fillStyle = gateGlow;
+      if (gateState === "IDLE") ctx.fillText("WYSIWYS [0 GAS]", gateSub.x, gateSub.y);
+      else if (gateState === "VERIFYING") ctx.fillText("VERIFYING BYTES...", gateSub.x, gateSub.y);
+      else if (gateState === "ACCEPTED") ctx.fillText("[✓ ACCEPTED: 0-DRIFT]", gateSub.x, gateSub.y);
+      else if (gateState === "REFUSED") ctx.fillText("[× REFUSED: 0 GAS]", gateSub.x, gateSub.y);
+
+      // 4. Draw KeeperHub 3D Node (Right Node)
+      const khX = nodeSpread;
+      const khProjected = khVerts.map(([x, y, z]) =>
+        project(x * 0.95 + khX, y * 0.95, z * 0.95, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov)
+      );
+
+      const isKhExecuting = settleCycle.phase === "executing";
+      ctx.strokeStyle = isKhExecuting ? "#FFFFFF" : "rgba(0, 255, 79, 0.85)";
+      ctx.lineWidth = isKhExecuting ? 2.0 : 1.3;
+      ctx.shadowColor = "#00FF4F";
+      ctx.shadowBlur = isKhExecuting ? 16 : 6;
+
+      for (const [i, j] of khEdges) {
+        const p1 = khProjected[i];
+        const p2 = khProjected[j];
+        if (!p1 || !p2) continue;
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.stroke();
+      }
+      ctx.shadowBlur = 0;
+
+      // KeeperHub Executor Core (Diamond Octahedron)
+      const coreScale = 0.22 + Math.sin(time * 0.003) * 0.03;
+      const coreV = [
+        [0, coreScale, 0], [0, -coreScale, 0],
+        [coreScale, 0, 0], [-coreScale, 0, 0],
+        [0, 0, coreScale], [0, 0, -coreScale]
+      ].map(([x, y, z]) => project(x + khX, y, z, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov));
+
+      ctx.strokeStyle = isKhExecuting ? "#FFFFFF" : "#00FF4F";
+      ctx.lineWidth = 1.2;
+      const coreEdges = [[0,2],[0,3],[0,4],[0,5],[1,2],[1,3],[1,4],[1,5],[2,4],[4,3],[3,5],[5,2]];
+      for (const [i, j] of coreEdges) {
+        ctx.beginPath();
+        ctx.moveTo(coreV[i].x, coreV[i].y);
+        ctx.lineTo(coreV[j].x, coreV[j].y);
+        ctx.stroke();
+      }
+
+      // KeeperHub execution shockwave
+      if (isKhExecuting && settleCycle.shockwaveRad > 0) {
+        const khCenter = project(khX, 0, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+        ctx.strokeStyle = `rgba(0, 255, 79, ${Math.max(0, 1 - settleCycle.shockwaveRad / 60)})`;
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        ctx.arc(khCenter.x, khCenter.y, settleCycle.shockwaveRad, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // KeeperHub Labels
+      const khLabel = project(khX, 0.68, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      ctx.font = "8px 'Press Start 2P', monospace";
+      ctx.fillStyle = "#00FF4F";
+      ctx.textAlign = "center";
+      ctx.fillText("KEEPERHUB", khLabel.x, khLabel.y);
+
+      const khSub = project(khX, 0.54, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      ctx.font = "6px monospace";
+      ctx.fillStyle = "rgba(0, 255, 79, 0.75)";
+      ctx.fillText("DETERMINISTIC EXECUTOR", khSub.x, khSub.y);
+
+      const khBadge = project(khX, -0.62, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      ctx.font = "7px 'Press Start 2P', monospace";
+      ctx.fillStyle = "rgba(0, 255, 79, 0.85)";
+      ctx.fillText(isKhExecuting ? "[⚡ EXECUTING]" : "[MEV-PROTECTED]", khBadge.x, khBadge.y);
+
+      // 5. Active Dispatched Settlement Pipeline Cycle
+      if (settleCycle.active) {
+        settleCycle.t++;
+
+        // Phase: DISPATCH (ReqKeeper -> Gate)
+        if (settleCycle.phase === "dispatch") {
+          settleCycle.progress += 0.024;
+          const px = -nodeSpread + (0 - (-nodeSpread)) * Math.min(1, settleCycle.progress);
+          const pt = project(px, conduitYUpper, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+
+          // Draw Request packet bullet
+          ctx.fillStyle = "#FFFFFF";
+          ctx.shadowColor = "#35F0A0";
+          ctx.shadowBlur = 14;
           ctx.beginPath();
-          ctx.arc(trailPt.x, trailPt.y, Math.max(1, 5 - t), 0, Math.PI * 2);
+          ctx.arc(pt.x, pt.y, 4.5, 0, Math.PI * 2);
           ctx.fill();
-        }
-        ctx.shadowBlur = 0;
+          ctx.shadowBlur = 0;
 
-        // Gate flare at X = 0
-        if (Math.abs(px) < 0.15) {
-          const centerPt = projectPoint(0, 0, 0, cosX, sinX, cosY, sinY, W, H);
-          ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
-          ctx.lineWidth = 3;
+          // Packet badge
+          ctx.font = "6px 'Press Start 2P', monospace";
+          ctx.fillStyle = "#35F0A0";
+          ctx.textAlign = "center";
+          ctx.fillText("[REQ 0x41b0]", pt.x, pt.y - 9);
+
+          if (settleCycle.progress >= 0.98) {
+            settleCycle.phase = "verifying";
+            settleCycle.t = 0;
+            playRetroBlip(740);
+            if (tele) tele.textContent = "GATE: VERIFYING CALLDATA & NONCE 38...";
+            if (hudLeft) hudLeft.textContent = "CALLDATA GATE: VERIFYING BYTES AGAINST FACT LEDGER...";
+            if (hudRight) hudRight.textContent = "CHECKING CALLDATA // NONCE 38";
+          }
+        }
+        // Phase: VERIFYING (holding at Gate for 24 frames)
+        else if (settleCycle.phase === "verifying") {
+          const pt = project(0, conduitYUpper, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+          ctx.fillStyle = "#FFB800";
+          ctx.shadowColor = "#FFB800";
+          ctx.shadowBlur = 16;
           ctx.beginPath();
-          ctx.arc(centerPt.x, centerPt.y, 22, 0, Math.PI * 2);
-          ctx.stroke();
-        }
+          ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.shadowBlur = 0;
 
-        // Arrival shockwave at Vault
-        if (pulseProgress >= 0.95) {
-          shockwaveRadius += 2.5;
-          const vaultCenter = projectPoint(1.18, 0, 0, cosX, sinX, cosY, sinY, W, H);
-          ctx.strokeStyle = `rgba(53, 240, 160, ${Math.max(0, 1 - shockwaveRadius / 45)})`;
-          ctx.lineWidth = 2;
+          if (settleCycle.t > 24) {
+            settleCycle.phase = "accepted";
+            settleCycle.progress = 0;
+            playRetroBlip(840);
+            if (tele) tele.textContent = "CALLDATA GATE: ACCEPTED (100% BYTE MATCH)";
+            if (hudLeft) hudLeft.textContent = "CALLDATA GATE: [✓ ACCEPTED] (100% BYTE MATCH · 0 GAS)";
+            if (hudRight) hudRight.textContent = "GATE: [✓ ACCEPTED] · 0 DRIFT";
+          }
+        }
+        // Phase: ACCEPTED & TRANSMITTING (Gate -> KeeperHub)
+        else if (settleCycle.phase === "accepted") {
+          settleCycle.progress += 0.026;
+          const px = 0 + (nodeSpread - 0) * Math.min(1, settleCycle.progress);
+          const pt = project(px, conduitYUpper, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+
+          ctx.fillStyle = "#00FF4F";
+          ctx.shadowColor = "#00FF4F";
+          ctx.shadowBlur = 16;
           ctx.beginPath();
-          ctx.arc(vaultCenter.x, vaultCenter.y, shockwaveRadius, 0, Math.PI * 2);
-          ctx.stroke();
-        }
+          ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.shadowBlur = 0;
 
-        if (pulseProgress > 1.25) {
-          pulseProgress = -1;
+          ctx.font = "6px 'Press Start 2P', monospace";
+          ctx.fillStyle = "#00FF4F";
+          ctx.textAlign = "center";
+          ctx.fillText("[VERIFIED REQ]", pt.x, pt.y - 9);
+
+          if (settleCycle.progress >= 0.98) {
+            settleCycle.phase = "executing";
+            settleCycle.t = 0;
+            settleCycle.shockwaveRad = 2;
+            playRetroBlip(960);
+            if (tele) tele.textContent = "EXEC 0x41b01a14... // SEPOLIA VERIFIED // 0 DUP";
+            if (hudLeft) hudLeft.textContent = "KEEPERHUB: EXECUTING DETERMINISTICALLY (MEV SAFE)";
+            if (hudRight) hudRight.textContent = "NONCE MGR · PRIVATE ROUTING";
+          }
+        }
+        // Phase: EXECUTING in KeeperHub
+        else if (settleCycle.phase === "executing") {
+          settleCycle.shockwaveRad += 3.2;
+          if (settleCycle.t > 22) {
+            settleCycle.phase = "proof";
+            settleCycle.progress = 0;
+            playRetroBlip(780);
+            if (tele) tele.textContent = "PROOF RETURNING // ERC20FeeProxy TRANSFER OK";
+            if (hudLeft) hudLeft.textContent = "RETURNING ON-CHAIN EXECUTION PROOF -> REQKEEPER";
+            if (hudRight) hudRight.textContent = "PROOF ROUTE // 0 DUP";
+          }
+        }
+        // Phase: PROOF RETURN (KeeperHub -> ReqKeeper via lower rail)
+        else if (settleCycle.phase === "proof") {
+          settleCycle.progress += 0.024;
+          const px = nodeSpread - (nodeSpread - (-nodeSpread)) * Math.min(1, settleCycle.progress);
+          const pt = project(px, conduitYLower, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+
+          ctx.fillStyle = "#FFFFFF";
+          ctx.shadowColor = "#00FF4F";
+          ctx.shadowBlur = 14;
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+
+          ctx.font = "6px 'Press Start 2P', monospace";
+          ctx.fillStyle = "#00FF4F";
+          ctx.textAlign = "center";
+          ctx.fillText("[PROOF 0x41b0]", pt.x, pt.y + 13);
+
+          if (settleCycle.progress >= 0.98) {
+            settleCycle.phase = "settled";
+            settleCycle.t = 0;
+            settleCycle.settledTimer = 160;
+            dinoHop = -8;
+            playRetroBlip(1080);
+            if (tele) tele.textContent = "SETTLED // 0 DUP // ON-CHAIN PROOF STORED";
+            if (hudLeft) hudLeft.textContent = "SETTLEMENT COMPLETE: NONCE 38 SETTLED · 0 DUP";
+            if (hudRight) hudRight.textContent = "PROOF RECORDED · 0 GAS OVERHEAD";
+          }
+        }
+        // Phase: SETTLED (ReqKeeper victory flash + Dino bounce)
+        else if (settleCycle.phase === "settled") {
+          settleCycle.settledTimer--;
+          dinoHop = Math.sin(settleCycle.t * 0.22) * 6;
+          if (settleCycle.settledTimer <= 0) {
+            settleCycle.active = false;
+            settleCycle.phase = "idle";
+            dinoHop = 0;
+            if (tele) tele.textContent = "WYSIWYS CALLDATA GATE // ARMED // 0 GAS";
+            if (hudLeft) hudLeft.textContent = "DRAG TO ROTATE · CLICK NODES TO INSPECT";
+            if (hudRight) hudRight.textContent = "GATE: WYSIWYS ARMED · 0 GAS";
+          }
+        }
+      }
+
+      // 6. Active Replay Refusal Pipeline Cycle (Refused at Gate, Shatters at 0 Gas, KeeperHub Untouched)
+      if (refuseCycle.active) {
+        refuseCycle.t++;
+
+        // Phase: DISPATCH REPLAY PACKET
+        if (refuseCycle.phase === "dispatch") {
+          refuseCycle.progress += 0.024;
+          const px = -nodeSpread + (0 - (-nodeSpread)) * Math.min(1, refuseCycle.progress);
+          const pt = project(px, conduitYUpper, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+
+          ctx.fillStyle = "#FF3B30";
+          ctx.shadowColor = "#FF3B30";
+          ctx.shadowBlur = 14;
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+
+          ctx.font = "6px 'Press Start 2P', monospace";
+          ctx.fillStyle = "#FF3B30";
+          ctx.textAlign = "center";
+          ctx.fillText("[REPLAY 0x41b0]", pt.x, pt.y - 9);
+
+          if (refuseCycle.progress >= 0.94) {
+            refuseCycle.phase = "refused";
+            refuseCycle.t = 0;
+            playRetroBlip(160);
+            if (tele) tele.textContent = "[× REFUSED] 0 DUP // 0 GAS SPENT // KEEPERHUB NEVER CALLED";
+            if (hudLeft) hudLeft.textContent = "CALLDATA GATE: REFUSED AT ZERO GAS (DUPLICATE NONCE)";
+            if (hudRight) hudRight.textContent = "GATE: [× REFUSED] · 0 GAS SPENT";
+
+            // Spawn 16 shattered pixel fragments
+            for (let p = 0; p < 16; p++) {
+              refuseCycle.particles.push({
+                x: pt.x,
+                y: pt.y,
+                vx: -1.2 - Math.random() * 2.8,
+                vy: (Math.random() - 0.5) * 3.4,
+                color: p % 2 === 0 ? "#FF3B30" : "#FF9500",
+                size: 2.5 + Math.random() * 2,
+                life: 1.0,
+                decay: 0.03 + Math.random() * 0.02
+              });
+            }
+          }
+        }
+        // Phase: REFUSED & SHATTER (Fragments burst backwards, KeeperHub never called)
+        else if (refuseCycle.phase === "refused") {
+          // Draw shattered fragments
+          for (let p = refuseCycle.particles.length - 1; p >= 0; p--) {
+            const part = refuseCycle.particles[p];
+            part.x += part.vx;
+            part.y += part.vy;
+            part.life -= part.decay;
+            if (part.life <= 0) {
+              refuseCycle.particles.splice(p, 1);
+            } else {
+              ctx.fillStyle = part.color;
+              ctx.globalAlpha = part.life;
+              ctx.fillRect(part.x - part.size / 2, part.y - part.size / 2, part.size, part.size);
+            }
+          }
+          ctx.globalAlpha = 1.0;
+
+          if (refuseCycle.t > 80) {
+            refuseCycle.active = false;
+            refuseCycle.phase = "idle";
+            if (tele) tele.textContent = "WYSIWYS CALLDATA GATE // ARMED // 0 GAS";
+            if (hudLeft) hudLeft.textContent = "DRAG TO ROTATE · CLICK NODES TO INSPECT";
+            if (hudRight) hudRight.textContent = "GATE: WYSIWYS ARMED · 0 GAS";
+          }
         }
       }
 
