@@ -336,8 +336,9 @@
     /* A phone-sized mark. The desktop one is 136x120 and pushed the first sentence about what
        this is off the screen on its own, which is what started the nav being moved in the first
        place. The art survives at 48px because it is drawn as pixels. */
-    .brand { display: flex; align-items: center; gap: 10px; padding: 8px 10px; width: 100% }
+    .brand { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; padding: 8px 10px; width: 100%; box-sizing: border-box; }
     .brand .sub { display: none }
+    .brand .dino-pet-card { width: 100%; margin: 8px 0 0; min-width: 0; box-sizing: border-box; }
     .mark-wrap { margin: 0; width: 54px; height: 48px }
     .rail-foot { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 8px 14px; width: 100%; padding: 6px 10px; border-top: 1px solid var(--line); font-size: 10px }
     .rail-foot div + div { margin-top: 0 }
@@ -403,7 +404,7 @@
   .btn-cta.outline { background: none; border-color: var(--line); color: var(--dim); }
   .btn-cta.outline:hover { border-color: var(--dim); color: var(--text); box-shadow: none; }
 
-  /* 3D Vault Card */
+  /* 3D Vault Card & Interactive Dock */
   .vault-box {
     border: 1px solid var(--line-2); background: var(--panel);
     position: relative; padding: 12px; box-shadow: 0 0 24px rgba(0,0,0,.6);
@@ -414,21 +415,80 @@
     padding-bottom: 8px; margin-bottom: 8px; font-family: var(--pixel);
   }
   .vault-box header .live-dot {
-    display: inline-block; width: 6px; height: 6px; background: var(--signal);
-    border-radius: 50%; margin-right: 6px; box-shadow: 0 0 6px var(--signal);
+    display: inline-block; width: 6px; height: 6px; background: #00FF4F;
+    border-radius: 50%; margin-right: 6px; box-shadow: 0 0 6px #00FF4F;
   }
   .vault-canvas-wrap {
-    position: relative; width: 100%; height: 260px;
+    position: relative; width: 100%; height: 300px;
     background: #030507; border: 1px solid var(--line); overflow: hidden; cursor: grab;
   }
   .vault-canvas-wrap:active { cursor: grabbing; }
   .vault-canvas-wrap canvas { width: 100%; height: 100%; display: block; }
   .vault-hud {
     position: absolute; bottom: 8px; left: 8px; right: 8px;
-    display: flex; justify-content: space-between; font-size: 9px;
+    display: flex; justify-content: space-between; font-size: 8.5px;
     color: var(--faint); pointer-events: none; font-family: var(--pixel);
-    background: rgba(5, 8, 10, 0.75); padding: 5px 8px; border: 1px solid var(--line);
+    background: rgba(5, 8, 10, 0.85); padding: 5px 8px; border: 1px solid var(--line);
   }
+  .vault-modes {
+    display: flex; gap: 6px; margin-top: 8px; overflow-x: auto;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .vmode-btn {
+    background: transparent; border: 1px solid var(--line);
+    color: var(--dim); font-family: var(--pixel); font-size: 8px;
+    padding: 5px 8px; cursor: pointer; white-space: nowrap; transition: all .15s;
+  }
+  .vmode-btn:hover { color: var(--signal); border-color: var(--line-2); }
+  .vmode-btn.active {
+    background: rgba(0, 255, 79, 0.12); color: #00FF4F; border-color: #00FF4F;
+  }
+  .vmode-btn.pulse-trigger {
+    margin-left: auto; color: #00FF4F; border-color: rgba(0, 255, 79, 0.5);
+  }
+  .vmode-btn.pulse-trigger:hover {
+    background: rgba(0, 255, 79, 0.22); box-shadow: 0 0 10px rgba(0, 255, 79, 0.4);
+  }
+
+  /* Dino Pet Companion Card */
+  .dino-pet-card {
+    margin: 12px 10px 4px; padding: 10px 10px 8px;
+    background: #030608; border: 1px solid var(--line-2);
+    border-left: 2px solid var(--signal);
+    position: relative; box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+    user-select: none; box-sizing: border-box; min-width: 0; max-width: 100%;
+  }
+  .dino-pet-card .d-top {
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: var(--pixel); font-size: 7.5px; color: var(--faint);
+    margin-bottom: 6px; letter-spacing: .05em;
+  }
+  .dino-pet-card .d-top .d-status {
+    display: inline-flex; align-items: center; gap: 4px; color: var(--signal);
+  }
+  .dino-pet-card .d-top .d-blink {
+    width: 5px; height: 5px; background: var(--signal); border-radius: 50%;
+    box-shadow: 0 0 6px var(--signal); animation: petBlink 1.4s infinite;
+  }
+  @keyframes petBlink { 0%, 100% { opacity: 1 } 50% { opacity: 0.3 } }
+  .dino-bubble {
+    font-size: 11px; line-height: 1.45; color: var(--text); min-height: 44px;
+    font-family: var(--mono); word-break: break-word; overflow-wrap: anywhere;
+  }
+  .dino-bubble .dino-caret {
+    display: inline-block; color: var(--signal); font-weight: bold;
+    animation: caret 0.8s step-end infinite;
+  }
+  .dino-foot {
+    margin-top: 6px; display: flex; justify-content: space-between; align-items: center;
+    font-family: var(--pixel); font-size: 7.5px; color: var(--faint);
+    border-top: 1px solid rgba(53, 240, 160, 0.12); padding-top: 5px;
+  }
+  .dino-foot button {
+    background: transparent; border: 1px solid var(--line); color: var(--signal);
+    font-family: var(--pixel); font-size: 7px; padding: 2px 6px; cursor: pointer;
+  }
+  .dino-foot button:hover { background: rgba(53, 240, 160, 0.15); }
 
   /* Landing Sections */
   .l-sec { padding: 28px 24px 0; }
@@ -524,6 +584,13 @@
     .hero-grid { grid-template-columns: minmax(0, 1fr); }
     .vault-canvas-wrap { height: 210px; }
   }
+  @media (max-width: 480px) {
+    .vault-modes { flex-wrap: wrap; }
+    .vmode-btn { font-size: 7px; padding: 4px 6px; }
+    .vmode-btn.pulse-trigger { margin-left: 0; width: 100%; text-align: center; }
+    .landing-hero { padding: 20px 14px 24px; }
+    .l-sec { padding: 20px 14px 0; }
+  }
 </style>
 </head>
 <body>
@@ -531,10 +598,32 @@
 <div class="app">
   <aside>
     <div class="brand">
-      <div class="mark-wrap"><canvas id="mark" class="mark" width="34" height="30" role="img"
-        aria-label="ReqKeeper: a pixel tyrannosaur holding a coin, its tail breaking into loose pixels"></canvas></div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:8px">
+        <svg aria-label="KeeperHub Logo" viewBox="0 0 318 500" width="18" height="28" fill="none" xmlns="http://www.w3.org/2000/svg" title="KeeperHub Official Logo">
+          <path d="M317.77 204.279H226.98V295.069H317.77V204.279Z" fill="#00FF4F"></path>
+          <path d="M204.28 90.79V0H113.49V90.79C113.456 120.879 101.488 149.725 80.2115 171.002C58.9355 192.278 30.0889 204.246 0 204.28V295.07C30.0889 295.104 58.9355 307.072 80.2115 328.348C101.488 349.625 113.456 378.471 113.49 408.56V499.35H204.28V408.56C204.28 378.075 197.445 347.977 184.279 320.482C171.113 292.987 151.95 268.793 128.2 249.68C151.948 230.563 171.109 206.367 184.275 178.871C197.441 151.374 204.277 121.276 204.28 90.79Z" fill="#00FF4F"></path>
+        </svg>
+        <span style="font-family:var(--pixel);font-size:8px;color:var(--faint)">&times;</span>
+        <div class="mark-wrap"><canvas id="mark" class="mark" width="34" height="30" role="img"
+          aria-label="ReqKeeper: a pixel tyrannosaur holding a coin, its tail breaking into loose pixels"></canvas></div>
+      </div>
       <div class="name" id="wordmark" style="cursor:pointer" title="ReqKeeper Home"></div>
-      <div class="sub">EXACTLY-ONCE SETTLEMENT</div>
+      <div class="sub">KEEPERHUB &times; REQUEST NETWORK</div>
+
+      <!-- Dino Pet Companion Fact Machine -->
+      <div class="dino-pet-card" id="dino-pet" title="Click Dino or card to sync next verified fact">
+        <div class="d-top">
+          <span>PET: CIPHER-DINO</span>
+          <span class="d-status"><i class="d-blink"></i>SYNCED</span>
+        </div>
+        <div class="dino-bubble" id="dino-bubble">
+          <span id="dino-fact-text">Initializing proof ledger...</span><span class="dino-caret">_</span>
+        </div>
+        <div class="dino-foot">
+          <button type="button" id="dino-next-btn">NEXT FACT &#10142;</button>
+          <span id="dino-fact-idx">1/7</span>
+        </div>
+      </div>
     </div>
     <nav id="nav">
       <button data-v="landing" aria-current="true"><span class="dot"></span>ReqKeeper</button>
@@ -586,15 +675,27 @@
 
           <div class="vault-box">
             <header>
-              <span><i class="live-dot"></i>CRYPTOGRAPHIC 3D SAFE</span>
-              <span id="vault-telemetry">SECP256K1 // ROT: 0&deg;</span>
+              <span style="display:inline-flex;align-items:center;gap:6px">
+                <svg aria-label="KeeperHub Logo" viewBox="0 0 318 500" width="13" height="19" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle">
+                  <path d="M317.77 204.279H226.98V295.069H317.77V204.279Z" fill="#00FF4F"></path>
+                  <path d="M204.28 90.79V0H113.49V90.79C113.456 120.879 101.488 149.725 80.2115 171.002C58.9355 192.278 30.0889 204.246 0 204.28V295.07C30.0889 295.104 58.9355 307.072 80.2115 328.348C101.488 349.625 113.456 378.471 113.49 408.56V499.35H204.28V408.56C204.28 378.075 197.445 347.977 184.279 320.482C171.113 292.987 151.95 268.793 128.2 249.68C151.948 230.563 171.109 206.367 184.275 178.871C197.441 151.374 204.277 121.276 204.28 90.79Z" fill="#00FF4F"></path>
+                </svg>
+                <i class="live-dot"></i>3D KEEPERHUB &#8644; REQKEEPER DOCK
+              </span>
+              <span id="vault-telemetry">SECP256K1 // ROT: 0&deg; // ARMED</span>
             </header>
             <div class="vault-canvas-wrap" id="vault-canvas-box">
-              <canvas id="vault3d" width="560" height="260" aria-label="Interactive 3D Cryptographic Safe Model in Phosphor Green"></canvas>
+              <canvas id="vault3d" width="600" height="300" aria-label="Interactive 3D Cryptographic Safe and KeeperHub Integration Model in Phosphor Green"></canvas>
               <div class="vault-hud">
-                <span>DRAG TO ROTATE 3D VAULT</span>
-                <span>GATE: WYSIWYS ARMED &middot; 0 GAS</span>
+                <span id="vault-hud-left">DRAG TO ROTATE &middot; CLICK CANVAS TO DISPATCH</span>
+                <span id="vault-hud-right">GATE: WYSIWYS ARMED &middot; 0 GAS</span>
               </div>
+            </div>
+            <div class="vault-modes" id="vault-modes">
+              <button class="vmode-btn active" data-mode="dock" type="button">KEEPERHUB &#8644; REQ DOCK</button>
+              <button class="vmode-btn" data-mode="keeperhub" type="button">KEEPERHUB 3D</button>
+              <button class="vmode-btn" data-mode="vault" type="button">REQ VAULT 3D</button>
+              <button class="vmode-btn pulse-trigger" id="btn-pulse-exec" type="button">&#9889; DISPATCH PULSE</button>
             </div>
           </div>
         </div>
@@ -1023,6 +1124,19 @@
         const p = order[Math.max(0, Math.min(revealed, order.length - 1))];
         ctx.fillStyle = "#DCEAE6";
         ctx.fillRect(p.x, p.y, 1, 1); // the cursor, riding the leading edge
+      } else {
+        // Pixel-art micro-animations once mark is revealed:
+        // 1. Eye blink at (27, 4) and (28, 4) every 3.4 seconds
+        const isBlinking = ((t % 3400) < 180);
+        if (isBlinking) {
+          ctx.fillStyle = "#030608";
+          ctx.fillRect(27, 4, 2, 1);
+        }
+        // 2. Coin glint sparkle at (23, 13) every 2.2 seconds
+        if ((t % 2200) < 160) {
+          ctx.fillStyle = "#FFFFFF";
+          ctx.fillRect(23, 13, 1, 1);
+        }
       }
     };
 
@@ -1048,10 +1162,128 @@
       const type = (i) => {
         word.innerHTML = text.slice(0, i) + '<span class="caret">_</span>';
         if (i < text.length) setTimeout(() => type(i + 1), 55);
+        else initDinoPet();
       };
       setTimeout(() => type(0), start);
     }
+
+    // Dino canvas interactive click / bounce
+    cv.addEventListener("click", () => {
+      cv.style.transform = "scale(1.12) translateY(-2px)";
+      cv.style.transition = "transform 0.15s ease";
+      setTimeout(() => { cv.style.transform = "none"; }, 200);
+      playRetroBlip(720);
+      nextDinoFact(true);
+    });
   })();
+
+  // --- synthesized retro audio blip (no external assets) -------------------
+  function playRetroBlip(freq = 640) {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const actx = new AudioCtx();
+      const osc = actx.createOscillator();
+      const gain = actx.createGain();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(freq, actx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(freq * 1.6, actx.currentTime + 0.05);
+      gain.gain.setValueAtTime(0.04, actx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + 0.07);
+      osc.connect(gain);
+      gain.connect(actx.destination);
+      osc.start();
+      osc.stop(actx.currentTime + 0.07);
+    } catch {}
+  }
+
+  // --- dino pet fact typewriter & sync engine -----------------------------
+  const DINO_FACTS = [
+    {
+      text: "719 tests pass across 142 suites in ~11s. Zero failures.",
+      statId: "land-kpi-tests",
+    },
+    {
+      text: "50 concurrent workers released at once \u2192 1 broadcast, 0 duplicates.",
+      statId: "land-kpi-race",
+    },
+    {
+      text: "9/9 SIGKILL checkpoints survived under SQLite BEGIN IMMEDIATE fencing.",
+      statId: "land-kpi-crash",
+    },
+    {
+      text: "47/47 Request invoices recover secp256k1 payee signatures on-chain.",
+      statId: "land-kpi-sigs",
+    },
+    {
+      text: "38 real settlements on Sepolia corroborated in ERC20FeeProxy logs.",
+      statId: "land-kpi-sepolia",
+    },
+    {
+      text: "38 replays of settled obligations refused before provider write at 0 gas.",
+      statId: "land-kpi-expiry",
+    },
+    {
+      text: "KeeperHub upstream PR #2372 fixes 24h key expiry double-spend risk.",
+      statId: null,
+    }
+  ];
+
+  let dinoIdx = 0;
+  let dinoTimer = null;
+  let dinoTyping = null;
+
+  function nextDinoFact(userInitiated = false) {
+    if (userInitiated) playRetroBlip(620);
+    dinoIdx = (dinoIdx + 1) % DINO_FACTS.length;
+    renderDinoFact();
+  }
+
+  function renderDinoFact() {
+    clearTimeout(dinoTyping);
+    clearTimeout(dinoTimer);
+    const item = DINO_FACTS[dinoIdx];
+    const elText = document.getElementById("dino-fact-text");
+    const elIdx = document.getElementById("dino-fact-idx");
+    if (elIdx) elIdx.textContent = `${dinoIdx + 1}/${DINO_FACTS.length}`;
+    if (!elText) return;
+
+    if (item.statId) {
+      const target = document.getElementById(item.statId);
+      if (target) {
+        target.style.transition = "box-shadow 0.2s, border-color 0.2s";
+        target.style.boxShadow = "0 0 16px rgba(53, 240, 160, 0.7)";
+        target.style.borderColor = "#35F0A0";
+        setTimeout(() => {
+          target.style.boxShadow = "";
+          target.style.borderColor = "";
+        }, 1200);
+      }
+    }
+
+    const fullText = item.text;
+    let charIdx = 0;
+    elText.textContent = "";
+
+    function typeChar() {
+      if (charIdx <= fullText.length) {
+        elText.textContent = fullText.slice(0, charIdx);
+        charIdx++;
+        dinoTyping = setTimeout(typeChar, 22);
+      } else {
+        dinoTimer = setTimeout(() => nextDinoFact(false), 5500);
+      }
+    }
+    typeChar();
+  }
+
+  function initDinoPet() {
+    renderDinoFact();
+    document.getElementById("dino-next-btn")?.addEventListener("click", () => nextDinoFact(true));
+    document.getElementById("dino-pet")?.addEventListener("click", (e) => {
+      if (e.target.id !== "dino-next-btn") nextDinoFact(true);
+    });
+  }
   // Provenance, stated once and used everywhere. The live artifact says LIVE_TESTNET, but it is
   // a run that finished on its generatedAt date — nothing on this page is happening now. RECORDED
   // rows came off Sepolia during that run; TEST rows came from the in-memory fixture harness and
@@ -1756,13 +1988,19 @@
   if (el("land-kpi-crash") && D.crash) el("land-kpi-crash").textContent = `${D.crash.totals?.settledAfterRecovery ?? 7}/${D.crash.totals?.checkpoints ?? 9}`;
   if (el("land-kpi-sepolia")) el("land-kpi-sepolia").textContent = String(settled || 38);
 
-  // Interactive 3D Wireframe Cryptographic Safe / Vault
+  // Interactive 3D Cryptographic Safe & KeeperHub Integration Dock
   (function initVault3D() {
     const canvas = el("vault3d");
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     const container = el("vault-canvas-box");
     const tele = el("vault-telemetry");
+    const modesWrap = el("vault-modes");
+    const btnPulse = el("btn-pulse-exec");
+
+    let currentMode = "dock"; // "dock" | "keeperhub" | "vault"
+    let pulseProgress = -1; // -1 = idle, 0..1 = active transaction pulse
+    let shockwaveRadius = 0;
 
     // Dynamic resolution adjustment
     function resize() {
@@ -1775,9 +2013,57 @@
     window.addEventListener("resize", resize);
     resize();
 
-    // 3D Geometry: Outer Vault Cube (size 1.0) + Inner Secure Core Cube (size 0.52)
-    const s1 = 1.0, s2 = 0.52;
-    const verts = [
+    // KeeperHub 2D Contour (sampled from official SVG)
+    const khMain2D = [
+      [113.49, 0], [204.28, 0], [204.28, 90.79],
+      [202.4, 114.1], [195.8, 140.2], [184.3, 178.9],
+      [169.5, 208.1], [150.2, 231.8], [128.2, 249.7],
+      [150.2, 267.6], [169.5, 291.3], [184.3, 320.5],
+      [195.8, 359.2], [202.4, 385.3], [204.28, 408.56],
+      [204.28, 499.35], [113.49, 499.35], [113.49, 408.56],
+      [110.1, 382.4], [98.5, 350.2], [80.2, 328.3],
+      [56.4, 305.1], [28.2, 295.1], [0, 295.07],
+      [0, 204.28],
+      [28.2, 204.2], [56.4, 194.2], [80.2, 171.0],
+      [98.5, 149.2], [110.1, 117.0], [113.49, 90.79]
+    ].map(([x, y]) => [
+      ((x - 159) * 0.0028),
+      (-(y - 250) * 0.0028)
+    ]);
+
+    const khSquare2D = [
+      [226.98, 204.28], [317.77, 204.28], [317.77, 295.07], [226.98, 295.07]
+    ].map(([x, y]) => [
+      ((x - 159) * 0.0028),
+      (-(y - 250) * 0.0028)
+    ]);
+
+    // Build KeeperHub 3D vertices (front at +0.16, back at -0.16)
+    const khVerts = [];
+    const khEdges = [];
+    const N = khMain2D.length;
+    for (const [x, y] of khMain2D) khVerts.push([x, y, 0.16]);
+    for (const [x, y] of khMain2D) khVerts.push([x, y, -0.16]);
+    for (let i = 0; i < N; i++) {
+      khEdges.push([i, (i + 1) % N]);
+      khEdges.push([i + N, ((i + 1) % N) + N]);
+      if (i % 2 === 0 || i === 0 || i === 2 || i === 14 || i === 16 || i === 23 || i === 24) {
+        khEdges.push([i, i + N]);
+      }
+    }
+    // Square block vertices and edges
+    const sqOffset = khVerts.length;
+    for (const [x, y] of khSquare2D) khVerts.push([x, y, 0.16]);
+    for (const [x, y] of khSquare2D) khVerts.push([x, y, -0.16]);
+    for (let i = 0; i < 4; i++) {
+      khEdges.push([sqOffset + i, sqOffset + ((i + 1) % 4)]);
+      khEdges.push([sqOffset + i + 4, sqOffset + (((i + 1) % 4) + 4)]);
+      khEdges.push([sqOffset + i, sqOffset + i + 4]);
+    }
+
+    // ReqKeeper 3D Vault Geometry
+    const s1 = 0.65, s2 = 0.34;
+    const vaultVerts = [
       // Outer cube [0..7]
       [-s1, -s1, -s1], [ s1, -s1, -s1], [ s1,  s1, -s1], [-s1,  s1, -s1],
       [-s1, -s1,  s1], [ s1, -s1,  s1], [ s1,  s1,  s1], [-s1,  s1,  s1],
@@ -1785,18 +2071,14 @@
       [-s2, -s2, -s2], [ s2, -s2, -s2], [ s2,  s2, -s2], [-s2,  s2, -s2],
       [-s2, -s2,  s2], [ s2, -s2,  s2], [ s2,  s2,  s2], [-s2,  s2,  s2],
     ];
-
-    const edges = [
-      // Outer cube edges
+    const vaultEdges = [
       [0,1],[1,2],[2,3],[3,0], [4,5],[5,6],[6,7],[7,4], [0,4],[1,5],[2,6],[3,7],
-      // Inner core edges
       [8,9],[9,10],[10,11],[11,8], [12,13],[13,14],[14,15],[15,12], [8,12],[9,13],[10,14],[11,15],
-      // Diagonal tesseract connector struts
       [0,8],[1,9],[2,10],[3,11], [4,12],[5,13],[6,14],[7,15],
     ];
 
-    let rotX = 0.35, rotY = 0.45;
-    let targetRotX = 0.35, targetRotY = 0.45;
+    let rotX = 0.32, rotY = 0.40;
+    let targetRotX = 0.32, targetRotY = 0.40;
     let isDragging = false;
     let lastMouseX = 0, lastMouseY = 0;
 
@@ -1809,7 +2091,6 @@
     });
     window.addEventListener("pointermove", (e) => {
       if (!isDragging) {
-        // Subtle cursor parallax
         const rect = container.getBoundingClientRect();
         if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) {
           const nx = (e.clientX - rect.left) / rect.width - 0.5;
@@ -1829,11 +2110,60 @@
     window.addEventListener("pointerup", () => { isDragging = false; });
     window.addEventListener("pointercancel", () => { isDragging = false; });
 
+    // Mode Buttons Handler
+    modesWrap?.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-mode]");
+      if (!btn) return;
+      currentMode = btn.dataset.mode;
+      for (const b of modesWrap.querySelectorAll("button[data-mode]")) {
+        b.classList.toggle("active", b === btn);
+      }
+      playRetroBlip(520);
+    });
+
+    function triggerPulse() {
+      pulseProgress = 0;
+      shockwaveRadius = 0;
+      playRetroBlip(880);
+      if (tele) {
+        tele.textContent = "DISPATCHING -> WYSIWYS VERIFY -> 0 DUP";
+        setTimeout(() => {
+          if (tele) tele.textContent = "EXEC 0x41b01a14... // SEPOLIA VERIFIED // 0 DUP";
+        }, 800);
+        setTimeout(() => {
+          if (tele) tele.textContent = "SECP256K1 // ROT: " + Math.round(((rotY * 180 / Math.PI) % 360 + 360) % 360) + "\u00B0 // ARMED";
+        }, 3200);
+      }
+    }
+
+    btnPulse?.addEventListener("click", triggerPulse);
+    container.addEventListener("click", (e) => {
+      if (!isDragging) triggerPulse();
+    });
+
+    // 3D Projection Engine
+    function projectPoint(x, y, z, cosX, sinX, cosY, sinY, W, H, cameraDist = 3.6, fov = 310) {
+      const x1 = x * cosY + z * sinY;
+      const y1 = y;
+      const z1 = -x * sinY + z * cosY;
+      const x2 = x1;
+      const y2 = y1 * cosX - z1 * sinX;
+      const z2 = y1 * sinX + z1 * cosX;
+      const pz = z2 + cameraDist;
+      const scale = fov / Math.max(0.2, pz);
+      return {
+        x: W / 2 + x2 * scale,
+        y: H / 2 + y2 * scale,
+        z: z2,
+        scale: scale,
+      };
+    }
+
     function render(time) {
       if (!still) {
         if (!isDragging) {
-          targetRotY += 0.007;
-          targetRotX = 0.25 + 0.12 * Math.sin(time * 0.001);
+          targetRotY += 0.006;
+          targetRotX = 0.22 + 0.10 * Math.sin(time * 0.0008);
         }
         rotX += (targetRotX - rotX) * 0.1;
         rotY += (targetRotY - rotY) * 0.1;
@@ -1845,71 +2175,234 @@
       ctx.clearRect(0, 0, W, H);
 
       // Coordinate telemetry
-      if (tele) {
+      if (tele && !tele.textContent.includes("EXEC") && !tele.textContent.includes("DISPATCHING")) {
         const degY = Math.round(((rotY * 180 / Math.PI) % 360 + 360) % 360);
         tele.textContent = `SECP256K1 // ROT: ${degY}\u00B0 // ARMED`;
       }
 
-      // Matrix transforms
       const cosX = Math.cos(rotX), sinX = Math.sin(rotX);
       const cosY = Math.cos(rotY), sinY = Math.sin(rotY);
 
-      // Project vertices
-      const projected = verts.map(([vx, vy, vz]) => {
-        // Rotate Y
-        const x1 = vx * cosY + vz * sinY;
-        const y1 = vy;
-        const z1 = -vx * sinY + vz * cosY;
-        // Rotate X
-        const x2 = x1;
-        const y2 = y1 * cosX - z1 * sinX;
-        const z2 = y1 * sinX + z1 * cosX;
-        // Perspective projection
-        const fov = 300;
-        const cameraDist = 3.6;
-        const pz = z2 + cameraDist;
-        const scale = fov / pz;
-        return {
-          x: W / 2 + x2 * scale,
-          y: H / 2 + y2 * scale,
-          z: z2,
-          scale: scale,
-        };
-      });
+      // Layout coordinates based on mode
+      let khOffset = -1.18, khScale = 0.95;
+      let vaultOffset = 1.18, vaultScale = 0.95;
+      let showConduits = true;
 
-      // Draw wireframe edges with depth attenuation
-      for (const [i, j] of edges) {
-        const p1 = projected[i];
-        const p2 = projected[j];
-        const avgZ = (p1.z + p2.z) / 2;
-        // Nearer lines are brighter green with phosphor glow, further lines are dim
-        const alpha = Math.max(0.15, Math.min(0.95, (avgZ + 1.6) / 3.2));
-        ctx.beginPath();
-        ctx.moveTo(p1.x, p1.y);
-        ctx.lineTo(p2.x, p2.y);
-        ctx.strokeStyle = `rgba(53, 240, 160, ${alpha.toFixed(3)})`;
-        ctx.lineWidth = avgZ > 0 ? 1.6 : 1.0;
-        if (avgZ > 0.4) {
-          ctx.shadowColor = "#35F0A0";
+      if (currentMode === "keeperhub") {
+        khOffset = 0; khScale = 1.45;
+        vaultOffset = 999;
+        showConduits = false;
+      } else if (currentMode === "vault") {
+        vaultOffset = 0; vaultScale = 1.45;
+        khOffset = -999;
+        showConduits = false;
+      }
+
+      // 1. Draw KeeperHub 3D Model
+      if (khOffset < 50) {
+        const khProjected = khVerts.map(([vx, vy, vz]) =>
+          projectPoint(vx * khScale + khOffset, vy * khScale, vz * khScale, cosX, sinX, cosY, sinY, W, H)
+        );
+
+        for (const [i, j] of khEdges) {
+          const p1 = khProjected[i];
+          const p2 = khProjected[j];
+          if (!p1 || !p2) continue;
+          const avgZ = (p1.z + p2.z) / 2;
+          const alpha = Math.max(0.18, Math.min(0.95, (avgZ + 1.8) / 3.4));
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.strokeStyle = `rgba(0, 255, 79, ${alpha.toFixed(3)})`;
+          ctx.lineWidth = avgZ > 0 ? 1.5 : 1.0;
+          if (avgZ > 0.3) {
+            ctx.shadowColor = "#00FF4F";
+            ctx.shadowBlur = 6;
+          } else {
+            ctx.shadowBlur = 0;
+          }
+          ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+
+        // KeeperHub vertices glow
+        ctx.fillStyle = "#00FF4F";
+        for (let k = 0; k < khProjected.length; k += 3) {
+          const p = khProjected[k];
+          ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3);
+        }
+
+        // 3D Label for KeeperHub
+        if (showConduits) {
+          const topPoint = projectPoint(khOffset, 0.85, 0, cosX, sinX, cosY, sinY, W, H);
+          ctx.font = "8px 'Press Start 2P', monospace";
+          ctx.fillStyle = "rgba(0, 255, 79, 0.85)";
+          ctx.textAlign = "center";
+          ctx.fillText("KEEPERHUB AGENT", topPoint.x, topPoint.y);
+        }
+      }
+
+      // 2. Draw ReqKeeper 3D Vault
+      if (vaultOffset < 50) {
+        const vaultProjected = vaultVerts.map(([vx, vy, vz]) =>
+          projectPoint(vx * vaultScale + vaultOffset, vy * vaultScale, vz * vaultScale, cosX, sinX, cosY, sinY, W, H)
+        );
+
+        for (const [i, j] of vaultEdges) {
+          const p1 = vaultProjected[i];
+          const p2 = vaultProjected[j];
+          if (!p1 || !p2) continue;
+          const avgZ = (p1.z + p2.z) / 2;
+          const alpha = Math.max(0.20, Math.min(0.95, (avgZ + 1.8) / 3.4));
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.strokeStyle = `rgba(53, 240, 160, ${alpha.toFixed(3)})`;
+          ctx.lineWidth = avgZ > 0 ? 1.6 : 1.0;
+          if (avgZ > 0.4) {
+            ctx.shadowColor = "#35F0A0";
+            ctx.shadowBlur = 7;
+          } else {
+            ctx.shadowBlur = 0;
+          }
+          ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+
+        // Vault vertices glow
+        for (let k = 0; k < vaultProjected.length; k++) {
+          const p = vaultProjected[k];
+          const isCore = k >= 8;
+          ctx.fillStyle = isCore ? "#35F0A0" : "#DCEAE6";
+          ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3);
+        }
+
+        // 3D Label for ReqKeeper
+        if (showConduits) {
+          const topPoint = projectPoint(vaultOffset, 0.85, 0, cosX, sinX, cosY, sinY, W, H);
+          ctx.font = "8px 'Press Start 2P', monospace";
+          ctx.fillStyle = "rgba(53, 240, 160, 0.85)";
+          ctx.textAlign = "center";
+          ctx.fillText("REQ VAULT", topPoint.x, topPoint.y);
+        }
+      }
+
+      // 3. Draw Conduits and Calldata Gate (Dock Mode)
+      if (showConduits) {
+        const conduitY = [0.26, 0.0, -0.26];
+        const xStart = -0.75, xEnd = 0.75;
+
+        for (let c = 0; c < conduitY.length; c++) {
+          const cy = conduitY[c];
+          const pStart = projectPoint(xStart, cy, 0, cosX, sinX, cosY, sinY, W, H);
+          const pEnd = projectPoint(xEnd, cy, 0, cosX, sinX, cosY, sinY, W, H);
+
+          // Draw conduit line
+          ctx.beginPath();
+          ctx.setLineDash([4, 4]);
+          ctx.lineDashOffset = -time * 0.02;
+          ctx.moveTo(pStart.x, pStart.y);
+          ctx.lineTo(pEnd.x, pEnd.y);
+          ctx.strokeStyle = "rgba(53, 240, 160, 0.4)";
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Animated travelling photon packet
+          const photonPhase = ((time * 0.0006 + c * 0.33) % 1);
+          const px = xStart + (xEnd - xStart) * photonPhase;
+          const photonPoint = projectPoint(px, cy, 0, cosX, sinX, cosY, sinY, W, H);
+          ctx.fillStyle = c === 1 ? "#00FF4F" : "#35F0A0";
+          ctx.shadowColor = "#00FF4F";
           ctx.shadowBlur = 8;
-        } else {
+          ctx.beginPath();
+          ctx.arc(photonPoint.x, photonPoint.y, 2.5, 0, Math.PI * 2);
+          ctx.fill();
           ctx.shadowBlur = 0;
         }
-        ctx.stroke();
-      }
-      ctx.shadowBlur = 0;
 
-      // Draw glowing vertices
-      for (let k = 0; k < projected.length; k++) {
-        const p = projected[k];
-        const isCore = k >= 8;
-        const r = isCore ? 2.5 : 3.5;
-        ctx.fillStyle = isCore ? "#35F0A0" : "#DCEAE6";
+        // Central WYSIWYS Calldata Gate Ring at X = 0
+        const gateRad = 0.38;
+        const gateVerts = [];
+        for (let a = 0; a < 6; a++) {
+          const ang = (a * Math.PI / 3) + time * 0.0012;
+          const gy = Math.cos(ang) * gateRad;
+          const gz = Math.sin(ang) * gateRad;
+          gateVerts.push(projectPoint(0, gy, gz, cosX, sinX, cosY, sinY, W, H));
+        }
+
+        ctx.beginPath();
+        for (let a = 0; a < 6; a++) {
+          const p1 = gateVerts[a];
+          if (a === 0) ctx.moveTo(p1.x, p1.y);
+          else ctx.lineTo(p1.x, p1.y);
+        }
+        ctx.closePath();
+        ctx.strokeStyle = "rgba(220, 234, 230, 0.75)";
+        ctx.lineWidth = 1.4;
         ctx.shadowColor = "#35F0A0";
-        ctx.shadowBlur = 6;
-        ctx.fillRect(p.x - r / 2, p.y - r / 2, r, r);
+        ctx.shadowBlur = 9;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Gate center label
+        const gateLabel = projectPoint(0, -0.56, 0, cosX, sinX, cosY, sinY, W, H);
+        ctx.font = "7px 'Press Start 2P', monospace";
+        ctx.fillStyle = "rgba(220, 234, 230, 0.7)";
+        ctx.textAlign = "center";
+        ctx.fillText("CALLDATA GATE", gateLabel.x, gateLabel.y);
       }
-      ctx.shadowBlur = 0;
+
+      // 4. Interactive Transaction Pulse Animation
+      if (pulseProgress >= 0) {
+        pulseProgress += 0.022;
+        const px = -1.18 + (1.18 - (-1.18)) * pulseProgress;
+        const pulsePt = projectPoint(px, 0, 0, cosX, sinX, cosY, sinY, W, H);
+
+        // Blazing execution bullet
+        ctx.fillStyle = "#FFFFFF";
+        ctx.shadowColor = "#00FF4F";
+        ctx.shadowBlur = 18;
+        ctx.beginPath();
+        ctx.arc(pulsePt.x, pulsePt.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Tail trail
+        for (let t = 1; t <= 4; t++) {
+          const trailX = px - t * 0.08;
+          const trailPt = projectPoint(trailX, 0, 0, cosX, sinX, cosY, sinY, W, H);
+          ctx.fillStyle = `rgba(0, 255, 79, ${0.8 - t * 0.18})`;
+          ctx.beginPath();
+          ctx.arc(trailPt.x, trailPt.y, Math.max(1, 5 - t), 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.shadowBlur = 0;
+
+        // Gate flare at X = 0
+        if (Math.abs(px) < 0.15) {
+          const centerPt = projectPoint(0, 0, 0, cosX, sinX, cosY, sinY, W, H);
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(centerPt.x, centerPt.y, 22, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        // Arrival shockwave at Vault
+        if (pulseProgress >= 0.95) {
+          shockwaveRadius += 2.5;
+          const vaultCenter = projectPoint(1.18, 0, 0, cosX, sinX, cosY, sinY, W, H);
+          ctx.strokeStyle = `rgba(53, 240, 160, ${Math.max(0, 1 - shockwaveRadius / 45)})`;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(vaultCenter.x, vaultCenter.y, shockwaveRadius, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        if (pulseProgress > 1.25) {
+          pulseProgress = -1;
+        }
+      }
 
       requestAnimationFrame(render);
     }
