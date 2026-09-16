@@ -137,31 +137,36 @@
   .strip-pet {
     position: absolute; top: 10px; left: 6px; width: 34px; height: 34px;
     z-index: 25; cursor: pointer; user-select: none;
-    transition: transform 0.22s steps(6, end);
+    will-change: transform;
     display: flex; align-items: center; justify-content: center;
   }
   .strip-pet img {
     width: 30px; height: 30px; display: block;
     image-rendering: pixelated; image-rendering: crisp-edges;
-    filter: drop-shadow(0 0 5px rgba(53, 240, 160, 0.65));
+    filter: drop-shadow(0 0 6px rgba(53, 240, 160, 0.75));
+    transition: filter 0.2s ease;
   }
   .strip-pet.pet-running img {
-    animation: petRunSteps 0.14s steps(2, start) infinite alternate;
+    animation: petRunSmooth 0.16s ease-in-out infinite alternate;
   }
-  @keyframes petRunSteps {
-    0% { transform: translateY(0) rotate(0deg); }
-    100% { transform: translateY(-3px) rotate(4deg); }
+  @keyframes petRunSmooth {
+    0% { transform: translateY(0) rotate(-2deg); }
+    100% { transform: translateY(-4px) rotate(4deg); }
   }
   .strip-pet.pet-writing img {
-    transform: translateY(1px) rotate(-4deg);
-    filter: drop-shadow(0 0 8px #35F0A0) drop-shadow(0 0 16px rgba(53, 240, 160, 0.4));
+    animation: petWandMagic 0.28s ease-in-out infinite alternate;
+    filter: drop-shadow(0 0 10px #00FF4F) drop-shadow(0 0 22px rgba(53, 240, 160, 0.85));
+  }
+  @keyframes petWandMagic {
+    0% { transform: translateY(0) rotate(-4deg) scale(1.02); }
+    100% { transform: translateY(-3px) rotate(5deg) scale(1.10); }
   }
   .strip-pet.pet-celebrating img {
     animation: petHop 0.35s ease infinite alternate;
   }
   @keyframes petHop {
     0% { transform: translateY(0) scale(1); }
-    100% { transform: translateY(-9px) scale(1.12); filter: drop-shadow(0 0 12px #00FF4F); }
+    100% { transform: translateY(-9px) scale(1.15); filter: drop-shadow(0 0 16px #00FF4F); }
   }
   .strip-pet.pet-idle img {
     animation: petBreathe 2.2s ease-in-out infinite;
@@ -172,7 +177,7 @@
   }
   .strip-pet.pet-sonar img {
     animation: petSonar 0.5s ease-in-out infinite alternate;
-    filter: drop-shadow(0 0 12px #00FF4F) drop-shadow(0 0 20px #35F0A0);
+    filter: drop-shadow(0 0 14px #00FF4F) drop-shadow(0 0 24px #35F0A0);
   }
   @keyframes petSonar {
     0% { transform: rotate(-4deg) scale(1); }
@@ -226,15 +231,31 @@
     position: absolute; bottom: 2px; width: 4px; height: 4px; border-radius: 50%;
     background: var(--signal); box-shadow: 0 0 6px var(--signal); opacity: 0.6;
   }
+  .stat {
+    padding: 11px 18px; border-right: 1px solid var(--line); min-width: 116px; flex: none; position: relative;
+    transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+  }
+  .stat.stat-active {
+    background: rgba(53, 240, 160, 0.08);
+    box-shadow: inset 0 0 16px rgba(53, 240, 160, 0.18), 0 0 18px rgba(53, 240, 160, 0.2);
+    border-color: rgba(53, 240, 160, 0.45);
+  }
+  .stat.stat-crystallized {
+    animation: statFlash 0.55s ease-out;
+  }
+  @keyframes statFlash {
+    0% { background: rgba(0, 255, 79, 0.24); box-shadow: inset 0 0 24px rgba(0, 255, 79, 0.45); }
+    100% { background: transparent; box-shadow: none; }
+  }
+  .stat .k { color: var(--faint); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; min-height: 16px; transition: color 0.2s, text-shadow 0.2s; }
   .stat .k.chalk-write {
-    color: var(--signal); text-shadow: 0 0 8px var(--signal);
+    color: #FFFFFF; text-shadow: 0 0 8px var(--signal), 0 0 16px var(--signal);
   }
+  .stat .v { font-family: var(--pixel); font-size: 13px; margin-top: 7px; color: var(--text); min-height: 16px; transition: color 0.2s, transform 0.15s, text-shadow 0.2s; }
   .stat .v.chalk-write {
-    color: #FFFFFF; text-shadow: 0 0 10px #00FF4F, 0 0 20px #00FF4F;
+    color: #FFFFFF; text-shadow: 0 0 12px #00FF4F, 0 0 24px #00FF4F, 0 0 36px #35F0A0;
+    display: inline-block; transform: scale(1.1);
   }
-  .stat { padding: 11px 18px; border-right: 1px solid var(--line); min-width: 116px; flex: none; position: relative; }
-  .stat .k { color: var(--faint); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; min-height: 16px; }
-  .stat .v { font-family: var(--pixel); font-size: 13px; margin-top: 7px; color: var(--text); min-height: 16px; }
   .stat .v.good { color: var(--signal); }
   .stat .v.warn { color: var(--amber); }
   main { min-width: 0; }
@@ -1475,15 +1496,39 @@
     const particles = [];
     const radarRings = [];
 
-    function addParticle(x, y, color = "#35F0A0", vx = 0, vy = 0, size = 2) {
+    function drawStar(ctx, cx, cy, r) {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r);
+      ctx.quadraticCurveTo(cx, cy, cx + r, cy);
+      ctx.quadraticCurveTo(cx, cy, cx, cy + r);
+      ctx.quadraticCurveTo(cx, cy, cx - r, cy);
+      ctx.quadraticCurveTo(cx, cy, cx, cy - r);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    function addParticle(x, y, color = "#35F0A0", vx = 0, vy = 0, size = 2.5, shape = "spark") {
       particles.push({
         x, y, color,
         vx: vx || (Math.random() - 0.5) * 1.5,
         vy: vy || (Math.random() - 0.5) * 1.5,
         size,
+        shape,
+        wobble: Math.random() * Math.PI * 2,
         life: 1.0,
-        decay: 0.04 + Math.random() * 0.03
+        decay: 0.022 + Math.random() * 0.022
       });
+    }
+
+    function emitWandCast(x, y, count = 6) {
+      const colors = ["#00FF4F", "#35F0A0", "#80FFB0", "#FFE873", "#FFFFFF"];
+      for (let i = 0; i < count; i++) {
+        const color = colors[Math.floor(Math.random() * colors.length)];
+        const vx = (Math.random() - 0.5) * 2.2;
+        const vy = -0.5 - Math.random() * 1.4;
+        const isStar = Math.random() < 0.65;
+        addParticle(x, y, color, vx, vy, isStar ? 3.5 : 2.5, isStar ? "star" : "spark");
+      }
     }
 
     function emitRadar(px, py) {
@@ -1512,18 +1557,26 @@
         }
       }
 
-      // Render particles
+      // Render particles with star shapes & sine wobble
       for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
-        p.x += p.vx;
+        p.x += p.vx + Math.sin(p.wobble + p.life * 8) * 0.35;
         p.y += p.vy;
         p.life -= p.decay;
         if (p.life <= 0) {
           particles.splice(i, 1);
         } else {
+          fxCtx.save();
           fxCtx.fillStyle = p.color;
           fxCtx.globalAlpha = p.life;
-          fxCtx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+          fxCtx.shadowBlur = 6;
+          fxCtx.shadowColor = p.color;
+          if (p.shape === "star") {
+            drawStar(fxCtx, p.x, p.y, Math.max(1, p.size * p.life));
+          } else {
+            fxCtx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+          }
+          fxCtx.restore();
         }
       }
       fxCtx.globalAlpha = 1.0;
@@ -1537,6 +1590,35 @@
       const pRect = perch.getBoundingClientRect();
       const sRect = strip.getBoundingClientRect();
       return Math.max(0, pRect.left - sRect.left + (pRect.width - 34) / 2);
+    }
+
+    function glidePet(targetX, durationMs = 380) {
+      return new Promise((resolve) => {
+        const startX = parseFloat((pet.style.transform || "").replace(/[^\d.-]/g, "")) || 0;
+        const dist = targetX - startX;
+        const startTime = performance.now();
+        pet.className = "strip-pet pet-running";
+
+        function step(now) {
+          const elapsed = now - startTime;
+          const p = Math.min(1.0, elapsed / durationMs);
+          const ease = 1 - Math.pow(1 - p, 3);
+          const curX = startX + dist * ease;
+          pet.style.transform = `translate3d(${curX}px, 0, 0)`;
+
+          if (Math.random() < 0.35 && p < 0.95) {
+            addParticle(curX + 6, 32, "#35F0A0", -1.2 * Math.sign(dist || 1), -0.4 * Math.random(), 2, "spark");
+          }
+
+          if (p < 1.0) {
+            requestAnimationFrame(step);
+          } else {
+            pet.style.transform = `translate3d(${targetX}px, 0, 0)`;
+            resolve();
+          }
+        }
+        requestAnimationFrame(step);
+      });
     }
 
     const BRAIN_THOUGHTS = [
@@ -1603,38 +1685,26 @@
 
       // Initial spawn glitch effect
       pet.style.opacity = "0";
-      await new Promise((r) => setTimeout(r, 120));
+      await new Promise((r) => setTimeout(r, 100));
       pet.style.opacity = "1";
       playRetroBlip(540);
-      for (let p = 0; p < 10; p++) addParticle(20, 24, "#00FF4F", (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 3);
-      await new Promise((r) => setTimeout(r, 180));
+      emitWandCast(20, 24, 12);
+      await new Promise((r) => setTimeout(r, 150));
 
       for (let i = 0; i < metricsData.length; i++) {
         const [label, val] = metricsData[i];
         const statEl = stats[i];
         const targetX = Math.max(0, statEl.offsetLeft - 4);
 
-        // Run to metric at medium pace
-        pet.className = "strip-pet pet-running";
-        const startX = parseFloat((pet.style.transform || "").replace(/[^\d.-]/g, "")) || 0;
-        const dist = targetX - startX;
-        const stepsCount = 12;
-        const stepTime = 18;
+        // Smooth glide to metric section
+        await glidePet(targetX, 360);
 
-        for (let s = 1; s <= stepsCount; s++) {
-          const curX = startX + (dist * (s / stepsCount));
-          pet.style.transform = `translate3d(${curX}px, 0, 0)`;
-          if (s % 2 === 0) {
-            addParticle(curX + 6, 28, "#35F0A0", -0.8 - Math.random(), 0.5 - Math.random(), 2);
-          }
-          await new Promise((r) => setTimeout(r, stepTime));
-        }
-
-        // Brief arrival pause before chalk writing
+        // Section activates with glowing aura
+        statEl.classList.add("stat-active");
         pet.className = "strip-pet pet-writing";
-        await new Promise((r) => setTimeout(r, 70));
+        emitWandCast(targetX + 32, 22, 6);
 
-        // Write label at medium pace
+        // Write label with glowing chalk and magical star particles
         const kEl = statEl.querySelector(".k");
         kEl.textContent = "";
         kEl.classList.add("chalk-write");
@@ -1645,65 +1715,62 @@
             const rect = kEl.getBoundingClientRect();
             const sRect = strip.getBoundingClientRect();
             const charX = rect.left - sRect.left + (c * 6.5);
-            addParticle(charX, rect.top - sRect.top + 8, "#35F0A0", 0.4, -0.4, 2);
+            addParticle(charX, rect.top - sRect.top + 8, "#35F0A0", (Math.random() - 0.5) * 0.8, -0.6, 3.2, "star");
+            playRetroBlip(520 + (c % 5) * 40);
           }
-          await new Promise((r) => setTimeout(r, 36));
+          await new Promise((r) => setTimeout(r, 32));
         }
         kEl.classList.remove("chalk-write");
-        await new Promise((r) => setTimeout(r, 90));
 
-        // Write value at medium pace
+        // Stardust wave from label to value
+        emitWandCast(targetX + 36, 26, 5);
+        await new Promise((r) => setTimeout(r, 80));
+
+        // Write value with cyber digit summon and emerald snap
         const vEl = statEl.querySelector(".v");
         const valStr = String(val);
         vEl.textContent = "";
         vEl.classList.add("chalk-write");
 
         for (let c = 0; c < valStr.length; c++) {
+          // Cyber glitch flicker
+          vEl.textContent = valStr.slice(0, c) + Math.floor(Math.random() * 10);
+          await new Promise((r) => setTimeout(r, 26));
+
+          // Lock in verified digit
           vEl.textContent = valStr.slice(0, c + 1);
           const rect = vEl.getBoundingClientRect();
           const sRect = strip.getBoundingClientRect();
           const digitX = rect.left - sRect.left + (c * 9);
-          for (let sp = 0; sp < 2; sp++) {
-            addParticle(digitX, rect.top - sRect.top + 8, "#00FF4F", (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 2.5);
-          }
-          await new Promise((r) => setTimeout(r, 65));
+          emitWandCast(digitX + 4, rect.top - sRect.top + 8, 4);
+          playRetroBlip(700 + c * 50);
+          await new Promise((r) => setTimeout(r, 55));
         }
+
+        // Card locks in and crystallizes
         vEl.classList.remove("chalk-write");
-        await new Promise((r) => setTimeout(r, 130));
+        statEl.classList.remove("stat-active");
+        statEl.classList.add("stat-crystallized");
+        await new Promise((r) => setTimeout(r, 90));
       }
 
       // Celebrate briefly
       const last = stats[stats.length - 1];
       const celebrateX = last.offsetLeft + last.offsetWidth + 12;
-      pet.style.transform = `translate3d(${celebrateX}px, 0, 0)`;
+      await glidePet(celebrateX, 220);
       pet.className = "strip-pet pet-celebrating";
-      playRetroBlip(780);
-      for (let sp = 0; sp < 18; sp++) {
-        addParticle(celebrateX + 16, 20, sp % 2 === 0 ? "#00FF4F" : "#DCEAE6", (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 3);
-      }
-      await new Promise((r) => setTimeout(r, 550));
+      playRetroBlip(820);
+      emitWandCast(celebrateX + 16, 20, 16);
+      await new Promise((r) => setTimeout(r, 450));
 
-      // Run over to right corner perch to rest
-      pet.className = "strip-pet pet-running";
-      const startRunX = celebrateX;
+      // Glide over to right corner perch to rest
       const perchX = getPerchX();
-      const runDist = perchX - startRunX;
-      const runSteps = 14;
-
-      for (let s = 1; s <= runSteps; s++) {
-        const curX = startRunX + (runDist * (s / runSteps));
-        pet.style.transform = `translate3d(${curX}px, 0, 0)`;
-        if (s % 2 === 0) {
-          addParticle(curX + 6, 28, "#00FF4F", -1, 0, 2);
-        }
-        await new Promise((r) => setTimeout(r, 18));
-      }
+      await glidePet(perchX, 420);
 
       // Rest in right corner perch
       pet.className = "strip-pet pet-idle pet-sonar";
-      pet.style.transform = `translate3d(${perchX}px, 0, 0)`;
       emitRadar(perchX + 17, 26);
-      playRetroBlip(680);
+      playRetroBlip(720);
       setThought(BRAIN_THOUGHTS[0]);
       isBusy = false;
       startBrainCycle();
@@ -1718,59 +1785,32 @@
       pet.className = "strip-pet pet-celebrating";
 
       const perchX = getPerchX();
-      for (let sp = 0; sp < 12; sp++) {
-        addParticle(perchX + 16, 20, "#00FF4F", (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 2.5);
-      }
-      await new Promise((r) => setTimeout(r, 300));
+      emitWandCast(perchX + 16, 20, 12);
+      await new Promise((r) => setTimeout(r, 260));
 
-      // Dash from right to left across all metrics
-      pet.className = "strip-pet pet-running";
+      // Dash smoothly from right to left across all metrics
       for (let i = stats.length - 1; i >= 0; i--) {
         const statEl = stats[i];
         const targetX = Math.max(0, statEl.offsetLeft - 4);
-        const curStart = parseFloat((pet.style.transform || "").replace(/[^\d.-]/g, "")) || 0;
-        const dashDist = targetX - curStart;
-        for (let s = 1; s <= 6; s++) {
-          const cx = curStart + dashDist * (s / 6);
-          pet.style.transform = `translate3d(${cx}px, 0, 0)`;
-          await new Promise((r) => setTimeout(r, 14));
-        }
-        // Polish sparkle on stat value
-        const vEl = statEl.querySelector(".v");
-        if (vEl) {
-          vEl.classList.add("chalk-write");
-          const rect = vEl.getBoundingClientRect();
-          const sRect = strip.getBoundingClientRect();
-          for (let sp = 0; sp < 3; sp++) {
-            addParticle(rect.left - sRect.left + 10, rect.top - sRect.top + 8, "#35F0A0", 0, -1, 2);
-          }
-          setTimeout(() => vEl.classList.remove("chalk-write"), 200);
-        }
-        await new Promise((r) => setTimeout(r, 40));
+        await glidePet(targetX, 150);
+        statEl.classList.add("stat-active");
+        emitWandCast(targetX + 24, 22, 5);
+        playRetroBlip(620 + (stats.length - i) * 35);
+        setTimeout(() => statEl.classList.remove("stat-active"), 180);
+        await new Promise((r) => setTimeout(r, 30));
       }
 
       // Victory wiggle at leftmost stat
       pet.className = "strip-pet pet-celebrating";
       playRetroBlip(880);
-      for (let sp = 0; sp < 14; sp++) {
-        addParticle(24, 20, sp % 2 === 0 ? "#00FF4F" : "#35F0A0", (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 3);
-      }
-      await new Promise((r) => setTimeout(r, 450));
+      emitWandCast(24, 20, 14);
+      await new Promise((r) => setTimeout(r, 400));
 
       // Sprint back to perch in right corner
-      pet.className = "strip-pet pet-running";
-      const leftStart = parseFloat((pet.style.transform || "").replace(/[^\d.-]/g, "")) || 0;
-      const backDist = perchX - leftStart;
-      for (let s = 1; s <= 14; s++) {
-        const cx = leftStart + backDist * (s / 14);
-        pet.style.transform = `translate3d(${cx}px, 0, 0)`;
-        if (s % 2 === 0) addParticle(cx + 6, 28, "#00FF4F", -1, 0, 2);
-        await new Promise((r) => setTimeout(r, 16));
-      }
+      await glidePet(perchX, 360);
 
       // Rest in perch
       pet.className = "strip-pet pet-idle pet-sonar";
-      pet.style.transform = `translate3d(${perchX}px, 0, 0)`;
       emitRadar(perchX + 17, 26);
       setThought("ALL 6 METRICS VERIFIED ON-CHAIN");
       isBusy = false;
