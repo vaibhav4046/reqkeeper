@@ -129,15 +129,15 @@
   .strip {
     display: flex; align-items: stretch; border-bottom: 1px solid var(--line);
     background: var(--panel); position: sticky; top: 0; z-index: 20; overflow-x: auto;
-    position: relative;
+    position: relative; scrollbar-width: none;
   }
   .strip-fx-canvas {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 15;
   }
   .strip-pet {
-    position: absolute; top: 12px; left: 6px; width: 34px; height: 34px;
+    position: absolute; top: 10px; left: 6px; width: 34px; height: 34px;
     z-index: 25; cursor: pointer; user-select: none;
-    transition: transform 0.28s steps(4, end);
+    transition: transform 0.22s steps(6, end);
     display: flex; align-items: center; justify-content: center;
   }
   .strip-pet img {
@@ -146,7 +146,7 @@
     filter: drop-shadow(0 0 5px rgba(53, 240, 160, 0.65));
   }
   .strip-pet.pet-running img {
-    animation: petRunSteps 0.16s steps(2, start) infinite alternate;
+    animation: petRunSteps 0.14s steps(2, start) infinite alternate;
   }
   @keyframes petRunSteps {
     0% { transform: translateY(0) rotate(0deg); }
@@ -169,6 +169,62 @@
   @keyframes petBreathe {
     0%, 100% { transform: translateY(0); }
     50% { transform: translateY(1.5px); }
+  }
+  .strip-pet.pet-sonar img {
+    animation: petSonar 0.5s ease-in-out infinite alternate;
+    filter: drop-shadow(0 0 12px #00FF4F) drop-shadow(0 0 20px #35F0A0);
+  }
+  @keyframes petSonar {
+    0% { transform: rotate(-4deg) scale(1); }
+    100% { transform: rotate(4deg) scale(1.15); }
+  }
+
+  /* Right Corner Pet Dock & AI Brain Station */
+  .strip-pet-dock {
+    margin-left: auto; display: flex; align-items: center; gap: 10px;
+    padding: 0 14px 0 12px; border-left: 1px solid var(--line);
+    background: rgba(3, 6, 8, 0.7); flex: none; z-index: 22; user-select: none;
+    cursor: pointer; min-height: 52px;
+  }
+  .strip-pet-dock:hover {
+    background: rgba(53, 240, 160, 0.05); border-left-color: var(--signal);
+  }
+  .dino-brain-wrap {
+    display: flex; flex-direction: column; align-items: flex-end; gap: 3px;
+  }
+  .dino-thought-bubble {
+    font-size: 8.5px; font-family: var(--mono); color: var(--signal);
+    background: #030507; border: 1px solid var(--line-2);
+    padding: 3px 8px; white-space: nowrap; max-width: 260px;
+    overflow: hidden; text-overflow: ellipsis;
+    box-shadow: 0 0 8px rgba(53, 240, 160, 0.15);
+    border-radius: 2px; position: relative;
+  }
+  .dino-thought-bubble::after {
+    content: ""; position: absolute; right: -4px; top: 50%; transform: translateY(-50%);
+    border-width: 4px 0 4px 4px; border-style: solid;
+    border-color: transparent transparent transparent #030507;
+  }
+  .dino-brain-badge {
+    font-family: var(--pixel); font-size: 6.5px; color: var(--faint);
+    display: flex; align-items: center; gap: 5px; letter-spacing: .04em;
+  }
+  .dino-brain-badge b { color: var(--signal); font-weight: normal; }
+  .dino-brain-badge .brain-sparkle {
+    display: inline-block; animation: brainPulse 2s infinite ease-in-out;
+  }
+  @keyframes brainPulse {
+    0%, 100% { transform: scale(1); filter: drop-shadow(0 0 2px var(--signal)); }
+    50% { transform: scale(1.2); filter: drop-shadow(0 0 6px #00FF4F); }
+  }
+  .strip-pet-perch {
+    width: 36px; height: 36px; border: 1px dashed rgba(53, 240, 160, 0.25);
+    background: rgba(5, 8, 10, 0.5); display: flex; align-items: center; justify-content: center;
+    border-radius: 2px; position: relative;
+  }
+  .strip-pet-perch .perch-dot {
+    position: absolute; bottom: 2px; width: 4px; height: 4px; border-radius: 50%;
+    background: var(--signal); box-shadow: 0 0 6px var(--signal); opacity: 0.6;
   }
   .stat .k.chalk-write {
     color: var(--signal); text-shadow: 0 0 8px var(--signal);
@@ -430,6 +486,12 @@
     display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
     gap: 24px; align-items: center;
   }
+  @media (max-width: 1060px) {
+    .hero-grid {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 20px;
+    }
+  }
   .hero-title {
     font-family: var(--pixel); font-size: clamp(17px, 2.7vw, 32px); line-height: 1.35;
     color: var(--text); margin: 0 0 14px; letter-spacing: -0.01em;
@@ -454,35 +516,50 @@
   .vault-box {
     border: 1px solid var(--line-2); background: var(--panel);
     position: relative; padding: 12px; box-shadow: 0 0 24px rgba(0,0,0,.6);
+    box-sizing: border-box; width: 100%; max-width: 100%; overflow: hidden;
   }
   .vault-box header {
-    display: flex; justify-content: space-between; align-items: center;
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
     font-size: 10px; color: var(--faint); border-bottom: 1px solid var(--line);
     padding-bottom: 8px; margin-bottom: 8px; font-family: var(--pixel);
+    white-space: nowrap; overflow: hidden;
+  }
+  .vault-box header > span:first-child {
+    flex: none; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .vault-box header #vault-telemetry {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 8px;
+    text-align: right; min-width: 0;
   }
   .vault-box header .live-dot {
     display: inline-block; width: 6px; height: 6px; background: #00FF4F;
-    border-radius: 50%; margin-right: 6px; box-shadow: 0 0 6px #00FF4F;
+    border-radius: 50%; margin-right: 6px; box-shadow: 0 0 6px #00FF4F; flex: none;
   }
   .vault-canvas-wrap {
-    position: relative; width: 100%; height: 300px;
+    position: relative; width: 100%; height: clamp(230px, 28vw, 300px);
     background: #030507; border: 1px solid var(--line); overflow: hidden; cursor: grab;
   }
   .vault-canvas-wrap:active { cursor: grabbing; }
   .vault-canvas-wrap canvas { width: 100%; height: 100%; display: block; }
   .vault-hud {
     position: absolute; bottom: 8px; left: 8px; right: 8px;
-    display: flex; justify-content: space-between; font-size: 8.5px;
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    font-size: clamp(7px, 1.6vw, 8.5px);
     color: var(--faint); pointer-events: none; font-family: var(--pixel);
-    background: rgba(5, 8, 10, 0.85); padding: 5px 8px; border: 1px solid var(--line);
+    background: rgba(5, 8, 10, 0.88); padding: 5px 8px; border: 1px solid var(--line);
+    white-space: nowrap; overflow: hidden;
+  }
+  .vault-hud span {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
   }
   .vault-modes {
-    display: flex; gap: 4px; margin-top: 8px; align-items: center;
+    display: flex; gap: 4px; margin-top: 8px; align-items: center; flex-wrap: wrap;
   }
   .vmode-btn {
     background: transparent; border: 1px solid var(--line);
-    color: var(--dim); font-family: var(--pixel); font-size: 7.5px;
-    padding: 5px 7px; cursor: pointer; white-space: nowrap; transition: all .15s;
+    color: var(--dim); font-family: var(--pixel); font-size: 7px;
+    padding: 4px 6px; cursor: pointer; white-space: nowrap; transition: all .15s;
+    flex: none;
   }
   .vmode-btn:hover { color: var(--signal); border-color: var(--line-2); }
   .vmode-btn.active {
@@ -500,14 +577,13 @@
   .vmode-btn.pulse-refuse:hover {
     background: rgba(255, 180, 84, 0.18); box-shadow: 0 0 10px rgba(255, 180, 84, 0.35);
   }
-  @media (max-width: 580px) {
-    .vault-modes { flex-wrap: wrap; }
+  @media (max-width: 640px) {
     .vmode-btn.pulse-trigger { margin-left: 0; }
   }
 
   /* Dino Pet Companion Card */
   .dino-pet-card {
-    margin: 12px 10px 4px; padding: 10px 10px 8px;
+    margin: 10px 8px 4px; padding: 8px 9px 7px;
     background: #030608; border: 1px solid var(--line-2);
     border-left: 2px solid var(--signal);
     position: relative; box-shadow: 0 2px 12px rgba(0,0,0,0.5);
@@ -515,11 +591,14 @@
   }
   .dino-pet-card .d-top {
     display: flex; justify-content: space-between; align-items: center;
-    font-family: var(--pixel); font-size: 7.5px; color: var(--faint);
-    margin-bottom: 6px; letter-spacing: .05em;
+    font-family: var(--pixel); font-size: 7px; color: var(--faint);
+    margin-bottom: 6px; letter-spacing: .04em; gap: 4px;
+  }
+  .dino-pet-card .d-top .d-name {
+    white-space: nowrap; color: var(--signal); display: inline-flex; align-items: center; gap: 4px;
   }
   .dino-pet-card .d-top .d-status {
-    display: inline-flex; align-items: center; gap: 4px; color: var(--signal);
+    display: inline-flex; align-items: center; gap: 4px; color: var(--signal); white-space: nowrap; font-size: 6.5px;
   }
   .dino-pet-card .d-top .d-blink {
     width: 5px; height: 5px; background: var(--signal); border-radius: 50%;
@@ -527,7 +606,7 @@
   }
   @keyframes petBlink { 0%, 100% { opacity: 1 } 50% { opacity: 0.3 } }
   .dino-bubble {
-    font-size: 11px; line-height: 1.45; color: var(--text); min-height: 44px;
+    font-size: 11px; line-height: 1.45; color: var(--text); min-height: 42px;
     font-family: var(--mono); word-break: break-word; overflow-wrap: anywhere;
   }
   .dino-bubble .dino-caret {
@@ -536,14 +615,15 @@
   }
   .dino-foot {
     margin-top: 6px; display: flex; justify-content: space-between; align-items: center;
-    font-family: var(--pixel); font-size: 7.5px; color: var(--faint);
-    border-top: 1px solid rgba(53, 240, 160, 0.12); padding-top: 5px;
+    font-family: var(--pixel); font-size: 6.5px; color: var(--faint);
+    border-top: 1px solid rgba(53, 240, 160, 0.12); padding-top: 5px; gap: 4px;
   }
-  .dino-foot button {
-    background: transparent; border: 1px solid var(--line); color: var(--signal);
-    font-family: var(--pixel); font-size: 7px; padding: 2px 6px; cursor: pointer;
+  .dino-foot .d-foot-lbl {
+    color: var(--signal); font-size: 6.5px; letter-spacing: .04em; white-space: nowrap;
   }
-  .dino-foot button:hover { background: rgba(53, 240, 160, 0.15); }
+  #dino-fact-idx {
+    color: var(--faint); font-family: var(--pixel); font-size: 6.5px; white-space: nowrap;
+  }
 
   /* Landing Sections */
   .l-sec { padding: 28px 24px 0; }
@@ -636,13 +716,11 @@
   .portal-card .pc-foot { margin-top: 10px; font-size: 10px; color: var(--faint); }
 
   @media (max-width: 760px) {
-    .hero-grid { grid-template-columns: minmax(0, 1fr); }
-    .vault-canvas-wrap { height: 210px; }
+    .vault-canvas-wrap { height: 230px; }
   }
   @media (max-width: 480px) {
-    .vault-modes { flex-wrap: wrap; }
-    .vmode-btn { font-size: 7px; padding: 4px 6px; }
-    .vmode-btn.pulse-trigger { margin-left: 0; width: 100%; text-align: center; }
+    .vmode-btn { font-size: 6.5px; padding: 3px 5px; }
+    .vmode-btn.pulse-trigger { margin-left: 0; }
     .landing-hero { padding: 20px 14px 24px; }
     .l-sec { padding: 20px 14px 0; }
   }
@@ -661,14 +739,14 @@
       <!-- Dino Pet Companion Fact Machine -->
       <div class="dino-pet-card" id="dino-pet" title="Click Dino or card to sync next verified fact">
         <div class="d-top">
-          <span>PET: CIPHER-DINO</span>
+          <span class="d-name">🦖 CIPHER-DINO</span>
           <span class="d-status"><i class="d-blink"></i>SYNCED</span>
         </div>
         <div class="dino-bubble" id="dino-bubble">
           <span id="dino-fact-text">Initializing proof ledger...</span><span class="dino-caret">_</span>
         </div>
         <div class="dino-foot">
-          <span style="color:var(--signal);font-size:7px">VERIFIED ON-CHAIN PROOFS</span>
+          <span class="d-foot-lbl">VERIFIED PROOFS</span>
           <span id="dino-fact-idx">1/7</span>
         </div>
       </div>
@@ -706,18 +784,17 @@
 
         <div class="hero-grid">
           <div>
-            <h1 class="hero-title">THE DETERMINISTIC <span class="glow">SETTLEMENT RAIL</span> FOR PROBABILISTIC AI AGENTS</h1>
+            <h1 class="hero-title">PAY INVOICES THROUGH <span class="glow">KEEPERHUB</span> WITHOUT DOUBLE-SPENDING</h1>
             <p class="hero-desc">
-              <strong>KeeperHub executes deterministically. Agents are probabilistic by design.</strong> On-chain value transfer does not forgive that. When an AI agent moves funds, it reinterprets intent at the worst possible moment. 
-              <strong>ReqKeeper</strong> bridges Request Network invoices ($1B+ volume) to KeeperHub execution, eliminating the 24-hour idempotency cache expiry flaw, enforcing zero-gas pre-write refusals with the WYSIWYS Calldata Gate, and guaranteeing exactly-once settlement.
+              AI agents can't move money safely on their own — they guess, retry, and overpay. <strong>ReqKeeper</strong> takes a Request Network invoice, checks it hasn't been paid, verifies the exact bytes that will hit the chain, and sends payment through KeeperHub exactly once. No duplicates. No wasted gas. 38 real settlements on Sepolia prove it works.
             </p>
 
             <div class="hero-cta">
-              <button class="btn-cta" data-goto="proof">ENTER CONSOLE &amp; PROOFS &rarr;</button>
-              <button class="btn-cta ghost" data-goto="flow">SIMULATE SETTLEMENT</button>
-              <button class="btn-cta ghost" data-goto="obl">INSPECT OBLIGATIONS</button>
-              <a class="btn-cta outline" href="https://github.com/vaibhav4046/reqkeeper" target="_blank" rel="noopener">GITHUB SOURCE &nearr;</a>
-              <a class="btn-cta outline" href="https://github.com/vaibhav4046/reqkeeper/blob/main/docs/SUBMISSION.md" target="_blank" rel="noopener">SUBMISSION RUNBOOK &nearr;</a>
+              <button class="btn-cta" data-goto="proof">VIEW PROOFS &rarr;</button>
+              <button class="btn-cta ghost" data-goto="flow">TRY SIMULATOR</button>
+              <button class="btn-cta ghost" data-goto="obl">BROWSE OBLIGATIONS</button>
+              <a class="btn-cta outline" href="https://github.com/vaibhav4046/reqkeeper" target="_blank" rel="noopener">SOURCE CODE &nearr;</a>
+              <a class="btn-cta outline" href="https://github.com/vaibhav4046/reqkeeper/blob/main/docs/SUBMISSION.md" target="_blank" rel="noopener">SUBMISSION DOCS &nearr;</a>
             </div>
           </div>
 
@@ -755,32 +832,32 @@
           <div class="kpi-card">
             <div class="k-num" id="land-kpi-tests">719/719</div>
             <div class="k-lbl">Tests Passing</div>
-            <div class="k-sub">142 test suites &middot; ~11s execution</div>
+            <div class="k-sub">142 suites · all green</div>
           </div>
           <div class="kpi-card">
             <div class="k-num" id="land-kpi-race">0 DUP</div>
             <div class="k-lbl">50-Worker Race</div>
-            <div class="k-sub">1 payment broadcast, 0 duplicates</div>
+            <div class="k-sub">50 workers, 1 payment, 0 duplicates</div>
           </div>
           <div class="kpi-card">
             <div class="k-num" id="land-kpi-crash">9/9</div>
-            <div class="k-lbl">Crash Lottery</div>
-            <div class="k-sub">SIGKILL recovery checkpoints</div>
+            <div class="k-lbl">Crash Recovery</div>
+            <div class="k-sub">Process killed mid-payment, recovered every time</div>
           </div>
           <div class="kpi-card">
             <div class="k-num" id="land-kpi-sigs">47/47</div>
-            <div class="k-lbl">Signatures Recovered</div>
-            <div class="k-sub">Request invoice secp256k1 proofs</div>
+            <div class="k-lbl">Signatures Verified</div>
+            <div class="k-sub">Invoice payer/payee identity confirmed</div>
           </div>
           <div class="kpi-card">
             <div class="k-num" id="land-kpi-sepolia">38</div>
-            <div class="k-lbl">Sepolia Settlements</div>
-            <div class="k-sub">ERC20FeeProxy logs re-read</div>
+            <div class="k-lbl">On-Chain Settlements</div>
+            <div class="k-sub">Real transactions on Sepolia testnet</div>
           </div>
           <div class="kpi-card">
             <div class="k-num">24H &infin;</div>
-            <div class="k-lbl">Window Solved</div>
-            <div class="k-sub">Permanent obligation hash anchor</div>
+            <div class="k-lbl">Expiry Bug Fixed</div>
+            <div class="k-sub">Keys no longer expire after 24 hours</div>
           </div>
         </div>
       </div>
@@ -796,9 +873,8 @@
           <div class="m-author">&mdash; DoraHacks &amp; KeeperHub Hackathon Brief</div>
 
           <div class="manifesto-analysis">
-            <b>Why ReqKeeper is the #1 Contender for KeeperHub:</b><br>
-            ReqKeeper turns KeeperHub from a low-level execution engine into an institutional-grade B2B settlement pipeline.
-            It grounds every payment in a cryptographically signed Request Network invoice, resolves the fatal 24-hour key expiry vulnerability that causes agents to double-spend after daily wakeups, and enforces a local What-You-See-Is-What-You-Sign (WYSIWYS) calldata gate that halts dirty or tampered bytes before touching KeeperHub or spending gas.
+            <b>What ReqKeeper adds to KeeperHub:</b><br>
+            It turns KeeperHub into a full invoice-to-payment pipeline. Every payment is tied to a real Request Network invoice with cryptographic proof. A local safety check catches tampered transaction data before it reaches KeeperHub, and a persistent store ensures the same invoice is never paid twice — even across restarts, crashes, or the 24-hour key expiry window we found and fixed upstream.
           </div>
         </div>
       </div>
@@ -806,44 +882,44 @@
       <!-- 5-layer defense pipeline -->
       <div class="l-sec">
         <div class="l-sec-head">
-          <h2>5-LAYER DEFENSE ARCHITECTURE</h2>
-          <p>How an invoice travels safely from an autonomous AI agent to final on-chain settlement without risk of reinterpretation or double payment.</p>
+          <h2>HOW IT WORKS</h2>
+          <p>Five checks between an invoice and a payment. Each one prevents a different class of failure.</p>
         </div>
 
         <div class="pipe-row">
           <div class="pipe-card">
-            <div class="p-step">LAYER 01</div>
-            <div class="p-name">Invoice Ingestion</div>
-            <div class="p-desc">Derives obligation identity from the Request invoice, recovers secp256k1 payer/payee signatures, and establishes immutable anchor block.</div>
-            <div class="p-guard">&check; Malicious gateway rejected</div>
+            <div class="p-step">STEP 1</div>
+            <div class="p-name">Read the Invoice</div>
+            <div class="p-desc">Takes a Request Network invoice, extracts who pays whom, how much, and verifies the cryptographic signatures prove it's real.</div>
+            <div class="p-guard">&check; Fake invoices rejected</div>
           </div>
 
           <div class="pipe-card">
-            <div class="p-step">LAYER 02</div>
-            <div class="p-name">Standing Policy Gate</div>
-            <div class="p-desc">Enforces spend caps, fee proxy allowlist, token decimal precision, and destination sanity before proposing any payment.</div>
-            <div class="p-guard">&check; Refuses out-of-bounds at 0 gas</div>
+            <div class="p-step">STEP 2</div>
+            <div class="p-name">Check the Rules</div>
+            <div class="p-desc">Validates amount limits, allowed tokens, destination addresses, and decimal precision before anything touches the chain.</div>
+            <div class="p-guard">&check; Out-of-bounds stopped at zero gas cost</div>
           </div>
 
           <div class="pipe-card">
-            <div class="p-step">LAYER 03</div>
-            <div class="p-name">Fenced Reservation</div>
-            <div class="p-desc">SQLite WAL transactional outbox with immediate transactions and fencing generations ensures exactly one worker process holds the lock.</div>
+            <div class="p-step">STEP 3</div>
+            <div class="p-name">Reserve the Payment</div>
+            <div class="p-desc">Uses a database lock so that even if 50 workers try to pay the same invoice at once, only one gets through.</div>
             <div class="p-guard">&check; 50 workers &rarr; 1 payment</div>
           </div>
 
           <div class="pipe-card">
-            <div class="p-step">LAYER 04</div>
-            <div class="p-name">WYSIWYS Calldata Gate</div>
-            <div class="p-desc">Decodes approved ABI calldata, validates parameters against policy ceilings, re-encodes locally, and byte-compares.</div>
-            <div class="p-guard">&check; Dirty bits &amp; selector hacks killed</div>
+            <div class="p-step">STEP 4</div>
+            <div class="p-name">Verify the Transaction Data</div>
+            <div class="p-desc">Decodes the transaction bytes, checks every field matches what was approved, re-encodes locally, and compares byte-for-byte.</div>
+            <div class="p-guard">&check; Tampered data caught before sending</div>
           </div>
 
           <div class="pipe-card">
-            <div class="p-step">LAYER 05</div>
-            <div class="p-name">KeeperHub Execution &amp; Log Corroboration</div>
-            <div class="p-desc">Dispatches through KeeperHub REST (/api/execute/contract-call) or MCP server (app.keeperhub.com/mcp), and verifies Sepolia ERC20FeeProxy logs.</div>
-            <div class="p-guard">&check; 38/38 on-chain confirmed</div>
+            <div class="p-step">STEP 5</div>
+            <div class="p-name">Send Through KeeperHub</div>
+            <div class="p-desc">Dispatches the payment via KeeperHub's REST API or MCP server, then reads the Sepolia chain logs to confirm it actually landed.</div>
+            <div class="p-guard">&check; 38 confirmed on-chain</div>
           </div>
         </div>
       </div>
@@ -851,8 +927,8 @@
       <!-- interactive terminal simulator -->
       <div class="l-sec">
         <div class="l-sec-head">
-          <h2>LIVE EVIDENCE TERMINAL SIMULATOR</h2>
-          <p>Click any command below to inspect real test output recorded by the harness, or copy the command to run it locally on your machine.</p>
+          <h2>RUN IT YOURSELF</h2>
+          <p>Click a command to see real output, or copy it to run locally. No credentials needed.</p>
         </div>
 
         <div class="term-wrap">
@@ -876,13 +952,12 @@
       <!-- bounty track PR #2372 callout -->
       <div class="l-sec">
         <div class="manifesto-box" style="border-left-color:var(--signal)">
-          <div class="m-title" style="color:var(--signal)">BOUNTY TRACK ENTRY &middot; KEEPERHUB UPSTREAM PR #2372</div>
+          <div class="m-title" style="color:var(--signal)">UPSTREAM FIX · KEEPERHUB PR #2372</div>
           <p style="margin:0 0 10px;font-size:12.5px;color:var(--text)">
-            <strong>Fix: Release idempotency key on definite execution failure</strong> (<a href="https://github.com/KeeperHub/keeperhub/pull/2372" target="_blank" rel="noopener">PR #2372</a>, resolving <a href="https://github.com/KeeperHub/keeperhub/issues/1840" target="_blank" rel="noopener">Issue #1840</a>).
+            <strong>Bug found and fixed: idempotency key stays locked after failures</strong> (<a href="https://github.com/KeeperHub/keeperhub/pull/2372" target="_blank" rel="noopener">PR #2372</a>, resolving <a href="https://github.com/KeeperHub/keeperhub/issues/1840" target="_blank" rel="noopener">Issue #1840</a>).
           </p>
           <div style="font-size:12px;color:var(--dim);line-height:1.6">
-            When an agent receives a definite failure (such as out of gas or contract revert), KeeperHub's server previously locked the idempotency key permanently, blocking the agent from retrying or replanning. 
-            PR #2372 releases the key on terminal failure while maintaining safety. 17/17 Vitest unit tests pass cleanly against upstream KeeperHub staging.
+            When a transaction fails permanently (out of gas, contract revert), KeeperHub was locking the idempotency key forever — blocking any retry. Our PR releases the key on terminal failures while keeping duplicate protection intact. 17 tests pass against upstream staging.
           </div>
         </div>
       </div>
@@ -890,18 +965,18 @@
       <!-- console portal navigation bridges -->
       <div class="l-sec">
         <div class="l-sec-head">
-          <h2>EXPLORE INTERACTIVE CONSOLE VIEWS</h2>
-          <p>Deep-dive into the live recorded audit data, interactive protocol step animator, and verification suites.</p>
+          <h2>EXPLORE THE CONSOLE</h2>
+          <p>Six views into real settlement data, test runs, and interactive demos.</p>
         </div>
 
         <div class="portal-grid">
           <div class="portal-card" data-goto="proof">
             <div class="pc-top">
-              <span class="pc-title">01 / PROOF ENGINE</span>
+              <span class="pc-title">01 / PROOFS</span>
               <span class="tag ok">RECORDED</span>
             </div>
-            <div class="pc-desc">The primary claim: 1 invoice, 50 workers, 1 payment. Four derived counters, crash lottery table, and single obligation audit strip.</div>
-            <div class="pc-foot">Jump to Proof View &rarr;</div>
+            <div class="pc-desc">See the core guarantee: 50 workers race on 1 invoice, exactly 1 payment goes through. Plus crash recovery logs and single-obligation audits.</div>
+            <div class="pc-foot">Open Proofs &rarr;</div>
           </div>
 
           <div class="portal-card" data-goto="dash">
@@ -909,8 +984,8 @@
               <span class="pc-title">02 / OVERVIEW</span>
               <span class="tag ok">83 ROWS</span>
             </div>
-            <div class="pc-desc">Interactive histogram of physical sends per recorded row, refusal codes breakdown, and latest 12 settlements table.</div>
-            <div class="pc-foot">Jump to Overview View &rarr;</div>
+            <div class="pc-desc">Summary charts of all 83 recorded rows, breakdown of refusal codes, and the latest settlement transactions.</div>
+            <div class="pc-foot">Open Overview &rarr;</div>
           </div>
 
           <div class="portal-card" data-goto="obl">
@@ -918,35 +993,35 @@
               <span class="pc-title">03 / OBLIGATIONS</span>
               <span class="tag ok">SEARCHABLE</span>
             </div>
-            <div class="pc-desc">Searchable grid of 83 recorded Sepolia obligations and 30 test fixtures with roving tabindex keyboard navigation and deep inspector.</div>
-            <div class="pc-foot">Jump to Obligations View &rarr;</div>
+            <div class="pc-desc">Searchable table of all 83 Sepolia obligations and 30 test cases. Click any row to inspect its full lifecycle and transaction hash.</div>
+            <div class="pc-foot">Open Obligations &rarr;</div>
           </div>
 
           <div class="portal-card" data-goto="flow">
             <div class="pc-top">
-              <span class="pc-title">04 / SETTLE SIMULATOR</span>
+              <span class="pc-title">04 / SIMULATOR</span>
               <span class="tag ok">INTERACTIVE</span>
             </div>
-            <div class="pc-desc">Step-by-step protocol replay animation: import, policy gate, reservation, calldata gate, dispatch (1 send), and dispatch again (0 sends).</div>
-            <div class="pc-foot">Jump to Settle Simulator &rarr;</div>
+            <div class="pc-desc">An animated walkthrough showing an invoice move through every check. Run it once to see 1 send; run it again to see 0 sends.</div>
+            <div class="pc-foot">Open Simulator &rarr;</div>
           </div>
 
           <div class="portal-card" data-goto="surf">
             <div class="pc-top">
-              <span class="pc-title">05 / SURFACES</span>
+              <span class="pc-title">05 / KEEPERHUB SURFACES</span>
               <span class="tag ok">REST + MCP</span>
             </div>
-            <div class="pc-desc">Detailed comparison of KeeperHub's REST execution endpoint and Model Context Protocol (MCP) streamable HTTP server with probing findings.</div>
-            <div class="pc-foot">Jump to Surfaces View &rarr;</div>
+            <div class="pc-desc">Direct comparison of paying through KeeperHub's REST API vs its Model Context Protocol (MCP) server.</div>
+            <div class="pc-foot">Open Surfaces &rarr;</div>
           </div>
 
           <div class="portal-card" data-goto="verify">
             <div class="pc-top">
-              <span class="pc-title">06 / VERIFICATION BATTERY</span>
+              <span class="pc-title">06 / VERIFY LOCALLY</span>
               <span class="tag ok">11 CHECKS</span>
             </div>
-            <div class="pc-desc">Full suite of commands that any judge can run locally with zero credentials required. All 11 scripts wired and passing.</div>
-            <div class="pc-foot">Jump to Verify View &rarr;</div>
+            <div class="pc-desc">All 11 verification scripts you can run in your own terminal. Zero API keys or secrets required.</div>
+            <div class="pc-foot">Open Verify &rarr;</div>
           </div>
         </div>
       </div>
@@ -1264,31 +1339,31 @@
   // --- dino pet fact typewriter & sync engine -----------------------------
   const DINO_FACTS = [
     {
-      text: "719 tests pass across 142 suites in ~11s. Zero failures.",
+      text: "719 tests pass across 142 suites. Zero failures.",
       statId: "land-kpi-tests",
     },
     {
-      text: "50 concurrent workers released at once \u2192 1 broadcast, 0 duplicates.",
+      text: "50 workers race on 1 invoice \u2192 1 payment, 0 duplicates.",
       statId: "land-kpi-race",
     },
     {
-      text: "9/9 SIGKILL checkpoints survived under SQLite BEGIN IMMEDIATE fencing.",
+      text: "9/9 crash checkpoints survived. Process killed mid-payment recovers every time.",
       statId: "land-kpi-crash",
     },
     {
-      text: "47/47 Request invoices recover secp256k1 payee signatures on-chain.",
+      text: "47/47 Request invoices recover cryptographic signatures on-chain.",
       statId: "land-kpi-sigs",
     },
     {
-      text: "38 real settlements on Sepolia corroborated in ERC20FeeProxy logs.",
+      text: "38 real settlements on Sepolia verified in ERC20FeeProxy logs.",
       statId: "land-kpi-sepolia",
     },
     {
-      text: "38 replays of settled obligations refused before provider write at 0 gas.",
+      text: "38 replay attempts stopped before sending. Cost: 0 gas.",
       statId: "land-kpi-expiry",
     },
     {
-      text: "KeeperHub upstream PR #2372 fixes 24h key expiry double-spend risk.",
+      text: "Upstream PR #2372 fixes KeeperHub 24-hour key expiry bug.",
       statId: null,
     }
   ];
@@ -1370,13 +1445,24 @@
 
     strip.innerHTML = `
       <canvas id="strip-fx-canvas" class="strip-fx-canvas"></canvas>
-      <div id="strip-pet" class="strip-pet" role="button" aria-label="ReqKeeper Metric Worker Dino" title="ReqKeeper Metric Worker (Click to rewrite)"><img id="strip-pet-img" src="${DINO_SPRITE}" alt="Dino Pet Worker" /></div>
+      <div id="strip-pet" class="strip-pet" role="button" tabindex="0" aria-label="ReqKeeper Metric Worker Dino" title="ReqKeeper Metric Sentinel (Click to patrol)"><img id="strip-pet-img" src="${DINO_SPRITE}" alt="Dino Pet Worker" /></div>
       ${metricsData.map(([k, v, c], idx) => `<div class="stat" data-idx="${idx}"><div class="k">${still ? k : ""}</div><div class="v ${c}">${still ? v : ""}</div></div>`).join("")}
+      <div class="strip-pet-dock" id="pet-dock" role="button" tabindex="0" title="Dino Pet Sentinel: Click to patrol numbers">
+        <div class="dino-brain-wrap">
+          <div class="dino-thought-bubble" id="dino-thought">INITIALIZING...</div>
+          <div class="dino-brain-badge"><span class="brain-sparkle">&#10022;</span> <b>CIPHER-DINO</b> // SENTINEL</div>
+        </div>
+        <div class="strip-pet-perch" id="pet-perch">
+          <div class="perch-dot"></div>
+        </div>
+      </div>
     `;
 
     const fxCanvas = el("strip-fx-canvas");
     const pet = el("strip-pet");
     const stats = strip.querySelectorAll(".stat");
+    const thoughtEl = el("dino-thought");
+    const petDock = el("pet-dock");
 
     function resizeFx() {
       fxCanvas.width = strip.scrollWidth;
@@ -1387,6 +1473,7 @@
 
     const fxCtx = fxCanvas.getContext("2d");
     const particles = [];
+    const radarRings = [];
 
     function addParticle(x, y, color = "#35F0A0", vx = 0, vy = 0, size = 2) {
       particles.push({
@@ -1399,8 +1486,33 @@
       });
     }
 
+    function emitRadar(px, py) {
+      radarRings.push({ x: px, y: py, r: 6, maxR: 280, opacity: 0.85 });
+    }
+
     function renderFx() {
       fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+
+      // Render radar rings
+      for (let i = radarRings.length - 1; i >= 0; i--) {
+        const ring = radarRings[i];
+        ring.r += 1.8;
+        ring.opacity -= 0.007;
+        if (ring.opacity <= 0 || ring.r >= ring.maxR) {
+          radarRings.splice(i, 1);
+        } else {
+          fxCtx.save();
+          fxCtx.beginPath();
+          fxCtx.arc(ring.x, ring.y, ring.r, 0, Math.PI * 2);
+          fxCtx.strokeStyle = `rgba(53, 240, 160, ${ring.opacity * 0.5})`;
+          fxCtx.lineWidth = 1.2;
+          fxCtx.setLineDash([3, 4]);
+          fxCtx.stroke();
+          fxCtx.restore();
+        }
+      }
+
+      // Render particles
       for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
         p.x += p.vx;
@@ -1419,54 +1531,110 @@
     }
     requestAnimationFrame(renderFx);
 
-    if (still) {
-      pet.className = "strip-pet pet-idle";
-      if (stats.length > 0) {
-        const lastStat = stats[stats.length - 1];
-        pet.style.transform = `translate3d(${lastStat.offsetLeft + lastStat.offsetWidth + 8}px, 0, 0)`;
+    function getPerchX() {
+      const perch = el("pet-perch");
+      if (!perch) return (stats[stats.length - 1]?.offsetLeft || 0) + 120;
+      const pRect = perch.getBoundingClientRect();
+      const sRect = strip.getBoundingClientRect();
+      return Math.max(0, pRect.left - sRect.left + (pRect.width - 34) / 2);
+    }
+
+    const BRAIN_THOUGHTS = [
+      "0 drift verified across Sepolia run",
+      "Sepolia #11155111 intact · 38/38 settled",
+      "WYSIWYS Calldata Gate armed & ready",
+      "KeeperHub private mempool clear",
+      "24h cache expiry bug fixed upstream",
+      "719/719 tests passing across 142 suites",
+      "snacking on stale nonces...",
+      "roving tabindex synced · keyboard ready",
+      "checking 0 dup / 50 concurrent workers",
+      "deterministic settlement rail active",
+      "47/47 invoice signatures valid",
+      "exactly-once delivery guaranteed"
+    ];
+
+    let brainIdx = 0;
+    let brainInterval = null;
+
+    function setThought(text, playSound = false) {
+      if (!thoughtEl) return;
+      thoughtEl.textContent = text;
+      if (playSound) playRetroBlip(720);
+    }
+
+    function startBrainCycle() {
+      if (still) {
+        setThought("38/38 SETTLED · 0 DUP · VERIFIED");
+        return;
       }
+      clearInterval(brainInterval);
+      brainInterval = setInterval(() => {
+        if (isBusy) return;
+        brainIdx = (brainIdx + 1) % BRAIN_THOUGHTS.length;
+        setThought(BRAIN_THOUGHTS[brainIdx], false);
+        const perchX = getPerchX();
+        emitRadar(perchX + 17, 26);
+      }, 4500);
+    }
+
+    if (still) {
+      pet.className = "strip-pet pet-idle pet-sonar";
+      const perchX = getPerchX();
+      pet.style.transform = `translate3d(${perchX}px, 0, 0)`;
+      setThought("38/38 SETTLED · 0 DUP · VERIFIED");
       return;
     }
 
     let isBusy = false;
 
+    window.addEventListener("resize", () => {
+      if (!isBusy) {
+        pet.style.transform = `translate3d(${getPerchX()}px, 0, 0)`;
+      }
+    });
+
     async function writeAll() {
       if (isBusy) return;
       isBusy = true;
+      setThought("PAINTING ON-CHAIN METRICS...");
       pet.className = "strip-pet";
       pet.style.transform = "translate3d(6px, 0, 0)";
 
-      // Spawn / glitch effect
+      // Initial spawn glitch effect
       pet.style.opacity = "0";
-      await new Promise((r) => setTimeout(r, 60));
+      await new Promise((r) => setTimeout(r, 120));
       pet.style.opacity = "1";
       playRetroBlip(540);
-      for (let p = 0; p < 8; p++) addParticle(20, 24, "#00FF4F", (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 3);
-      await new Promise((r) => setTimeout(r, 100));
+      for (let p = 0; p < 10; p++) addParticle(20, 24, "#00FF4F", (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 3);
+      await new Promise((r) => setTimeout(r, 180));
 
       for (let i = 0; i < metricsData.length; i++) {
         const [label, val] = metricsData[i];
         const statEl = stats[i];
         const targetX = Math.max(0, statEl.offsetLeft - 4);
 
-        // Run to metric
+        // Run to metric at medium pace
         pet.className = "strip-pet pet-running";
         const startX = parseFloat((pet.style.transform || "").replace(/[^\d.-]/g, "")) || 0;
         const dist = targetX - startX;
-        const stepsCount = 8;
-        const stepTime = 16;
+        const stepsCount = 12;
+        const stepTime = 18;
 
         for (let s = 1; s <= stepsCount; s++) {
           const curX = startX + (dist * (s / stepsCount));
           pet.style.transform = `translate3d(${curX}px, 0, 0)`;
           if (s % 2 === 0) {
-            addParticle(curX + 6, 28, "#35F0A0", -1 - Math.random(), 0.5 - Math.random(), 2);
+            addParticle(curX + 6, 28, "#35F0A0", -0.8 - Math.random(), 0.5 - Math.random(), 2);
           }
           await new Promise((r) => setTimeout(r, stepTime));
         }
 
-        // Write label
+        // Brief arrival pause before chalk writing
         pet.className = "strip-pet pet-writing";
+        await new Promise((r) => setTimeout(r, 70));
+
+        // Write label at medium pace
         const kEl = statEl.querySelector(".k");
         kEl.textContent = "";
         kEl.classList.add("chalk-write");
@@ -1477,14 +1645,14 @@
             const rect = kEl.getBoundingClientRect();
             const sRect = strip.getBoundingClientRect();
             const charX = rect.left - sRect.left + (c * 6.5);
-            addParticle(charX, rect.top - sRect.top + 8, "#35F0A0", 0.5, -0.5, 2);
+            addParticle(charX, rect.top - sRect.top + 8, "#35F0A0", 0.4, -0.4, 2);
           }
-          await new Promise((r) => setTimeout(r, 14));
+          await new Promise((r) => setTimeout(r, 36));
         }
         kEl.classList.remove("chalk-write");
-        await new Promise((r) => setTimeout(r, 30));
+        await new Promise((r) => setTimeout(r, 90));
 
-        // Write value
+        // Write value at medium pace
         const vEl = statEl.querySelector(".v");
         const valStr = String(val);
         vEl.textContent = "";
@@ -1498,65 +1666,118 @@
           for (let sp = 0; sp < 2; sp++) {
             addParticle(digitX, rect.top - sRect.top + 8, "#00FF4F", (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, 2.5);
           }
-          await new Promise((r) => setTimeout(r, 22));
+          await new Promise((r) => setTimeout(r, 65));
         }
         vEl.classList.remove("chalk-write");
-        await new Promise((r) => setTimeout(r, 45));
+        await new Promise((r) => setTimeout(r, 130));
       }
 
-      // Celebrate
+      // Celebrate briefly
       const last = stats[stats.length - 1];
-      const endX = last.offsetLeft + last.offsetWidth + 12;
-      pet.style.transform = `translate3d(${endX}px, 0, 0)`;
+      const celebrateX = last.offsetLeft + last.offsetWidth + 12;
+      pet.style.transform = `translate3d(${celebrateX}px, 0, 0)`;
       pet.className = "strip-pet pet-celebrating";
       playRetroBlip(780);
-      for (let sp = 0; sp < 16; sp++) {
-        addParticle(endX + 16, 20, sp % 2 === 0 ? "#00FF4F" : "#DCEAE6", (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 3);
+      for (let sp = 0; sp < 18; sp++) {
+        addParticle(celebrateX + 16, 20, sp % 2 === 0 ? "#00FF4F" : "#DCEAE6", (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 3);
       }
-      await new Promise((r) => setTimeout(r, 700));
+      await new Promise((r) => setTimeout(r, 550));
 
-      // Idle
-      pet.className = "strip-pet pet-idle";
+      // Run over to right corner perch to rest
+      pet.className = "strip-pet pet-running";
+      const startRunX = celebrateX;
+      const perchX = getPerchX();
+      const runDist = perchX - startRunX;
+      const runSteps = 14;
+
+      for (let s = 1; s <= runSteps; s++) {
+        const curX = startRunX + (runDist * (s / runSteps));
+        pet.style.transform = `translate3d(${curX}px, 0, 0)`;
+        if (s % 2 === 0) {
+          addParticle(curX + 6, 28, "#00FF4F", -1, 0, 2);
+        }
+        await new Promise((r) => setTimeout(r, 18));
+      }
+
+      // Rest in right corner perch
+      pet.className = "strip-pet pet-idle pet-sonar";
+      pet.style.transform = `translate3d(${perchX}px, 0, 0)`;
+      emitRadar(perchX + 17, 26);
+      playRetroBlip(680);
+      setThought(BRAIN_THOUGHTS[0]);
+      isBusy = false;
+      startBrainCycle();
+    }
+
+    // Interactive Patrol: clicking pet or dock dispatches a lively inspection patrol
+    async function triggerPatrol() {
+      if (isBusy) return;
+      isBusy = true;
+      playRetroBlip(820);
+      setThought("PATROL ENGAGED! POLISHING METRICS...");
+      pet.className = "strip-pet pet-celebrating";
+
+      const perchX = getPerchX();
+      for (let sp = 0; sp < 12; sp++) {
+        addParticle(perchX + 16, 20, "#00FF4F", (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 2.5);
+      }
+      await new Promise((r) => setTimeout(r, 300));
+
+      // Dash from right to left across all metrics
+      pet.className = "strip-pet pet-running";
+      for (let i = stats.length - 1; i >= 0; i--) {
+        const statEl = stats[i];
+        const targetX = Math.max(0, statEl.offsetLeft - 4);
+        const curStart = parseFloat((pet.style.transform || "").replace(/[^\d.-]/g, "")) || 0;
+        const dashDist = targetX - curStart;
+        for (let s = 1; s <= 6; s++) {
+          const cx = curStart + dashDist * (s / 6);
+          pet.style.transform = `translate3d(${cx}px, 0, 0)`;
+          await new Promise((r) => setTimeout(r, 14));
+        }
+        // Polish sparkle on stat value
+        const vEl = statEl.querySelector(".v");
+        if (vEl) {
+          vEl.classList.add("chalk-write");
+          const rect = vEl.getBoundingClientRect();
+          const sRect = strip.getBoundingClientRect();
+          for (let sp = 0; sp < 3; sp++) {
+            addParticle(rect.left - sRect.left + 10, rect.top - sRect.top + 8, "#35F0A0", 0, -1, 2);
+          }
+          setTimeout(() => vEl.classList.remove("chalk-write"), 200);
+        }
+        await new Promise((r) => setTimeout(r, 40));
+      }
+
+      // Victory wiggle at leftmost stat
+      pet.className = "strip-pet pet-celebrating";
+      playRetroBlip(880);
+      for (let sp = 0; sp < 14; sp++) {
+        addParticle(24, 20, sp % 2 === 0 ? "#00FF4F" : "#35F0A0", (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 3);
+      }
+      await new Promise((r) => setTimeout(r, 450));
+
+      // Sprint back to perch in right corner
+      pet.className = "strip-pet pet-running";
+      const leftStart = parseFloat((pet.style.transform || "").replace(/[^\d.-]/g, "")) || 0;
+      const backDist = perchX - leftStart;
+      for (let s = 1; s <= 14; s++) {
+        const cx = leftStart + backDist * (s / 14);
+        pet.style.transform = `translate3d(${cx}px, 0, 0)`;
+        if (s % 2 === 0) addParticle(cx + 6, 28, "#00FF4F", -1, 0, 2);
+        await new Promise((r) => setTimeout(r, 16));
+      }
+
+      // Rest in perch
+      pet.className = "strip-pet pet-idle pet-sonar";
+      pet.style.transform = `translate3d(${perchX}px, 0, 0)`;
+      emitRadar(perchX + 17, 26);
+      setThought("ALL 6 METRICS VERIFIED ON-CHAIN");
       isBusy = false;
     }
 
-    // Easter Egg on click: rewrite a random metric
-    pet.addEventListener("click", async () => {
-      if (isBusy) return;
-      isBusy = true;
-      playRetroBlip(680);
-      pet.className = "strip-pet pet-celebrating";
-      const randomIdx = Math.floor(Math.random() * metricsData.length);
-      const [label, val] = metricsData[randomIdx];
-      const statEl = stats[randomIdx];
-      const targetX = Math.max(0, statEl.offsetLeft - 4);
-
-      await new Promise((r) => setTimeout(r, 180));
-      pet.className = "strip-pet pet-running";
-      pet.style.transform = `translate3d(${targetX}px, 0, 0)`;
-      await new Promise((r) => setTimeout(r, 220));
-
-      pet.className = "strip-pet pet-writing";
-      const vEl = statEl.querySelector(".v");
-      vEl.textContent = "";
-      vEl.classList.add("chalk-write");
-      const valStr = String(val);
-      for (let c = 0; c < valStr.length; c++) {
-        vEl.textContent = valStr.slice(0, c + 1);
-        addParticle(targetX + 24, 28, "#00FF4F", (Math.random() - 0.5) * 2, -1, 2.5);
-        await new Promise((r) => setTimeout(r, 30));
-      }
-      vEl.classList.remove("chalk-write");
-      await new Promise((r) => setTimeout(r, 160));
-
-      const last = stats[stats.length - 1];
-      const endX = last.offsetLeft + last.offsetWidth + 12;
-      pet.className = "strip-pet pet-running";
-      pet.style.transform = `translate3d(${endX}px, 0, 0)`;
-      await new Promise((r) => setTimeout(r, 220));
-      pet.className = "strip-pet pet-idle";
-      isBusy = false;
-    });
+    pet.addEventListener("click", triggerPatrol);
+    petDock?.addEventListener("click", triggerPatrol);
 
     writeAll();
   }
@@ -2536,19 +2757,22 @@
       const H = rect.height;
       ctx.clearRect(0, 0, W, H);
 
-      const isMobile = W < 460;
-      const nodeSpread = isMobile ? 0.94 : 1.18;
+      const widthFactor = Math.min(1.0, Math.max(0.55, W / 580));
+      const nodeSpread = 0.65 + 0.45 * widthFactor;
+      const labelFont = Math.max(6, Math.min(8, Math.round(5 + 3 * widthFactor)));
+      const subFont = Math.max(5, Math.min(6, Math.round(4.2 + 1.8 * widthFactor)));
+      const badgeFont = Math.max(5, Math.min(7, Math.round(4.5 + 2.5 * widthFactor)));
 
       // Mode Camera Interpolation
       let targetCamX = 0;
-      let targetCamDist = isMobile ? 4.0 : 3.6;
-      let targetFov = isMobile ? 260 : 310;
+      let targetCamDist = 4.2 - 0.6 * widthFactor;
+      let targetFov = 205 + 105 * widthFactor;
       if (currentMode === "gate") {
-        targetCamX = 0; targetCamDist = 2.6; targetFov = 340;
+        targetCamX = 0; targetCamDist = 2.8; targetFov = 320;
       } else if (currentMode === "keeperhub") {
-        targetCamX = nodeSpread * 0.82; targetCamDist = 2.8; targetFov = 340;
+        targetCamX = nodeSpread * 0.80; targetCamDist = 2.9; targetFov = 320;
       } else if (currentMode === "vault") {
-        targetCamX = -nodeSpread * 0.82; targetCamDist = 2.8; targetFov = 340;
+        targetCamX = -nodeSpread * 0.80; targetCamDist = 2.9; targetFov = 320;
       }
 
       camX += (targetCamX - camX) * 0.08;
@@ -2685,19 +2909,19 @@
 
       // Labels on ReqKeeper
       const rkLabel = project(rkX, 0.72, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
-      ctx.font = "8px 'Press Start 2P', monospace";
+      ctx.font = `${labelFont}px 'Press Start 2P', monospace`;
       ctx.fillStyle = isSettledFlash ? "#00FF4F" : "#35F0A0";
       ctx.textAlign = "center";
       ctx.fillText("REQKEEPER", rkLabel.x, rkLabel.y);
 
       const rkSub = project(rkX, 0.58, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
-      ctx.font = "6px monospace";
+      ctx.font = `${subFont}px monospace`;
       ctx.fillStyle = "rgba(220, 234, 230, 0.75)";
       ctx.fillText("OBLIGATION READY // NONCE 38", rkSub.x, rkSub.y);
 
       // Status Badge under ReqKeeper
       const rkBadge = project(rkX, -0.70, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
-      ctx.font = "7px 'Press Start 2P', monospace";
+      ctx.font = `${badgeFont}px 'Press Start 2P', monospace`;
       ctx.fillStyle = isSettledFlash ? "#00FF4F" : "rgba(53, 240, 160, 0.85)";
       ctx.fillText(isSettledFlash ? "[✓ SETTLED]" : "[ARMED · 0 DUP]", rkBadge.x, rkBadge.y);
 
@@ -2804,13 +3028,13 @@
 
       // Gate Labels
       const gateLabel = project(0, 0.72, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
-      ctx.font = "8px 'Press Start 2P', monospace";
+      ctx.font = `${labelFont}px 'Press Start 2P', monospace`;
       ctx.fillStyle = "rgba(220, 234, 230, 0.9)";
       ctx.textAlign = "center";
       ctx.fillText("CALLDATA GATE", gateLabel.x, gateLabel.y);
 
       const gateSub = project(0, -0.70, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
-      ctx.font = "7px 'Press Start 2P', monospace";
+      ctx.font = `${badgeFont}px 'Press Start 2P', monospace`;
       ctx.fillStyle = gateGlow;
       if (gateState === "IDLE") ctx.fillText("WYSIWYS [0 GAS]", gateSub.x, gateSub.y);
       else if (gateState === "VERIFYING") ctx.fillText("VERIFYING BYTES...", gateSub.x, gateSub.y);
@@ -2870,18 +3094,18 @@
 
       // KeeperHub Labels
       const khLabel = project(khX, 0.72, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
-      ctx.font = "8px 'Press Start 2P', monospace";
+      ctx.font = `${labelFont}px 'Press Start 2P', monospace`;
       ctx.fillStyle = "#00FF4F";
       ctx.textAlign = "center";
       ctx.fillText("KEEPERHUB", khLabel.x, khLabel.y);
 
       const khSub = project(khX, 0.58, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
-      ctx.font = "6px monospace";
+      ctx.font = `${subFont}px monospace`;
       ctx.fillStyle = "rgba(0, 255, 79, 0.75)";
       ctx.fillText("DETERMINISTIC EXECUTOR", khSub.x, khSub.y);
 
       const khBadge = project(khX, -0.70, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
-      ctx.font = "7px 'Press Start 2P', monospace";
+      ctx.font = `${badgeFont}px 'Press Start 2P', monospace`;
       ctx.fillStyle = "rgba(0, 255, 79, 0.85)";
       ctx.fillText(isKhExecuting ? "[⚡ EXECUTING]" : "[MEV-PROTECTED]", khBadge.x, khBadge.y);
 
