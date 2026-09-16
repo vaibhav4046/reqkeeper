@@ -660,51 +660,53 @@ export class Store {
     paymentReference?: string | null;
     now?: number;
   }): { created: boolean; state: string } {
-    const now = o.now ?? Date.now();
-    const existing = this.getObligation(o.obligationId);
-    if (existing) {
-      // An early return here used to mean a row imported once WITHOUT a reference kept that NULL
-      // for life. The global uniqueness index is partial -- `WHERE payment_reference IS NOT NULL`
-      // -- and the cross-namespace lookup matches on equality, so a NULL row is invisible to both:
-      // the same debt could be imported again under a second obligation id and paid twice, with
-      // the one index built to stop it looking straight through the row. Back-filling is safe in
-      // the only direction that matters, NULL to a value, and the UNIQUE index still refuses a
-      // value that belongs to another obligation.
-      const storedReference = this.#db
-        .prepare("SELECT payment_reference AS ref FROM obligations WHERE obligation_id = ?")
-        .get(o.obligationId) as { ref: string | null } | undefined;
-      if (storedReference?.ref == null && o.paymentReference != null) {
-        this.#db
-          .prepare("UPDATE obligations SET payment_reference = ?, updated_at = ? WHERE obligation_id = ? AND payment_reference IS NULL")
-          .run(canonicalReference(o.paymentReference), now, o.obligationId);
+    return this.tx(() => {
+      const now = o.now ?? Date.now();
+      const existing = this.getObligation(o.obligationId);
+      if (existing) {
+        // An early return here used to mean a row imported once WITHOUT a reference kept that NULL
+        // for life. The global uniqueness index is partial -- `WHERE payment_reference IS NOT NULL`
+        // -- and the cross-namespace lookup matches on equality, so a NULL row is invisible to both:
+        // the same debt could be imported again under a second obligation id and paid twice, with
+        // the one index built to stop it looking straight through the row. Back-filling is safe in
+        // the only direction that matters, NULL to a value, and the UNIQUE index still refuses a
+        // value that belongs to another obligation.
+        const storedReference = this.#db
+          .prepare("SELECT payment_reference AS ref FROM obligations WHERE obligation_id = ?")
+          .get(o.obligationId) as { ref: string | null } | undefined;
+        if (storedReference?.ref == null && o.paymentReference != null) {
+          this.#db
+            .prepare("UPDATE obligations SET payment_reference = ?, updated_at = ? WHERE obligation_id = ? AND payment_reference IS NULL")
+            .run(canonicalReference(o.paymentReference), now, o.obligationId);
+        }
+        // The anchor is back-filled on re-import for the same reason the reference is: a row that
+        // was first created without one would otherwise never get a floor, and every scan for it
+        // stays truncated for ever.
+        this.#seedAnchorFromFacts(o.obligationId, o.sourceFactsJson, now);
+        return { created: false, state: existing.state };
       }
-      // The anchor is back-filled on re-import for the same reason the reference is: a row that
-      // was first created without one would otherwise never get a floor, and every scan for it
-      // stays truncated for ever.
+      this.#db
+        .prepare(
+          `INSERT INTO obligations
+             (obligation_id, namespace, request_id, state, source_facts_json, source_facts_hash, payment_reference, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?)`,
+        )
+        .run(
+          o.obligationId,
+          o.namespace,
+          o.requestId,
+          "IMPORTED",
+          o.sourceFactsJson,
+          o.sourceFactsHash,
+          o.paymentReference === undefined || o.paymentReference === null
+            ? null
+            : canonicalReference(o.paymentReference),
+          now,
+          now,
+        );
       this.#seedAnchorFromFacts(o.obligationId, o.sourceFactsJson, now);
-      return { created: false, state: existing.state };
-    }
-    this.#db
-      .prepare(
-        `INSERT INTO obligations
-           (obligation_id, namespace, request_id, state, source_facts_json, source_facts_hash, payment_reference, created_at, updated_at)
-         VALUES (?,?,?,?,?,?,?,?,?)`,
-      )
-      .run(
-        o.obligationId,
-        o.namespace,
-        o.requestId,
-        "IMPORTED",
-        o.sourceFactsJson,
-        o.sourceFactsHash,
-        o.paymentReference === undefined || o.paymentReference === null
-          ? null
-          : canonicalReference(o.paymentReference),
-        now,
-        now,
-      );
-    this.#seedAnchorFromFacts(o.obligationId, o.sourceFactsJson, now);
-    return { created: true, state: "IMPORTED" };
+      return { created: true, state: "IMPORTED" };
+    });
   }
 
   getObligation(obligationId: string):

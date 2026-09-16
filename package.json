@@ -19,7 +19,7 @@
     "evidence:mcp": "node --experimental-strip-types scripts/evidence-mcp.ts",
     "harness": "node --experimental-strip-types scripts/harness.ts",
     "verify:signatures": "node --experimental-strip-types scripts/verify-signatures.ts",
-  "verify:onchain": "node --experimental-strip-types scripts/verify-onchain.ts",
+    "verify:onchain": "node --experimental-strip-types scripts/verify-onchain.ts",
     "verify:seam": "node --experimental-strip-types scripts/verify-seam.ts",
     "settle:live": "node --experimental-strip-types scripts/settle-live.ts",
     "mcp": "node --experimental-strip-types scripts/mcp-server.ts",
@@ -39,5 +39,8 @@
   "devDependencies": {
     "@types/node": "^24.13.3",
     "typescript": "5.9"
+  },
+  "dependencies": {
+    "playwright": "^1.63.0"
   }
 }

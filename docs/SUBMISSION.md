@@ -186,7 +186,7 @@ drift that makes a summary less trustworthy than the rows it summarises.)
 - `npm run harness` — 30 fault-injection cases, asserted against a provider that counts physical
   sends rather than reporting a status string. **FIXTURE**: the provider is that counter, and the
   transaction hashes in `docs/refusals.json` are synthetic.
-- 715 unit tests, `tsc --noEmit` clean, CI runs typecheck, tests and a build with a clean-tree
+- 719 unit tests, `tsc --noEmit` clean, CI runs typecheck, tests and a build with a clean-tree
   check on every push.
 
 ## What is honest about it

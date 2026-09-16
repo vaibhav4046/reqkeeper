@@ -246,3 +246,30 @@ describe("the providers send the call the gate validated, not the step they were
     });
   }
 });
+
+describe('calldata mutation', () => {
+    test('byte alteration', () => {
+        const data = payStep().data;
+        const mutated = data.slice(0, 100) + (data[100] === '0' ? '1' : '0') + data.slice(101);
+        const refusal = check([{ kind: 'REQUEST_PAYMENT', to: ERC20_FEE_PROXY, data: mutated, value: '0' }]);
+        assert.notEqual(refusal, null);
+    });
+    test('high-order dirty bits', () => {
+        const data = payStep().data;
+        const mutated = data.slice(0, 10) + '1' + data.slice(11);
+        const refusal = check([{ kind: 'REQUEST_PAYMENT', to: ERC20_FEE_PROXY, data: mutated, value: '0' }]);
+        assert.notEqual(refusal, null);
+    });
+    test('selector substitutions', () => {
+        const data = payStep().data;
+        const mutated = data.slice(0, 8) + 'ff' + data.slice(10);
+        const refusal = check([{ kind: 'REQUEST_PAYMENT', to: ERC20_FEE_PROXY, data: mutated, value: '0' }]);
+        assert.notEqual(refusal, null);
+    });
+    test('extra trailing payload', () => {
+        const data = payStep().data;
+        const mutated = data + 'deadbeef';
+        const refusal = check([{ kind: 'REQUEST_PAYMENT', to: ERC20_FEE_PROXY, data: mutated, value: '0' }]);
+        assert.notEqual(refusal, null);
+    });
+});

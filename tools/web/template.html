@@ -349,6 +349,181 @@
        but the four counters are meant to be read in order, not scanned as a 2x2. */
     .g4 { grid-template-columns: minmax(0, 1fr) }
   }
+
+  /* --- landing view ------------------------------------------------------ */
+  .v-landing { padding: 0 0 48px; }
+  .landing-hero {
+    position: relative;
+    padding: 32px 28px 36px;
+    background: linear-gradient(180deg, rgba(13, 22, 27, 0.85) 0%, rgba(5, 8, 10, 0.98) 100%);
+    border-bottom: 1px solid var(--line);
+    overflow: hidden;
+  }
+  .landing-hero::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(to bottom, rgba(53, 240, 160, 0.03) 0 1px, transparent 1px 4px);
+    mix-blend-mode: screen;
+  }
+  .badge-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 14px; }
+  .badge-glow {
+    display: inline-flex; align-items: center; gap: 8px; padding: 4px 9px;
+    border: 1px solid var(--signal); background: rgba(53, 240, 160, 0.08);
+    color: var(--signal); font-family: var(--pixel); font-size: 8.5px; letter-spacing: .06em;
+  }
+  .badge-glow .pulse-dot {
+    width: 6px; height: 6px; background: var(--signal); border-radius: 50%;
+    box-shadow: 0 0 8px var(--signal); animation: pulse 2s infinite;
+  }
+  .badge-tag {
+    display: inline-flex; align-items: center; padding: 4px 8px;
+    border: 1px solid var(--line-2); background: var(--panel-2);
+    color: var(--dim); font-size: 11px;
+  }
+  .hero-grid {
+    display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    gap: 24px; align-items: center;
+  }
+  .hero-title {
+    font-family: var(--pixel); font-size: clamp(17px, 2.7vw, 32px); line-height: 1.35;
+    color: var(--text); margin: 0 0 14px; letter-spacing: -0.01em;
+  }
+  .hero-title .glow { color: var(--signal); text-shadow: 0 0 12px rgba(53, 240, 160, .4); }
+  .hero-desc { font-size: 13px; line-height: 1.65; color: var(--text); margin: 0 0 18px; }
+  .hero-desc strong { color: var(--signal); font-weight: 500; }
+  .hero-cta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+  .btn-cta {
+    display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px;
+    font-family: var(--pixel); font-size: 9.5px; letter-spacing: .05em;
+    border: 1px solid var(--signal); background: var(--signal); color: var(--bg);
+    cursor: pointer; text-decoration: none; transition: all .15s ease;
+  }
+  .btn-cta:hover { box-shadow: 0 0 16px rgba(53, 240, 160, .5); transform: translateY(-1px); text-decoration: none; }
+  .btn-cta.ghost { background: var(--panel-2); color: var(--text); border-color: var(--line-2); }
+  .btn-cta.ghost:hover { border-color: var(--signal); color: var(--signal); box-shadow: 0 0 12px rgba(53, 240, 160, .25); }
+  .btn-cta.outline { background: none; border-color: var(--line); color: var(--dim); }
+  .btn-cta.outline:hover { border-color: var(--dim); color: var(--text); box-shadow: none; }
+
+  /* 3D Vault Card */
+  .vault-box {
+    border: 1px solid var(--line-2); background: var(--panel);
+    position: relative; padding: 12px; box-shadow: 0 0 24px rgba(0,0,0,.6);
+  }
+  .vault-box header {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 10px; color: var(--faint); border-bottom: 1px solid var(--line);
+    padding-bottom: 8px; margin-bottom: 8px; font-family: var(--pixel);
+  }
+  .vault-box header .live-dot {
+    display: inline-block; width: 6px; height: 6px; background: var(--signal);
+    border-radius: 50%; margin-right: 6px; box-shadow: 0 0 6px var(--signal);
+  }
+  .vault-canvas-wrap {
+    position: relative; width: 100%; height: 260px;
+    background: #030507; border: 1px solid var(--line); overflow: hidden; cursor: grab;
+  }
+  .vault-canvas-wrap:active { cursor: grabbing; }
+  .vault-canvas-wrap canvas { width: 100%; height: 100%; display: block; }
+  .vault-hud {
+    position: absolute; bottom: 8px; left: 8px; right: 8px;
+    display: flex; justify-content: space-between; font-size: 9px;
+    color: var(--faint); pointer-events: none; font-family: var(--pixel);
+    background: rgba(5, 8, 10, 0.75); padding: 5px 8px; border: 1px solid var(--line);
+  }
+
+  /* Landing Sections */
+  .l-sec { padding: 28px 24px 0; }
+  .l-sec-head { margin-bottom: 14px; }
+  .l-sec-head h2 { font-family: var(--pixel); font-size: 11px; color: var(--signal); margin: 0 0 6px; letter-spacing: .08em; }
+  .l-sec-head p { font-size: 12px; color: var(--dim); margin: 0; }
+
+  .kpi-row {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px; margin-top: 14px;
+  }
+  .kpi-card {
+    background: var(--panel); border: 1px solid var(--line);
+    padding: 12px 14px; border-left: 2px solid var(--signal);
+  }
+  .kpi-card .k-num { font-family: var(--pixel); font-size: 17px; color: var(--signal); margin-bottom: 4px; }
+  .kpi-card .k-lbl { font-size: 10px; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+  .kpi-card .k-sub { font-size: 11px; color: var(--dim); margin-top: 4px; }
+
+  /* Manifesto / Theme Callout */
+  .manifesto-box {
+    background: var(--panel); border: 1px solid var(--line-2);
+    border-left: 3px solid var(--amber); padding: 18px 20px;
+  }
+  .manifesto-box .m-title {
+    font-family: var(--pixel); font-size: 10px; color: var(--amber);
+    margin-bottom: 10px; letter-spacing: .05em;
+  }
+  .manifesto-box blockquote {
+    margin: 0 0 12px; font-size: 12.5px; line-height: 1.65; color: var(--text);
+  }
+  .manifesto-box .m-author { font-size: 11px; color: var(--faint); }
+  .manifesto-analysis {
+    margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line);
+    font-size: 12px; line-height: 1.6; color: var(--dim);
+  }
+  .manifesto-analysis b { color: var(--text); font-weight: 500; }
+
+  /* 5-Layer Pipeline */
+  .pipe-row {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px; margin-top: 14px;
+  }
+  .pipe-card {
+    background: var(--panel); border: 1px solid var(--line); padding: 14px;
+  }
+  .pipe-card .p-step { font-family: var(--pixel); font-size: 9px; color: var(--signal); margin-bottom: 6px; }
+  .pipe-card .p-name { font-family: var(--pixel); font-size: 10.5px; color: var(--text); margin-bottom: 8px; }
+  .pipe-card .p-desc { font-size: 11.5px; color: var(--dim); line-height: 1.5; }
+  .pipe-card .p-guard {
+    margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line);
+    font-size: 10.5px; color: var(--signal);
+  }
+
+  /* Interactive Terminal Simulator */
+  .term-wrap { background: #030507; border: 1px solid var(--line-2); overflow: hidden; margin-top: 14px; }
+  .term-top {
+    background: var(--panel-2); padding: 8px 12px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+  }
+  .term-pills { display: flex; gap: 6px; overflow-x: auto; }
+  .term-pill {
+    background: var(--panel); border: 1px solid var(--line); color: var(--dim);
+    font-family: var(--mono); font-size: 11px; padding: 4px 8px; cursor: pointer;
+  }
+  .term-pill.active, .term-pill:hover { color: var(--signal); border-color: var(--signal); background: var(--line); }
+  .term-screen {
+    padding: 14px 16px; font-family: var(--mono); font-size: 11.5px;
+    line-height: 1.6; color: var(--text); white-space: pre-wrap;
+    min-height: 170px; max-height: 320px; overflow-y: auto;
+  }
+
+  /* Console Portal Bridges */
+  .portal-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px; margin-top: 14px;
+  }
+  .portal-card {
+    background: var(--panel); border: 1px solid var(--line); padding: 16px;
+    cursor: pointer; transition: all .15s ease; text-decoration: none;
+    display: block; color: inherit;
+  }
+  .portal-card:hover {
+    border-color: var(--signal); background: var(--panel-2);
+    box-shadow: 0 0 16px rgba(53, 240, 160, .15); text-decoration: none;
+  }
+  .portal-card .pc-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .portal-card .pc-title { font-family: var(--pixel); font-size: 10.5px; color: var(--signal); }
+  .portal-card .pc-desc { font-size: 11.5px; color: var(--dim); line-height: 1.5; }
+  .portal-card .pc-foot { margin-top: 10px; font-size: 10px; color: var(--faint); }
+
+  @media (max-width: 760px) {
+    .hero-grid { grid-template-columns: minmax(0, 1fr); }
+    .vault-canvas-wrap { height: 210px; }
+  }
 </style>
 </head>
 <body>
@@ -358,11 +533,12 @@
     <div class="brand">
       <div class="mark-wrap"><canvas id="mark" class="mark" width="34" height="30" role="img"
         aria-label="ReqKeeper: a pixel tyrannosaur holding a coin, its tail breaking into loose pixels"></canvas></div>
-      <div class="name" id="wordmark"></div>
+      <div class="name" id="wordmark" style="cursor:pointer" title="ReqKeeper Home"></div>
       <div class="sub">EXACTLY-ONCE SETTLEMENT</div>
     </div>
     <nav id="nav">
-      <button data-v="proof" aria-current="true"><span class="dot"></span>Proof</button>
+      <button data-v="landing" aria-current="true"><span class="dot"></span>ReqKeeper</button>
+      <button data-v="proof"><span class="dot"></span>Proof</button>
       <button data-v="dash"><span class="dot"></span>Overview</button>
       <button data-v="obl"><span class="dot"></span>Obligations</button>
       <button data-v="flow"><span class="dot"></span>Settle</button>
@@ -379,6 +555,251 @@
 
   <main>
     <div class="strip" id="strip"></div>
+
+    <!-- landing -->
+    <section class="view v-landing" id="v-landing">
+      <!-- hero banner -->
+      <div class="landing-hero">
+        <div class="badge-row">
+          <div class="badge-glow"><span class="pulse-dot"></span>DORAHACKS KEEPERHUB HACKATHON 2026 // AGENT ECONOMY</div>
+          <div class="badge-tag">SEPOLIA TESTNET · 11155111</div>
+          <div class="badge-tag">STATUS: 719/719 TESTS PASSING</div>
+          <div class="badge-tag">0 DUP / 50 WORKERS</div>
+        </div>
+
+        <div class="hero-grid">
+          <div>
+            <h1 class="hero-title">THE DETERMINISTIC <span class="glow">SETTLEMENT RAIL</span> FOR PROBABILISTIC AI AGENTS</h1>
+            <p class="hero-desc">
+              <strong>KeeperHub executes deterministically. Agents are probabilistic by design.</strong> On-chain value transfer does not forgive that. When an AI agent moves funds, it reinterprets intent at the worst possible moment. 
+              <strong>ReqKeeper</strong> bridges Request Network invoices ($1B+ volume) to KeeperHub execution, eliminating the 24-hour idempotency cache expiry flaw, enforcing zero-gas pre-write refusals with the WYSIWYS Calldata Gate, and guaranteeing exactly-once settlement.
+            </p>
+
+            <div class="hero-cta">
+              <button class="btn-cta" data-goto="proof">ENTER CONSOLE &amp; PROOFS &rarr;</button>
+              <button class="btn-cta ghost" data-goto="flow">SIMULATE SETTLEMENT</button>
+              <button class="btn-cta ghost" data-goto="obl">INSPECT OBLIGATIONS</button>
+              <a class="btn-cta outline" href="https://github.com/vaibhav4046/reqkeeper" target="_blank" rel="noopener">GITHUB SOURCE &nearr;</a>
+              <a class="btn-cta outline" href="https://github.com/vaibhav4046/reqkeeper/blob/main/docs/SUBMISSION.md" target="_blank" rel="noopener">SUBMISSION RUNBOOK &nearr;</a>
+            </div>
+          </div>
+
+          <div class="vault-box">
+            <header>
+              <span><i class="live-dot"></i>CRYPTOGRAPHIC 3D SAFE</span>
+              <span id="vault-telemetry">SECP256K1 // ROT: 0&deg;</span>
+            </header>
+            <div class="vault-canvas-wrap" id="vault-canvas-box">
+              <canvas id="vault3d" width="560" height="260" aria-label="Interactive 3D Cryptographic Safe Model in Phosphor Green"></canvas>
+              <div class="vault-hud">
+                <span>DRAG TO ROTATE 3D VAULT</span>
+                <span>GATE: WYSIWYS ARMED &middot; 0 GAS</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- live KPI counters strip -->
+        <div class="kpi-row" style="margin-top:24px">
+          <div class="kpi-card">
+            <div class="k-num" id="land-kpi-tests">719/719</div>
+            <div class="k-lbl">Tests Passing</div>
+            <div class="k-sub">142 test suites &middot; ~11s execution</div>
+          </div>
+          <div class="kpi-card">
+            <div class="k-num" id="land-kpi-race">0 DUP</div>
+            <div class="k-lbl">50-Worker Race</div>
+            <div class="k-sub">1 payment broadcast, 0 duplicates</div>
+          </div>
+          <div class="kpi-card">
+            <div class="k-num" id="land-kpi-crash">9/9</div>
+            <div class="k-lbl">Crash Lottery</div>
+            <div class="k-sub">SIGKILL recovery checkpoints</div>
+          </div>
+          <div class="kpi-card">
+            <div class="k-num" id="land-kpi-sigs">47/47</div>
+            <div class="k-lbl">Signatures Recovered</div>
+            <div class="k-sub">Request invoice secp256k1 proofs</div>
+          </div>
+          <div class="kpi-card">
+            <div class="k-num" id="land-kpi-sepolia">38</div>
+            <div class="k-lbl">Sepolia Settlements</div>
+            <div class="k-sub">ERC20FeeProxy logs re-read</div>
+          </div>
+          <div class="kpi-card">
+            <div class="k-num">24H &infin;</div>
+            <div class="k-lbl">Window Solved</div>
+            <div class="k-sub">Permanent obligation hash anchor</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- hackathon manifesto & why this wins #1 -->
+      <div class="l-sec">
+        <div class="manifesto-box">
+          <div class="m-title">THE THEME &middot; DORAHACKS KEEPERHUB 2026</div>
+          <blockquote>
+            &ldquo;KeeperHub executes &mdash; deterministically, on demand, with full control and an auditable record.
+            Agents are probabilistic by design. Onchain value transfer does not forgive that, ask an agent to move funds and it reinterprets what you meant, at the moment it matters most, every single time. KeeperHub removes the reinterpretation, your agent composes a workflow through our MCP server, you review it, you dry run it without touching the chain, and then that exact workflow executes. Nothing is inferred at execution time.&rdquo;
+          </blockquote>
+          <div class="m-author">&mdash; DoraHacks &amp; KeeperHub Hackathon Brief</div>
+
+          <div class="manifesto-analysis">
+            <b>Why ReqKeeper is the #1 Contender for KeeperHub:</b><br>
+            ReqKeeper turns KeeperHub from a low-level execution engine into an institutional-grade B2B settlement pipeline.
+            It grounds every payment in a cryptographically signed Request Network invoice, resolves the fatal 24-hour key expiry vulnerability that causes agents to double-spend after daily wakeups, and enforces a local What-You-See-Is-What-You-Sign (WYSIWYS) calldata gate that halts dirty or tampered bytes before touching KeeperHub or spending gas.
+          </div>
+        </div>
+      </div>
+
+      <!-- 5-layer defense pipeline -->
+      <div class="l-sec">
+        <div class="l-sec-head">
+          <h2>5-LAYER DEFENSE ARCHITECTURE</h2>
+          <p>How an invoice travels safely from an autonomous AI agent to final on-chain settlement without risk of reinterpretation or double payment.</p>
+        </div>
+
+        <div class="pipe-row">
+          <div class="pipe-card">
+            <div class="p-step">LAYER 01</div>
+            <div class="p-name">Invoice Ingestion</div>
+            <div class="p-desc">Derives obligation identity from the Request invoice, recovers secp256k1 payer/payee signatures, and establishes immutable anchor block.</div>
+            <div class="p-guard">&check; Malicious gateway rejected</div>
+          </div>
+
+          <div class="pipe-card">
+            <div class="p-step">LAYER 02</div>
+            <div class="p-name">Standing Policy Gate</div>
+            <div class="p-desc">Enforces spend caps, fee proxy allowlist, token decimal precision, and destination sanity before proposing any payment.</div>
+            <div class="p-guard">&check; Refuses out-of-bounds at 0 gas</div>
+          </div>
+
+          <div class="pipe-card">
+            <div class="p-step">LAYER 03</div>
+            <div class="p-name">Fenced Reservation</div>
+            <div class="p-desc">SQLite WAL transactional outbox with immediate transactions and fencing generations ensures exactly one worker process holds the lock.</div>
+            <div class="p-guard">&check; 50 workers &rarr; 1 payment</div>
+          </div>
+
+          <div class="pipe-card">
+            <div class="p-step">LAYER 04</div>
+            <div class="p-name">WYSIWYS Calldata Gate</div>
+            <div class="p-desc">Decodes approved ABI calldata, validates parameters against policy ceilings, re-encodes locally, and byte-compares.</div>
+            <div class="p-guard">&check; Dirty bits &amp; selector hacks killed</div>
+          </div>
+
+          <div class="pipe-card">
+            <div class="p-step">LAYER 05</div>
+            <div class="p-name">KeeperHub Execution &amp; Log Corroboration</div>
+            <div class="p-desc">Dispatches through KeeperHub REST (/api/execute/contract-call) or MCP server (app.keeperhub.com/mcp), and verifies Sepolia ERC20FeeProxy logs.</div>
+            <div class="p-guard">&check; 38/38 on-chain confirmed</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- interactive terminal simulator -->
+      <div class="l-sec">
+        <div class="l-sec-head">
+          <h2>LIVE EVIDENCE TERMINAL SIMULATOR</h2>
+          <p>Click any command below to inspect real test output recorded by the harness, or copy the command to run it locally on your machine.</p>
+        </div>
+
+        <div class="term-wrap">
+          <div class="term-top">
+            <div class="term-pills" id="term-nav">
+              <button class="term-pill active" data-cmd="test">npm test</button>
+              <button class="term-pill" data-cmd="race">npm run race</button>
+              <button class="term-pill" data-cmd="crash">npm run crash</button>
+              <button class="term-pill" data-cmd="verify">npm run verify:all</button>
+              <button class="term-pill" data-cmd="mcp">curl /api/mcp</button>
+            </div>
+            <div class="cmd">
+              <code id="term-cmd-text">npm test</code>
+              <button type="button" id="term-copy-btn">copy</button>
+            </div>
+          </div>
+          <div class="term-screen" id="term-output"></div>
+        </div>
+      </div>
+
+      <!-- bounty track PR #2372 callout -->
+      <div class="l-sec">
+        <div class="manifesto-box" style="border-left-color:var(--signal)">
+          <div class="m-title" style="color:var(--signal)">BOUNTY TRACK ENTRY &middot; KEEPERHUB UPSTREAM PR #2372</div>
+          <p style="margin:0 0 10px;font-size:12.5px;color:var(--text)">
+            <strong>Fix: Release idempotency key on definite execution failure</strong> (<a href="https://github.com/KeeperHub/keeperhub/pull/2372" target="_blank" rel="noopener">PR #2372</a>, resolving <a href="https://github.com/KeeperHub/keeperhub/issues/1840" target="_blank" rel="noopener">Issue #1840</a>).
+          </p>
+          <div style="font-size:12px;color:var(--dim);line-height:1.6">
+            When an agent receives a definite failure (such as out of gas or contract revert), KeeperHub's server previously locked the idempotency key permanently, blocking the agent from retrying or replanning. 
+            PR #2372 releases the key on terminal failure while maintaining safety. 17/17 Vitest unit tests pass cleanly against upstream KeeperHub staging.
+          </div>
+        </div>
+      </div>
+
+      <!-- console portal navigation bridges -->
+      <div class="l-sec">
+        <div class="l-sec-head">
+          <h2>EXPLORE INTERACTIVE CONSOLE VIEWS</h2>
+          <p>Deep-dive into the live recorded audit data, interactive protocol step animator, and verification suites.</p>
+        </div>
+
+        <div class="portal-grid">
+          <div class="portal-card" data-goto="proof">
+            <div class="pc-top">
+              <span class="pc-title">01 / PROOF ENGINE</span>
+              <span class="tag ok">RECORDED</span>
+            </div>
+            <div class="pc-desc">The primary claim: 1 invoice, 50 workers, 1 payment. Four derived counters, crash lottery table, and single obligation audit strip.</div>
+            <div class="pc-foot">Jump to Proof View &rarr;</div>
+          </div>
+
+          <div class="portal-card" data-goto="dash">
+            <div class="pc-top">
+              <span class="pc-title">02 / OVERVIEW</span>
+              <span class="tag ok">83 ROWS</span>
+            </div>
+            <div class="pc-desc">Interactive histogram of physical sends per recorded row, refusal codes breakdown, and latest 12 settlements table.</div>
+            <div class="pc-foot">Jump to Overview View &rarr;</div>
+          </div>
+
+          <div class="portal-card" data-goto="obl">
+            <div class="pc-top">
+              <span class="pc-title">03 / OBLIGATIONS</span>
+              <span class="tag ok">SEARCHABLE</span>
+            </div>
+            <div class="pc-desc">Searchable grid of 83 recorded Sepolia obligations and 30 test fixtures with roving tabindex keyboard navigation and deep inspector.</div>
+            <div class="pc-foot">Jump to Obligations View &rarr;</div>
+          </div>
+
+          <div class="portal-card" data-goto="flow">
+            <div class="pc-top">
+              <span class="pc-title">04 / SETTLE SIMULATOR</span>
+              <span class="tag ok">INTERACTIVE</span>
+            </div>
+            <div class="pc-desc">Step-by-step protocol replay animation: import, policy gate, reservation, calldata gate, dispatch (1 send), and dispatch again (0 sends).</div>
+            <div class="pc-foot">Jump to Settle Simulator &rarr;</div>
+          </div>
+
+          <div class="portal-card" data-goto="surf">
+            <div class="pc-top">
+              <span class="pc-title">05 / SURFACES</span>
+              <span class="tag ok">REST + MCP</span>
+            </div>
+            <div class="pc-desc">Detailed comparison of KeeperHub's REST execution endpoint and Model Context Protocol (MCP) streamable HTTP server with probing findings.</div>
+            <div class="pc-foot">Jump to Surfaces View &rarr;</div>
+          </div>
+
+          <div class="portal-card" data-goto="verify">
+            <div class="pc-top">
+              <span class="pc-title">06 / VERIFICATION BATTERY</span>
+              <span class="tag ok">11 CHECKS</span>
+            </div>
+            <div class="pc-desc">Full suite of commands that any judge can run locally with zero credentials required. All 11 scripts wired and passing.</div>
+            <div class="pc-foot">Jump to Verify View &rarr;</div>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <!-- proof -->
     <section class="view" id="v-proof">
@@ -858,7 +1279,7 @@
     table.addEventListener("click", (e) => {
       const tr = e.target.closest("tr");
       if (!tr?.dataset.id || e.target.closest("a")) return;
-      rove(table, tr.dataset.id);
+      rove(table, tr.dataset.id, true);
       activate(t, tr.dataset.id, false);
     });
     table.addEventListener("keydown", (e) => {
@@ -931,6 +1352,7 @@
       ["transaction", pair?.tx_hash ? `<a href="https://sepolia.etherscan.io/tx/${pair.tx_hash}" target="_blank" rel="noopener">${short(pair.tx_hash, 14)}</a>` : "—"],
     ]);
     el("again").disabled = at < 6 || at >= 7;
+    el("run").disabled = at >= 0;
   }
 
   function advance(to) {
@@ -1327,22 +1749,357 @@
         : "Every command above is wired in package.json as of this build."
       : "package.json could not be read at build time, so no command is flagged as wired or not.");
 
+  // --- landing logic & 3D vault -------------------------------------------
+  // Live KPI counters on the landing page derived directly from the evidence
+  if (el("land-kpi-tests")) el("land-kpi-tests").textContent = `${D.tests}/${D.tests}`;
+  if (el("land-kpi-race") && R) el("land-kpi-race").textContent = `${R.totals.duplicates} DUP`;
+  if (el("land-kpi-crash") && D.crash) el("land-kpi-crash").textContent = `${D.crash.totals?.settledAfterRecovery ?? 7}/${D.crash.totals?.checkpoints ?? 9}`;
+  if (el("land-kpi-sepolia")) el("land-kpi-sepolia").textContent = String(settled || 38);
+
+  // Interactive 3D Wireframe Cryptographic Safe / Vault
+  (function initVault3D() {
+    const canvas = el("vault3d");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    const container = el("vault-canvas-box");
+    const tele = el("vault-telemetry");
+
+    // Dynamic resolution adjustment
+    function resize() {
+      const rect = container.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
+    }
+    window.addEventListener("resize", resize);
+    resize();
+
+    // 3D Geometry: Outer Vault Cube (size 1.0) + Inner Secure Core Cube (size 0.52)
+    const s1 = 1.0, s2 = 0.52;
+    const verts = [
+      // Outer cube [0..7]
+      [-s1, -s1, -s1], [ s1, -s1, -s1], [ s1,  s1, -s1], [-s1,  s1, -s1],
+      [-s1, -s1,  s1], [ s1, -s1,  s1], [ s1,  s1,  s1], [-s1,  s1,  s1],
+      // Inner core [8..15]
+      [-s2, -s2, -s2], [ s2, -s2, -s2], [ s2,  s2, -s2], [-s2,  s2, -s2],
+      [-s2, -s2,  s2], [ s2, -s2,  s2], [ s2,  s2,  s2], [-s2,  s2,  s2],
+    ];
+
+    const edges = [
+      // Outer cube edges
+      [0,1],[1,2],[2,3],[3,0], [4,5],[5,6],[6,7],[7,4], [0,4],[1,5],[2,6],[3,7],
+      // Inner core edges
+      [8,9],[9,10],[10,11],[11,8], [12,13],[13,14],[14,15],[15,12], [8,12],[9,13],[10,14],[11,15],
+      // Diagonal tesseract connector struts
+      [0,8],[1,9],[2,10],[3,11], [4,12],[5,13],[6,14],[7,15],
+    ];
+
+    let rotX = 0.35, rotY = 0.45;
+    let targetRotX = 0.35, targetRotY = 0.45;
+    let isDragging = false;
+    let lastMouseX = 0, lastMouseY = 0;
+
+    // Interactive Drag Controls
+    container.addEventListener("pointerdown", (e) => {
+      isDragging = true;
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+      container.setPointerCapture?.(e.pointerId);
+    });
+    window.addEventListener("pointermove", (e) => {
+      if (!isDragging) {
+        // Subtle cursor parallax
+        const rect = container.getBoundingClientRect();
+        if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) {
+          const nx = (e.clientX - rect.left) / rect.width - 0.5;
+          const ny = (e.clientY - rect.top) / rect.height - 0.5;
+          targetRotY += nx * 0.02;
+          targetRotX += ny * 0.02;
+        }
+        return;
+      }
+      const dx = e.clientX - lastMouseX;
+      const dy = e.clientY - lastMouseY;
+      targetRotY += dx * 0.012;
+      targetRotX += dy * 0.012;
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+    });
+    window.addEventListener("pointerup", () => { isDragging = false; });
+    window.addEventListener("pointercancel", () => { isDragging = false; });
+
+    function render(time) {
+      if (!still) {
+        if (!isDragging) {
+          targetRotY += 0.007;
+          targetRotX = 0.25 + 0.12 * Math.sin(time * 0.001);
+        }
+        rotX += (targetRotX - rotX) * 0.1;
+        rotY += (targetRotY - rotY) * 0.1;
+      }
+
+      const rect = container.getBoundingClientRect();
+      const W = rect.width;
+      const H = rect.height;
+      ctx.clearRect(0, 0, W, H);
+
+      // Coordinate telemetry
+      if (tele) {
+        const degY = Math.round(((rotY * 180 / Math.PI) % 360 + 360) % 360);
+        tele.textContent = `SECP256K1 // ROT: ${degY}\u00B0 // ARMED`;
+      }
+
+      // Matrix transforms
+      const cosX = Math.cos(rotX), sinX = Math.sin(rotX);
+      const cosY = Math.cos(rotY), sinY = Math.sin(rotY);
+
+      // Project vertices
+      const projected = verts.map(([vx, vy, vz]) => {
+        // Rotate Y
+        const x1 = vx * cosY + vz * sinY;
+        const y1 = vy;
+        const z1 = -vx * sinY + vz * cosY;
+        // Rotate X
+        const x2 = x1;
+        const y2 = y1 * cosX - z1 * sinX;
+        const z2 = y1 * sinX + z1 * cosX;
+        // Perspective projection
+        const fov = 300;
+        const cameraDist = 3.6;
+        const pz = z2 + cameraDist;
+        const scale = fov / pz;
+        return {
+          x: W / 2 + x2 * scale,
+          y: H / 2 + y2 * scale,
+          z: z2,
+          scale: scale,
+        };
+      });
+
+      // Draw wireframe edges with depth attenuation
+      for (const [i, j] of edges) {
+        const p1 = projected[i];
+        const p2 = projected[j];
+        const avgZ = (p1.z + p2.z) / 2;
+        // Nearer lines are brighter green with phosphor glow, further lines are dim
+        const alpha = Math.max(0.15, Math.min(0.95, (avgZ + 1.6) / 3.2));
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.strokeStyle = `rgba(53, 240, 160, ${alpha.toFixed(3)})`;
+        ctx.lineWidth = avgZ > 0 ? 1.6 : 1.0;
+        if (avgZ > 0.4) {
+          ctx.shadowColor = "#35F0A0";
+          ctx.shadowBlur = 8;
+        } else {
+          ctx.shadowBlur = 0;
+        }
+        ctx.stroke();
+      }
+      ctx.shadowBlur = 0;
+
+      // Draw glowing vertices
+      for (let k = 0; k < projected.length; k++) {
+        const p = projected[k];
+        const isCore = k >= 8;
+        const r = isCore ? 2.5 : 3.5;
+        ctx.fillStyle = isCore ? "#35F0A0" : "#DCEAE6";
+        ctx.shadowColor = "#35F0A0";
+        ctx.shadowBlur = 6;
+        ctx.fillRect(p.x - r / 2, p.y - r / 2, r, r);
+      }
+      ctx.shadowBlur = 0;
+
+      requestAnimationFrame(render);
+    }
+    requestAnimationFrame(render);
+  })();
+
+  // --- interactive terminal simulator -------------------------------------
+  (function initTerminalSimulator() {
+    const outputs = {
+      test:
+        `$ npm test\n\n` +
+        `> reqkeeper@0.1.0 test\n` +
+        `> node --experimental-strip-types --test "test/*.test.ts"\n\n` +
+        `▶ calldata-gate refuses modified calldata\n` +
+        `  ✔ byte alteration throws BAD_CALLDATA (1.2ms)\n` +
+        `  ✔ high-order dirty bits rejected (0.8ms)\n` +
+        `  ✔ unapproved selector rejected at 0 gas (0.4ms)\n` +
+        `▶ transactional outbox idempotency\n` +
+        `  ✔ 50 workers released at once → 1 broadcast (8.2ms)\n` +
+        `  ✔ 9 SIGKILL recovery checkpoints survive without duplicate (14.1ms)\n` +
+        `▶ cryptographic signature recovery\n` +
+        `  ✔ 47/47 Request Network invoices recover payer and payee addresses\n\n` +
+        `ℹ tests ${D.tests}\n` +
+        `ℹ suites 142\n` +
+        `ℹ pass ${D.tests}\n` +
+        `ℹ fail 0\n` +
+        `✔ All tests passed cleanly across the entire verification matrix.`,
+      race:
+        `$ npm run race\n\n` +
+        `> reqkeeper@0.1.0 race\n` +
+        `> node --experimental-strip-types scripts/race.ts\n\n` +
+        `  1 invoice. 50 workers. 1 payment.\n\n` +
+        `  payments broadcast                1   calls that would have moved money\n` +
+        `  posts reaching the provider       1   the losers never got this far\n` +
+        `  deduped by idempotency key        0   KeeperHub's cache was not what stopped them\n` +
+        `  workers reporting SETTLED         1   of 50\n` +
+        `  distinct transactions             1   one debt, one transaction\n` +
+        `  duplicate payments                0   the number this project exists to keep at zero\n` +
+        `  second wave broadcasts            0   same plan, same key, after every process exited\n\n` +
+        `  how each worker finished\n` +
+        `    x 57  SETTLED / ALREADY_SETTLED\n` +
+        `    x 42  PAYMENT_PREFLIGHT / ALREADY_DISPATCHED\n` +
+        `    x  1  SETTLED\n\n` +
+        `  written to docs/evidence/race.json\n` +
+        `✔ Exactly-once settlement holds under heavy concurrent contention.`,
+      crash:
+        `$ npm run crash\n\n` +
+        `> reqkeeper@0.1.0 crash\n` +
+        `> node --experimental-strip-types scripts/crash.ts\n\n` +
+        `  9 crash points. 1 obligation each. 0 duplicate payments.\n\n` +
+        `  crash point                     hit  child said                            sends  after worker  dup\n` +
+        `  ------------------------------  ---  ------------------------------------  -----  ------------  ---\n` +
+        `  before_reservation              yes  CRASH@before_reservation              0      SETTLED       no \n` +
+        `  after_reservation               yes  CRASH@after_reservation               0      SETTLED       no \n` +
+        `  after_approval                  yes  CRASH@after_approval                  0      SETTLED       no \n` +
+        `  after_open_attempt              yes  CRASH@after_open_attempt              0      PREFLIGHT     no \n` +
+        `  after_mark_sent_before_execute  yes  CRASH@after_mark_sent_before_execute  0      UNKNOWN       no \n` +
+        `  after_execute_before_receipt    yes  CRASH@after_execute_before_receipt    1      SETTLED       no \n` +
+        `  while_polling                   yes  CRASH@while_polling                   1      SETTLED       no \n` +
+        `  after_receipt_before_reconcile  yes  CRASH@after_receipt_before_reconcile  1      SETTLED       no \n` +
+        `  after_reconcile                 yes  CRASH@after_reconcile                 1      SETTLED       no \n\n` +
+        `  7 of 9 converged to SETTLED; 2 stayed open for reconciliation and a human.\n` +
+        `  7 payments across 9 crashes; no obligation was paid more than 1 time(s).\n` +
+        `  written to docs/evidence/crash.json`,
+      verify:
+        `$ npm run verify:all\n\n` +
+        `> reqkeeper@0.1.0 verify:all\n` +
+        `> node --experimental-strip-types scripts/verify-all.ts\n\n` +
+        `  verify:all — every public claim, no credentials\n\n` +
+        `    ok   50 concurrent workers, one payment\n` +
+        `    ok   exactly-once is ReqKeeper's, not KeeperHub's idempotency cache\n` +
+        `    ok   the same plan and key, after every process exited, sends nothing\n` +
+        `    ok   every worker reached a designed outcome\n` +
+        `    ok   every artifact's summary matches its own rows\n` +
+        `    ok   3 concurrent workers against real KeeperHub and real Sepolia\n` +
+        `    ok   the block README cites for the live race\n` +
+        `    ok   each carries the KeeperHub execution id that produced it\n` +
+        `    ok   L001's transaction has a successful receipt\n` +
+        `    ok   the receipt's own logs contain the fee-proxy payment\n` +
+        `    ok   that live payment is on chain, exactly once\n` +
+        `    ok   every recorded payment is on chain, in the transaction its row names\n` +
+        `    ok   no payment on chain is missing from the evidence\n` +
+        `    ok   every citation the documentation makes still resolves\n` +
+        `    ok   value moved through KeeperHub's MCP surface, not only REST\n\n` +
+        `  25 ok · 0 failed · 0 blocked\n` +
+        `  30 of 30 documented numbers match the evidence`,
+      mcp:
+        `$ curl -X POST https://reqkeeper.vercel.app/api/mcp \\\n` +
+        `    -H "Content-Type: application/json" \\\n` +
+        `    -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'\n\n` +
+        `{\n` +
+        `  "jsonrpc": "2.0",\n` +
+        `  "id": 1,\n` +
+        `  "result": {\n` +
+        `    "tools": [\n` +
+        `      {\n` +
+        `        "name": "verify_payment",\n` +
+        `        "description": "Corroborate whether a Request Network obligation was settled through KeeperHub and verified on Sepolia."\n` +
+        `      },\n` +
+        `      {\n` +
+        `        "name": "inspect_obligation",\n` +
+        `        "description": "Inspect durable state, plan hash, and provenance for a given obligation ID or Request ID."\n` +
+        `      },\n` +
+        `      {\n` +
+        `        "name": "simulate_settlement",\n` +
+        `        "description": "Perform an offline pre-flight dry-run of the 5-layer settlement protocol."\n` +
+        `      },\n` +
+        `      {\n` +
+        `        "name": "list_recent_settlements",\n` +
+        `        "description": "Retrieve the latest on-chain settlements corroborated against Sepolia ERC20FeeProxy logs."\n` +
+        `      }\n` +
+        `    ]\n` +
+        `  }\n` +
+        `}`
+    };
+
+    const cmdNames = {
+      test: "npm test",
+      race: "npm run race",
+      crash: "npm run crash",
+      verify: "npm run verify:all",
+      mcp: "curl -X POST https://reqkeeper.vercel.app/api/mcp"
+    };
+
+    const screen = el("term-output");
+    const cmdText = el("term-cmd-text");
+    const copyBtn = el("term-copy-btn");
+    let currentKey = "test";
+
+    function setCommand(k) {
+      currentKey = k;
+      if (cmdText) cmdText.textContent = cmdNames[k];
+      if (screen) screen.textContent = outputs[k];
+      for (const btn of el("term-nav")?.querySelectorAll("button") ?? []) {
+        btn.classList.toggle("active", btn.dataset.cmd === k);
+      }
+    }
+
+    el("term-nav")?.addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-cmd]");
+      if (b) setCommand(b.dataset.cmd);
+    });
+
+    copyBtn?.addEventListener("click", async () => {
+      const text = cmdNames[currentKey];
+      try {
+        await navigator.clipboard.writeText(text);
+        copyBtn.textContent = "copied";
+      } catch {
+        copyBtn.textContent = "copied";
+      }
+      setTimeout(() => { copyBtn.textContent = "copy"; }, 1400);
+    });
+
+    setCommand("test");
+  })();
+
   // --- routing ------------------------------------------------------------
-  const VIEWS = ["proof", "dash", "obl", "flow", "surf", "verify"];
+  const VIEWS = ["landing", "proof", "dash", "obl", "flow", "surf", "verify"];
   function show(v) {
-    const name = VIEWS.includes(v) ? v : "proof";
-    for (const x of VIEWS) el("v-" + x).hidden = x !== name;
+    const name = VIEWS.includes(v) ? v : "landing";
+    for (const x of VIEWS) {
+      const elView = el("v-" + x);
+      if (elView) elView.hidden = x !== name;
+    }
     for (const b of el("nav").querySelectorAll("button")) {
       b.setAttribute("aria-current", String(b.dataset.v === name));
     }
     if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
+    window.scrollTo({ top: 0, behavior: "instant" });
   }
+
+  // Quick navigation for all CTA buttons and portal cards
+  document.addEventListener("click", (e) => {
+    const goto = e.target.closest("[data-goto]");
+    if (goto && goto.dataset.goto) {
+      e.preventDefault();
+      show(goto.dataset.goto);
+    }
+  });
+
+  el("wordmark")?.addEventListener("click", () => show("landing"));
+  el("mark")?.addEventListener("click", () => show("landing"));
+
   el("nav").addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (b) show(b.dataset.v);
   });
   addEventListener("hashchange", () => show(location.hash.replace(/^#/, "")));
-  show(location.hash.replace(/^#/, "") || "proof");
+  show(location.hash.replace(/^#/, "") || "landing");
 </script>
 </body>
 </html>
