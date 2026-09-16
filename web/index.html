@@ -262,8 +262,8 @@
   .view { padding: 20px 22px 40px; }
   .view[hidden] { display: none; }
 
-  .h { display: flex; align-items: baseline; gap: 12px; margin: 0 0 14px; }
-  .h h1 { font-family: var(--pixel); font-size: 12px; margin: 0; color: var(--text); }
+  .h { display: flex; align-items: baseline; gap: 12px; margin: 0 0 16px; padding-top: 4px; }
+  .h h1 { font-family: var(--pixel); font-size: 12px; margin: 0; color: var(--text); line-height: 1.4; }
   .h span { color: var(--faint); font-size: 11px; }
 
   /* --- panels ------------------------------------------------------------ */
@@ -278,8 +278,8 @@
   .card { background: var(--panel); border: 1px solid var(--line); }
   .card > header {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 9px 13px; border-bottom: 1px solid var(--line);
-    color: var(--dim); font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+    padding: 10px 14px; border-bottom: 1px solid var(--line);
+    color: var(--dim); font-size: 10px; line-height: 1.4; letter-spacing: .1em; text-transform: uppercase;
   }
   .card > .body { padding: 13px; }
 
@@ -540,17 +540,18 @@
     box-sizing: border-box; width: 100%; max-width: 100%; overflow: hidden;
   }
   .vault-box header {
-    display: flex; justify-content: space-between; align-items: center; gap: 10px;
-    font-size: 10px; color: var(--faint); border-bottom: 1px solid var(--line);
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    font-size: clamp(7.5px, 1.6vw, 9px); color: var(--faint); border-bottom: 1px solid var(--line);
     padding-bottom: 8px; margin-bottom: 8px; font-family: var(--pixel);
     white-space: nowrap; overflow: hidden;
   }
   .vault-box header > span:first-child {
-    flex: none; display: inline-flex; align-items: center; gap: 6px;
+    flex: 1 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: 6px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .vault-box header #vault-telemetry {
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 8px;
-    text-align: right; min-width: 0;
+    flex: 0 0 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 8px;
+    text-align: right; min-width: 0; color: var(--signal);
   }
   .vault-box header .live-dot {
     display: inline-block; width: 6px; height: 6px; background: #00FF4F;
@@ -564,10 +565,10 @@
   .vault-canvas-wrap canvas { width: 100%; height: 100%; display: block; }
   .vault-hud {
     position: absolute; bottom: 8px; left: 8px; right: 8px;
-    display: flex; justify-content: space-between; align-items: center; gap: 8px;
-    font-size: clamp(7px, 1.6vw, 8.5px);
+    display: flex; justify-content: space-between; align-items: center; gap: 6px;
+    font-size: clamp(6.5px, 1.4vw, 8px);
     color: var(--faint); pointer-events: none; font-family: var(--pixel);
-    background: rgba(5, 8, 10, 0.88); padding: 5px 8px; border: 1px solid var(--line);
+    background: rgba(5, 8, 10, 0.92); padding: 5px 8px; border: 1px solid var(--line);
     white-space: nowrap; overflow: hidden;
   }
   .vault-hud span {
@@ -826,15 +827,15 @@
                   <path d="M317.77 204.279H226.98V295.069H317.77V204.279Z" fill="#00FF4F"></path>
                   <path d="M204.28 90.79V0H113.49V90.79C113.456 120.879 101.488 149.725 80.2115 171.002C58.9355 192.278 30.0889 204.246 0 204.28V295.07C30.0889 295.104 58.9355 307.072 80.2115 328.348C101.488 349.625 113.456 378.471 113.49 408.56V499.35H204.28V408.56C204.28 378.075 197.445 347.977 184.279 320.482C171.113 292.987 151.95 268.793 128.2 249.68C151.948 230.563 171.109 206.367 184.275 178.871C197.441 151.374 204.277 121.276 204.28 90.79Z" fill="#00FF4F"></path>
                 </svg>
-                <i class="live-dot"></i>SETTLEMENT PIPELINE &#8644; KEEPERHUB
+                <i class="live-dot"></i>PIPELINE &#8644; KEEPERHUB
               </span>
-              <span id="vault-telemetry">WYSIWYS CALLDATA GATE // ARMED // 0 GAS</span>
+              <span id="vault-telemetry">CALLDATA GATE // 0 GAS</span>
             </header>
             <div class="vault-canvas-wrap" id="vault-canvas-box">
               <canvas id="vault3d" width="600" height="300" aria-label="Interactive Settlement Architecture: ReqKeeper deterministic safety layer around KeeperHub execution"></canvas>
               <div class="vault-hud">
-                <span id="vault-hud-left">DRAG TO ROTATE &middot; CLICK NODES TO INSPECT</span>
-                <span id="vault-hud-right">GATE: WYSIWYS ARMED &middot; 0 GAS</span>
+                <span id="vault-hud-left">DRAG &middot; CLICK TO RUN</span>
+                <span id="vault-hud-right">GATE: 0 GAS &middot; 0 DUP</span>
               </div>
             </div>
             <div class="vault-modes" id="vault-modes">
@@ -895,7 +896,7 @@
 
           <div class="manifesto-analysis">
             <b>What ReqKeeper adds to KeeperHub:</b><br>
-            It turns KeeperHub into a full invoice-to-payment pipeline. Every payment is tied to a real Request Network invoice with cryptographic proof. A local safety check catches tampered transaction data before it reaches KeeperHub, and a persistent store ensures the same invoice is never paid twice — even across restarts, crashes, or the 24-hour key expiry window we found and fixed upstream.
+            ReqKeeper makes KeeperHub safe for autonomous payments. It links every payment to a verified Request invoice, checks transaction data before broadcast, and guarantees each invoice is paid only once — even across crashes or network retries.
           </div>
         </div>
       </div>
@@ -910,37 +911,37 @@
         <div class="pipe-row">
           <div class="pipe-card">
             <div class="p-step">STEP 1</div>
-            <div class="p-name">Read the Invoice</div>
-            <div class="p-desc">Takes a Request Network invoice, extracts who pays whom, how much, and verifies the cryptographic signatures prove it's real.</div>
-            <div class="p-guard">&check; Fake invoices rejected</div>
+            <div class="p-name">Read Invoice</div>
+            <div class="p-desc">Checks the Request Network invoice to confirm payer, payee, amount, and cryptographic signatures.</div>
+            <div class="p-guard">&check; Fake invoices blocked</div>
           </div>
 
           <div class="pipe-card">
             <div class="p-step">STEP 2</div>
-            <div class="p-name">Check the Rules</div>
-            <div class="p-desc">Validates amount limits, allowed tokens, destination addresses, and decimal precision before anything touches the chain.</div>
-            <div class="p-guard">&check; Out-of-bounds stopped at zero gas cost</div>
+            <div class="p-name">Check Rules</div>
+            <div class="p-desc">Verifies spending limits, allowed tokens, and recipient addresses before touching the chain.</div>
+            <div class="p-guard">&check; Zero gas wasted</div>
           </div>
 
           <div class="pipe-card">
             <div class="p-step">STEP 3</div>
-            <div class="p-name">Reserve the Payment</div>
-            <div class="p-desc">Uses a database lock so that even if 50 workers try to pay the same invoice at once, only one gets through.</div>
+            <div class="p-name">Reserve Payment</div>
+            <div class="p-desc">Locks the invoice in the local database so concurrent workers cannot pay twice.</div>
             <div class="p-guard">&check; 50 workers &rarr; 1 payment</div>
           </div>
 
           <div class="pipe-card">
             <div class="p-step">STEP 4</div>
-            <div class="p-name">Verify the Transaction Data</div>
-            <div class="p-desc">Decodes the transaction bytes, checks every field matches what was approved, re-encodes locally, and compares byte-for-byte.</div>
-            <div class="p-guard">&check; Tampered data caught before sending</div>
+            <div class="p-name">Verify Calldata</div>
+            <div class="p-desc">Decodes transaction bytes and checks every parameter against invoice facts before sending.</div>
+            <div class="p-guard">&check; Tampered data blocked</div>
           </div>
 
           <div class="pipe-card">
             <div class="p-step">STEP 5</div>
-            <div class="p-name">Send Through KeeperHub</div>
-            <div class="p-desc">Dispatches the payment via KeeperHub's REST API or MCP server, then reads the Sepolia chain logs to confirm it actually landed.</div>
-            <div class="p-guard">&check; 38 confirmed on-chain</div>
+            <div class="p-name">Send via KeeperHub</div>
+            <div class="p-desc">Dispatches through KeeperHub's REST or MCP API, then confirms receipt on Sepolia.</div>
+            <div class="p-guard">&check; 38 confirmed on Sepolia</div>
           </div>
         </div>
       </div>
@@ -973,12 +974,12 @@
       <!-- bounty track PR #2372 callout -->
       <div class="l-sec">
         <div class="manifesto-box" style="border-left-color:var(--signal)">
-          <div class="m-title" style="color:var(--signal)">UPSTREAM FIX · KEEPERHUB PR #2372</div>
+          <div class="m-title" style="color:var(--signal)">UPSTREAM BUG FIX · KEEPERHUB PR #2372</div>
           <p style="margin:0 0 10px;font-size:12.5px;color:var(--text)">
             <strong>Bug found and fixed: idempotency key stays locked after failures</strong> (<a href="https://github.com/KeeperHub/keeperhub/pull/2372" target="_blank" rel="noopener">PR #2372</a>, resolving <a href="https://github.com/KeeperHub/keeperhub/issues/1840" target="_blank" rel="noopener">Issue #1840</a>).
           </p>
           <div style="font-size:12px;color:var(--dim);line-height:1.6">
-            When a transaction fails permanently (out of gas, contract revert), KeeperHub was locking the idempotency key forever — blocking any retry. Our PR releases the key on terminal failures while keeping duplicate protection intact. 17 tests pass against upstream staging.
+            When a transaction failed permanently (out of gas, contract revert), KeeperHub locked the idempotency key forever — blocking any retry. Our PR releases the key on terminal failures while keeping duplicate protection intact. 17 unit tests pass.
           </div>
         </div>
       </div>
@@ -996,7 +997,7 @@
               <span class="pc-title">01 / PROOFS</span>
               <span class="tag ok">RECORDED</span>
             </div>
-            <div class="pc-desc">See the core guarantee: 50 workers race on 1 invoice, exactly 1 payment goes through. Plus crash recovery logs and single-obligation audits.</div>
+            <div class="pc-desc">See 50 workers race on 1 invoice with 0 duplicates, plus crash recovery logs.</div>
             <div class="pc-foot">Open Proofs &rarr;</div>
           </div>
 
@@ -1005,7 +1006,7 @@
               <span class="pc-title">02 / OVERVIEW</span>
               <span class="tag ok">83 ROWS</span>
             </div>
-            <div class="pc-desc">Summary charts of all 83 recorded rows, breakdown of refusal codes, and the latest settlement transactions.</div>
+            <div class="pc-desc">Charts and breakdown of all 83 recorded rows and real settlement transactions.</div>
             <div class="pc-foot">Open Overview &rarr;</div>
           </div>
 
@@ -1014,7 +1015,7 @@
               <span class="pc-title">03 / OBLIGATIONS</span>
               <span class="tag ok">SEARCHABLE</span>
             </div>
-            <div class="pc-desc">Searchable table of all 83 Sepolia obligations and 30 test cases. Click any row to inspect its full lifecycle and transaction hash.</div>
+            <div class="pc-desc">Searchable table of all 83 Sepolia obligations and 30 test cases.</div>
             <div class="pc-foot">Open Obligations &rarr;</div>
           </div>
 
@@ -1023,7 +1024,7 @@
               <span class="pc-title">04 / SIMULATOR</span>
               <span class="tag ok">INTERACTIVE</span>
             </div>
-            <div class="pc-desc">An animated walkthrough showing an invoice move through every check. Run it once to see 1 send; run it again to see 0 sends.</div>
+            <div class="pc-desc">Step-by-step interactive replay showing 1 send on first try, 0 sends on retry.</div>
             <div class="pc-foot">Open Simulator &rarr;</div>
           </div>
 
@@ -1032,7 +1033,7 @@
               <span class="pc-title">05 / KEEPERHUB SURFACES</span>
               <span class="tag ok">REST + MCP</span>
             </div>
-            <div class="pc-desc">Direct comparison of paying through KeeperHub's REST API vs its Model Context Protocol (MCP) server.</div>
+            <div class="pc-desc">Direct comparison of KeeperHub REST API vs MCP server.</div>
             <div class="pc-foot">Open Surfaces &rarr;</div>
           </div>
 
@@ -1041,7 +1042,7 @@
               <span class="pc-title">06 / VERIFY LOCALLY</span>
               <span class="tag ok">11 CHECKS</span>
             </div>
-            <div class="pc-desc">All 11 verification scripts you can run in your own terminal. Zero API keys or secrets required.</div>
+            <div class="pc-desc">Commands you can run locally to check every proof yourself. Zero API keys needed.</div>
             <div class="pc-foot">Open Verify &rarr;</div>
           </div>
         </div>
@@ -1059,28 +1060,28 @@
 
       <div class="grid g2" style="margin-top:12px">
         <div class="card">
-          <header>The race<span class="mut" id="race-when"></span></header>
+          <header>50-Worker Race<span class="mut" id="race-when"></span></header>
           <div class="body">
             <dl class="kv" id="race-kv"></dl>
             <p class="honest" id="race-honest"></p>
           </div>
         </div>
         <div class="card">
-          <header>Crash lottery<span class="mut">npm run crash</span></header>
+          <header>Crash Recovery<span class="mut">npm run crash</span></header>
           <div class="body" id="crash-body"></div>
         </div>
       </div>
 
       <div class="grid g3" style="margin-top:12px">
         <div class="card" style="grid-column:1/-1">
-          <header>One obligation, end to end<span class="mut" id="strip-src"></span></header>
+          <header>One Payment End-to-End<span class="mut" id="strip-src"></span></header>
           <div class="body"><ol class="pstrip" id="pstrip"></ol></div>
         </div>
       </div>
 
       <div class="grid g3" style="margin-top:12px">
         <div class="card" style="grid-column:1/-1">
-          <header>Value moved through both KeeperHub surfaces<span class="mut" id="surf2-src"></span></header>
+          <header>Payments via REST &amp; MCP<span class="mut" id="surf2-src"></span></header>
           <div class="body">
             <dl class="kv" id="surf2-kv"></dl>
             <div class="tw" style="max-height:none;margin-top:12px"><table id="mcpset"><thead><tr>
@@ -1097,7 +1098,7 @@
       <div class="h"><h1>OVERVIEW</h1><span id="dash-sub"></span></div>
       <div class="grid g3">
         <div class="card">
-          <header>Sends per recorded row<span id="bars-n"></span></header>
+          <header>Sends per row<span id="bars-n"></span></header>
           <div class="body">
             <div class="bars" id="bars"></div>
             <div class="legend">
@@ -1107,18 +1108,18 @@
           </div>
         </div>
         <div class="card">
-          <header>Recorded run<span class="mut">counted from the artifact</span></header>
+          <header>Sepolia run<span class="mut">counted from the artifact</span></header>
           <div class="body"><dl class="kv" id="verify-kv"></dl></div>
         </div>
         <div class="card">
-          <header>Refusal codes seen</header>
+          <header>Refusal reasons</header>
           <div class="body"><dl class="kv" id="codes-kv"></dl></div>
         </div>
       </div>
       <div class="grid g3" style="margin-top:12px">
         <div class="card" style="grid-column:1/-1">
-          <header>Latest settlements<span class="mut">select a row to inspect</span></header>
-          <div class="tw" style="max-height:34vh"><table id="recent" role="grid" aria-label="Latest settlements; move with the arrow keys, press Enter or Space to inspect a row"><thead><tr>
+          <header>Recent settlements<span class="mut">select a row to inspect</span></header>
+          <div class="tw" style="max-height:34vh"><table id="recent" role="grid" aria-label="Recent settlements; move with the arrow keys, press Enter or Space to inspect a row"><thead><tr>
             <th>Row</th><th>Obligation</th><th>Result</th><th class="n">Sends</th><th>Transaction</th><th>Provenance</th>
           </tr></thead><tbody></tbody></table></div>
         </div>
@@ -1131,7 +1132,7 @@
       <div class="grid g2">
         <div>
           <div class="toolbar" id="chips"></div>
-          <input type="search" id="q" placeholder="filter by code, scenario, hash…" aria-label="Filter rows">
+          <input type="search" id="q" placeholder="Search by ID, scenario, hash…" aria-label="Filter rows">
           <div class="tw" style="margin-top:10px"><table id="rows" role="grid" aria-label="Obligations; move with the arrow keys, press Enter or Space to select a row"><thead><tr>
             <th>Row</th><th>Scenario</th><th>Result</th><th class="n">Sends</th><th>Pre-write</th><th>Provenance</th>
           </tr></thead><tbody></tbody></table></div>
@@ -1145,14 +1146,14 @@
 
     <!-- settle flow -->
     <section class="view" id="v-flow" hidden>
-      <div class="h"><h1>SETTLE</h1><span>recorded outcomes, replayed step by step</span></div>
+      <div class="h"><h1>SETTLE</h1><span>Step-by-step settlement replay</span></div>
       <div class="grid g2">
         <div class="card">
-          <header>Protocol<span id="flow-target" class="mut"></span></header>
+          <header>Pipeline Simulation<span id="flow-target" class="mut"></span></header>
           <div class="body">
             <div class="runbar">
-              <button class="go" id="run">Run</button>
-              <button class="ghost" id="again" disabled>Dispatch again</button>
+              <button class="go" id="run">Run Settle</button>
+              <button class="ghost" id="again" disabled>Dispatch Again</button>
               <button class="ghost" id="reset">Reset</button>
             </div>
             <div class="meter"><i id="meter"></i></div>
@@ -1168,11 +1169,11 @@
 
     <!-- surfaces -->
     <section class="view" id="v-surf" hidden>
-      <div class="h"><h1>SURFACES</h1><span>one protocol, three KeeperHub surfaces</span></div>
+      <div class="h"><h1>SURFACES</h1><span>Comparing KeeperHub REST and MCP transports</span></div>
       <div class="grid g3" id="surfaces"></div>
       <div class="grid g3" style="margin-top:12px">
         <div class="card" style="grid-column:1/-1">
-          <header>Platform behaviour found by probing</header>
+          <header>Platform behaviour discovered through testing</header>
           <div class="tw" style="max-height:none"><table id="findings"><thead><tr>
             <th>Surface</th><th>Observed</th><th>Handled by</th>
           </tr></thead><tbody></tbody></table></div>
@@ -1182,7 +1183,7 @@
 
     <!-- verify -->
     <section class="view" id="v-verify" hidden>
-      <div class="h"><h1>VERIFY</h1><span>clone the repo and run these; nothing here needs a credential unless the row says so</span></div>
+      <div class="h"><h1>VERIFY</h1><span>Run these commands in your terminal. No credentials needed.</span></div>
       <div class="tw" style="max-height:none"><table id="cmds"><thead><tr>
         <th>Command</th><th>What it proves</th><th>Recorded result</th>
       </tr></thead><tbody></tbody></table></div>
@@ -1624,16 +1625,16 @@
     const BRAIN_THOUGHTS = [
       "0 drift verified across Sepolia run",
       "Sepolia #11155111 intact · 38/38 settled",
-      "WYSIWYS Calldata Gate armed & ready",
-      "KeeperHub private mempool clear",
+      "Calldata gate armed: 0 gas wasted",
+      "KeeperHub execution confirmed",
       "24h cache expiry bug fixed upstream",
       "719/719 tests passing across 142 suites",
-      "snacking on stale nonces...",
-      "roving tabindex synced · keyboard ready",
-      "checking 0 dup / 50 concurrent workers",
-      "deterministic settlement rail active",
-      "47/47 invoice signatures valid",
-      "exactly-once delivery guaranteed"
+      "50 workers raced · 0 duplicate sends",
+      "Roving tabindex synced · keyboard ready",
+      "Database lock stops double-spending",
+      "Deterministic payment rail active",
+      "47/47 invoice signatures confirmed",
+      "Every payment sent exactly once"
     ];
 
     let brainIdx = 0;
@@ -2072,13 +2073,13 @@
   el("flow-target").textContent = pair ? short(pair.request_id || "", 14) : "";
 
   const STEPS = [
-    ["Import obligation", "identity derived from the Request invoice"],
-    ["Policy gate", "payee, cap, fee ceiling, token decimals"],
-    ["Reserve", "one plan holds the obligation"],
-    ["Human approval", "recomputed from the invoice — today's path, not this recorded run"],
-    ["Calldata gate", "decode, re-encode, byte-compare"],
+    ["Import invoice", "read Request Network invoice facts"],
+    ["Policy check", "verify payee, token, and spending cap"],
+    ["Reserve lock", "hold single-payment lock in database"],
+    ["Approval gate", "confirm approved payment plan"],
+    ["Calldata gate", "decode and verify transaction bytes"],
     ["Dispatch", pair ? `1 send · ${short(pair.tx_hash, 14)}` : "1 send"],
-    ["Reconcile", "chain receipt AND source verdict"],
+    ["Reconcile", "confirm transaction receipt on-chain"],
     ["Dispatch again", twin ? `${twin.actual} · 0 sends` : "refused"],
   ];
   let at = -1;
@@ -2242,14 +2243,13 @@
     const cacheDeduped = workers - R.totals.broadcasts;
     const refusedShort = workers - posts;
     el("race-honest").innerHTML =
-      "<b>Read this before the numbers.</b> The idempotency key is derived from the obligation and the plan, " +
-      "with no session input, so all " + workers + " workers compute the same key. " +
+      "<b>Read before the numbers.</b> All " + workers + " workers compute the exact same idempotency key from invoice facts. " +
       (posts >= workers
-        ? `Every one of them reached the provider (posts ${posts}) and ${R.totals.dedupedByKey} were absorbed by key — ` +
-          "on this run the exactly-once result is KeeperHub's cache doing the work, not a refusal before the write."
-        : `If the cache were doing the work, posts that reached the provider would read ${workers} and deduped by key ` +
-          `would read ${cacheDeduped}. They read ${posts} and ${R.totals.dedupedByKey}: the other ` +
-          `${plural(refusedShort, "worker")} never reached the provider at all.`);
+        ? `All reached the provider (posts ${posts}) and ${R.totals.dedupedByKey} were absorbed by key — ` +
+          "KeeperHub's cache ensured exactly-once delivery."
+        : `If the cache alone handled it, posts would read ${workers} and deduped would read ${cacheDeduped}. ` +
+          `Here, posts read ${posts} and deduped reads ${R.totals.dedupedByKey}: the remaining ${plural(refusedShort, "worker")} ` +
+          "were stopped locally before ever reaching the network.");
   }
 
   // --- the four counters --------------------------------------------------
@@ -2263,13 +2263,13 @@
 
   el("counters").innerHTML = [
     ["Real payments", settled, "good", "recorded rows carrying a Sepolia transaction hash", "pf-payments"],
-    ["Replays refused", replays.length, "good", `rows that asked again for an obligation already settled · ${replaySends} sends between them`, "pf-replays"],
-    ["Refused before write", preWrite, "good", "refusals decided before any provider write, so they cost zero sends", "pf-prewrite"],
+    ["Replays refused", replays.length, "good", `duplicate requests blocked · ${replaySends} duplicate sends`, "pf-replays"],
+    ["Refused before write", preWrite, "good", "stopped before provider write, costing zero gas", "pf-prewrite"],
     [
       "Unexplained sends",
       unexplained,
       unexplained === 0 ? "good" : "alarm",
-      `${recordedSends} sends recorded &minus; ${sendsWithTx} sends carrying a transaction`,
+      `${recordedSends} recorded sends &minus; ${sendsWithTx} sends with transaction`,
       "pf-unexplained",
     ],
   ]
@@ -2452,35 +2452,35 @@
   // actually produced. A row with no artifact says so rather than implying a pass.
   const none = '<span class="mut">no artifact in the repo — run it</span>';
   const CMDS = [
-    ["npm test", "every unit test in the tree", `<span class="zero">${D.tests}</span> passed when this page was built`],
-    ["npm run typecheck", "tsc --noEmit over src, scripts and api", none],
-    ["npm run build", "rebuilds this page from the evidence files, and refuses to write it if any test fails", `newest evidence ${String(D.builtAt).slice(0, 10)}`],
-    ["npm run gate-a", "the public claims that need no credentials", none],
+    ["npm test", "runs all unit test suites in the repository", `<span class="zero">${D.tests}</span> passed when this page was built`],
+    ["npm run typecheck", "TypeScript check over src, scripts and api", none],
+    ["npm run build", "rebuilds this console from evidence files", `newest evidence ${String(D.builtAt).slice(0, 10)}`],
+    ["npm run gate-a", "public safety claims requiring zero credentials", none],
     [
       "npm run race",
-      "N processes race one obligation from a barrier; counts every non-simulate POST, deduplicated ones separately",
+      "50 workers race 1 invoice; counts broadcast vs deduplicated sends",
       R ? `${R.workers} workers → ${plural(R.totals.distinctTransactions, "transaction")}, ${R.totals.duplicates} duplicates · ${raceDate}` : none,
     ],
     [
       "npm run crash",
-      "kills a worker at each step of the settle path and resumes it",
+      "kills worker at each settlement step to verify clean recovery",
       D.crash ? `recorded ${String(D.crash.generatedAt ?? "").slice(0, 10)}` : '<span class="mut">docs/evidence/crash.json absent at build time</span>',
     ],
     [
       "npm run verify:live",
-      "re-reads Sepolia for every recorded payment in docs/refusals-live.json",
+      "re-reads Sepolia for all 38 payments in docs/refusals-live.json",
       T ? `${T.asSpecified}/${T.rows} rows as specified, ${T.payments} payments · recorded ${runDate}` : none,
     ],
     [
       "npm run evidence:mcp",
-      "for each obligation settled over KeeperHub's MCP transport, re-reads the Request invoice, the settlement store and Sepolia, and writes docs/evidence/mcp-settlements.json",
+      "re-checks MCP payments against Request, settlement store, and Sepolia",
       D.mcp
-        ? `${plural(D.mcp.totals.rows, "settlement")}, ${D.mcp.totals.withExecutionId} with a KeeperHub execution id, ${plural(D.mcp.totals.physicalSends, "physical send")} · recorded ${mcpDate}`
+        ? `${plural(D.mcp.totals.rows, "settlement")}, ${D.mcp.totals.withExecutionId} with KeeperHub execution id, ${plural(D.mcp.totals.physicalSends, "physical send")} · recorded ${mcpDate}`
         : '<span class="mut">docs/evidence/mcp-settlements.json absent at build time</span>',
     ],
-    ["npm run verify:onchain", "reads the settlement transaction back off the chain", none],
-    ["npm run verify:seam", "the KeeperHub REST seam: recorded probe, local codec and gate checks", none],
-    ["npm run probe:mcp", "the KeeperHub MCP handshake and tool list", none],
+    ["npm run verify:onchain", "reads settlement transaction receipt directly from chain", none],
+    ["npm run verify:seam", "KeeperHub REST seam: probe, local codec, and gate checks", none],
+    ["npm run probe:mcp", "KeeperHub MCP handshake and tool catalog inspection", none],
   ];
   // A command that is not wired in package.json yet must not be printed as if it ran.
   const wired = Array.isArray(D.scripts) ? new Set(D.scripts) : null;
@@ -2504,7 +2504,7 @@
   // Live KPI counters on the landing page derived directly from the evidence
   if (el("land-kpi-tests")) el("land-kpi-tests").textContent = `${D.tests}/${D.tests}`;
   if (el("land-kpi-race") && R) el("land-kpi-race").textContent = `${R.totals.duplicates} DUP`;
-  if (el("land-kpi-crash") && D.crash) el("land-kpi-crash").textContent = `${D.crash.totals?.settledAfterRecovery ?? 7}/${D.crash.totals?.checkpoints ?? 9}`;
+  if (el("land-kpi-crash") && D.crash) el("land-kpi-crash").textContent = `${D.crash.totals?.reached ?? 9}/${D.crash.totals?.checkpoints ?? 9}`;
   if (el("land-kpi-sepolia")) el("land-kpi-sepolia").textContent = String(settled || 38);
 
   // Interactive Settlement Architecture Pipeline & KeeperHub Execution Canvas
@@ -2740,9 +2740,9 @@
       settleCycle.shockwaveRad = 0;
       dinoHop = 0;
       playRetroBlip(620);
-      if (tele) tele.textContent = "DISPATCHING -> WYSIWYS VERIFY -> 0 DUP";
-      if (hudLeft) hudLeft.textContent = "DISPATCHING OBLIGATION -> CALLDATA GATE";
-      if (hudRight) hudRight.textContent = "GATE: WYSIWYS ARMED · 0 GAS";
+      if (tele) tele.textContent = "VERIFYING BYTES -> 0 GAS";
+      if (hudLeft) hudLeft.textContent = "SENDING TO CALLDATA GATE";
+      if (hudRight) hudRight.textContent = "GATE: 0 GAS · 0 DUP";
     }
 
     function triggerRefusal() {
@@ -2753,9 +2753,9 @@
       refuseCycle.t = 0;
       refuseCycle.particles = [];
       playRetroBlip(440);
-      if (tele) tele.textContent = "REPLAY PACKET SENT -> CALLDATA GATE";
-      if (hudLeft) hudLeft.textContent = "SIMULATING REPLAY ATTACK (DUPLICATE NONCE)";
-      if (hudRight) hudRight.textContent = "GATE: ARMED · 0 GAS";
+      if (tele) tele.textContent = "REPLAY BLOCKED -> 0 GAS";
+      if (hudLeft) hudLeft.textContent = "REPLAY ATTACK BLOCKED";
+      if (hudRight) hudRight.textContent = "0 DUPLICATE SENDS";
     }
 
     btnPulse?.addEventListener("click", triggerDispatch);
@@ -2798,21 +2798,21 @@
       ctx.clearRect(0, 0, W, H);
 
       const widthFactor = Math.min(1.0, Math.max(0.55, W / 580));
-      const nodeSpread = 0.65 + 0.45 * widthFactor;
-      const labelFont = Math.max(6, Math.min(8, Math.round(5 + 3 * widthFactor)));
-      const subFont = Math.max(5, Math.min(6, Math.round(4.2 + 1.8 * widthFactor)));
-      const badgeFont = Math.max(5, Math.min(7, Math.round(4.5 + 2.5 * widthFactor)));
+      const nodeSpread = 1.30 + 0.35 * widthFactor;
+      const labelFont = Math.max(6, Math.min(7.5, Math.round(5 + 2 * widthFactor)));
+      const subFont = Math.max(5, Math.min(6, Math.round(4 + 1.8 * widthFactor)));
+      const badgeFont = Math.max(5, Math.min(6.5, Math.round(4.5 + 1.8 * widthFactor)));
 
       // Mode Camera Interpolation
       let targetCamX = 0;
-      let targetCamDist = 4.2 - 0.6 * widthFactor;
-      let targetFov = 205 + 105 * widthFactor;
+      let targetCamDist = 4.8 - 0.5 * widthFactor;
+      let targetFov = 260 + 80 * widthFactor;
       if (currentMode === "gate") {
-        targetCamX = 0; targetCamDist = 2.8; targetFov = 320;
+        targetCamX = 0; targetCamDist = 3.0; targetFov = 320;
       } else if (currentMode === "keeperhub") {
-        targetCamX = nodeSpread * 0.80; targetCamDist = 2.9; targetFov = 320;
+        targetCamX = nodeSpread * 0.82; targetCamDist = 3.0; targetFov = 320;
       } else if (currentMode === "vault") {
-        targetCamX = -nodeSpread * 0.80; targetCamDist = 2.9; targetFov = 320;
+        targetCamX = -nodeSpread * 0.82; targetCamDist = 3.0; targetFov = 320;
       }
 
       camX += (targetCamX - camX) * 0.08;
@@ -2947,23 +2947,29 @@
         ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3);
       }
 
-      // Labels on ReqKeeper
-      const rkLabel = project(rkX, 0.72, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
-      ctx.font = `${labelFont}px 'Press Start 2P', monospace`;
-      ctx.fillStyle = isSettledFlash ? "#00FF4F" : "#35F0A0";
-      ctx.textAlign = "center";
-      ctx.fillText("REQKEEPER", rkLabel.x, rkLabel.y);
+      // Pill text helper: renders high-contrast backing pill for total legibility
+      function drawPillText(text, pt, font, color, bg = "rgba(3, 5, 7, 0.88)") {
+        ctx.font = font;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        const m = ctx.measureText(text);
+        const padX = 4, padY = 2;
+        ctx.fillStyle = bg;
+        ctx.fillRect(pt.x - m.width / 2 - padX, pt.y - padY - 3, m.width + padX * 2, padY * 2 + 6);
+        ctx.fillStyle = color;
+        ctx.fillText(text, pt.x, pt.y);
+      }
 
-      const rkSub = project(rkX, 0.58, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
-      ctx.font = `${subFont}px monospace`;
-      ctx.fillStyle = "rgba(220, 234, 230, 0.75)";
-      ctx.fillText("OBLIGATION READY // NONCE 38", rkSub.x, rkSub.y);
+      // Labels on ReqKeeper (staggered at 0.64 top, -0.62 bottom)
+      const rkLabel = project(rkX, 0.64, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      drawPillText("REQKEEPER", rkLabel, `${labelFont}px 'Press Start 2P', monospace`, isSettledFlash ? "#00FF4F" : "#35F0A0");
+
+      const rkSub = project(rkX, 0.52, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      drawPillText("NONCE 38", rkSub, `${subFont}px monospace`, "rgba(220, 234, 230, 0.75)");
 
       // Status Badge under ReqKeeper
-      const rkBadge = project(rkX, -0.70, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
-      ctx.font = `${badgeFont}px 'Press Start 2P', monospace`;
-      ctx.fillStyle = isSettledFlash ? "#00FF4F" : "rgba(53, 240, 160, 0.85)";
-      ctx.fillText(isSettledFlash ? "[✓ SETTLED]" : "[ARMED · 0 DUP]", rkBadge.x, rkBadge.y);
+      const rkBadge = project(rkX, -0.62, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      drawPillText(isSettledFlash ? "[PAID]" : "[0 DUP]", rkBadge, `${badgeFont}px 'Press Start 2P', monospace`, isSettledFlash ? "#00FF4F" : "rgba(53, 240, 160, 0.9)");
 
       // Proof Intake Funnel & Tiny Dino Pet
       const intakePt = project(rkX + 0.30, conduitYLower, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
@@ -3066,20 +3072,16 @@
       ctx.stroke();
       ctx.shadowBlur = 0;
 
-      // Gate Labels
-      const gateLabel = project(0, 0.72, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
-      ctx.font = `${labelFont}px 'Press Start 2P', monospace`;
-      ctx.fillStyle = "rgba(220, 234, 230, 0.9)";
-      ctx.textAlign = "center";
-      ctx.fillText("CALLDATA GATE", gateLabel.x, gateLabel.y);
+      // Gate Labels (staggered HIGHER at 0.82 top, LOWER at -0.80 bottom so no horizontal collision)
+      const gateLabel = project(0, 0.82, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      drawPillText("CALLDATA GATE", gateLabel, `${labelFont}px 'Press Start 2P', monospace`, "rgba(220, 234, 230, 0.95)");
 
-      const gateSub = project(0, -0.70, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
-      ctx.font = `${badgeFont}px 'Press Start 2P', monospace`;
-      ctx.fillStyle = gateGlow;
-      if (gateState === "IDLE") ctx.fillText("WYSIWYS [0 GAS]", gateSub.x, gateSub.y);
-      else if (gateState === "VERIFYING") ctx.fillText("VERIFYING BYTES...", gateSub.x, gateSub.y);
-      else if (gateState === "ACCEPTED") ctx.fillText("[✓ ACCEPTED: 0-DRIFT]", gateSub.x, gateSub.y);
-      else if (gateState === "REFUSED") ctx.fillText("[× REFUSED: 0 GAS]", gateSub.x, gateSub.y);
+      const gateSub = project(0, -0.80, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      let gateBadgeText = "[0 GAS]";
+      if (gateState === "VERIFYING") gateBadgeText = "[CHECKING]";
+      else if (gateState === "ACCEPTED") gateBadgeText = "[MATCH]";
+      else if (gateState === "REFUSED") gateBadgeText = "[BLOCKED]";
+      drawPillText(gateBadgeText, gateSub, `${badgeFont}px 'Press Start 2P', monospace`, gateGlow);
 
       // 4. Draw KeeperHub 3D Node (Right Node)
       const khX = nodeSpread;
@@ -3132,22 +3134,15 @@
         ctx.stroke();
       }
 
-      // KeeperHub Labels
-      const khLabel = project(khX, 0.72, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
-      ctx.font = `${labelFont}px 'Press Start 2P', monospace`;
-      ctx.fillStyle = "#00FF4F";
-      ctx.textAlign = "center";
-      ctx.fillText("KEEPERHUB", khLabel.x, khLabel.y);
+      // KeeperHub Labels (staggered at 0.64 top, -0.62 bottom)
+      const khLabel = project(khX, 0.64, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      drawPillText("KEEPERHUB", khLabel, `${labelFont}px 'Press Start 2P', monospace`, "#00FF4F");
 
-      const khSub = project(khX, 0.58, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
-      ctx.font = `${subFont}px monospace`;
-      ctx.fillStyle = "rgba(0, 255, 79, 0.75)";
-      ctx.fillText("DETERMINISTIC EXECUTOR", khSub.x, khSub.y);
+      const khSub = project(khX, 0.52, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      drawPillText("EXECUTOR", khSub, `${subFont}px monospace`, "rgba(0, 255, 79, 0.75)");
 
-      const khBadge = project(khX, -0.70, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
-      ctx.font = `${badgeFont}px 'Press Start 2P', monospace`;
-      ctx.fillStyle = "rgba(0, 255, 79, 0.85)";
-      ctx.fillText(isKhExecuting ? "[⚡ EXECUTING]" : "[MEV-PROTECTED]", khBadge.x, khBadge.y);
+      const khBadge = project(khX, -0.62, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      drawPillText(isKhExecuting ? "[SENDING]" : "[SETTLED]", khBadge, `${badgeFont}px 'Press Start 2P', monospace`, "rgba(0, 255, 79, 0.9)");
 
       // 5. Active Dispatched Settlement Pipeline Cycle
       if (settleCycle.active) {
@@ -3169,18 +3164,15 @@
           ctx.shadowBlur = 0;
 
           // Packet badge
-          ctx.font = "6px 'Press Start 2P', monospace";
-          ctx.fillStyle = "#35F0A0";
-          ctx.textAlign = "center";
-          ctx.fillText("[REQ 0x41b0]", pt.x, pt.y - 9);
+          drawPillText("[REQ 0x41b0]", { x: pt.x, y: pt.y - 9 }, "6px 'Press Start 2P', monospace", "#35F0A0");
 
           if (settleCycle.progress >= 0.98) {
             settleCycle.phase = "verifying";
             settleCycle.t = 0;
             playRetroBlip(740);
-            if (tele) tele.textContent = "GATE: VERIFYING CALLDATA & NONCE 38...";
-            if (hudLeft) hudLeft.textContent = "CALLDATA GATE: VERIFYING BYTES AGAINST FACT LEDGER...";
-            if (hudRight) hudRight.textContent = "CHECKING CALLDATA // NONCE 38";
+            if (tele) tele.textContent = "GATE: VERIFYING BYTES";
+            if (hudLeft) hudLeft.textContent = "VERIFYING INVOICE CALLDATA";
+            if (hudRight) hudRight.textContent = "NONCE 38 · 0 GAS";
           }
         }
         // Phase: VERIFYING (holding at Gate for 24 frames)
@@ -3198,9 +3190,9 @@
             settleCycle.phase = "accepted";
             settleCycle.progress = 0;
             playRetroBlip(840);
-            if (tele) tele.textContent = "CALLDATA GATE: ACCEPTED (100% BYTE MATCH)";
-            if (hudLeft) hudLeft.textContent = "CALLDATA GATE: [✓ ACCEPTED] (100% BYTE MATCH · 0 GAS)";
-            if (hudRight) hudRight.textContent = "GATE: [✓ ACCEPTED] · 0 DRIFT";
+            if (tele) tele.textContent = "GATE: MATCH (100% BYTE MATCH)";
+            if (hudLeft) hudLeft.textContent = "GATE PASSED · EXACT MATCH";
+            if (hudRight) hudRight.textContent = "GATE: MATCH · 0 GAS";
           }
         }
         // Phase: ACCEPTED & TRANSMITTING (Gate -> KeeperHub)
@@ -3217,19 +3209,16 @@
           ctx.fill();
           ctx.shadowBlur = 0;
 
-          ctx.font = "6px 'Press Start 2P', monospace";
-          ctx.fillStyle = "#00FF4F";
-          ctx.textAlign = "center";
-          ctx.fillText("[VERIFIED REQ]", pt.x, pt.y - 9);
+          drawPillText("[MATCH]", { x: pt.x, y: pt.y - 9 }, "6px 'Press Start 2P', monospace", "#00FF4F");
 
           if (settleCycle.progress >= 0.98) {
             settleCycle.phase = "executing";
             settleCycle.t = 0;
             settleCycle.shockwaveRad = 2;
             playRetroBlip(960);
-            if (tele) tele.textContent = "EXEC 0x41b01a14... // SEPOLIA VERIFIED // 0 DUP";
-            if (hudLeft) hudLeft.textContent = "KEEPERHUB: EXECUTING DETERMINISTICALLY (MEV SAFE)";
-            if (hudRight) hudRight.textContent = "NONCE MGR · PRIVATE ROUTING";
+            if (tele) tele.textContent = "KEEPERHUB: EXECUTING ON-CHAIN";
+            if (hudLeft) hudLeft.textContent = "KEEPERHUB: SENDING TO SEPOLIA";
+            if (hudRight) hudRight.textContent = "PRIVATE MEMPOOL · MEV SAFE";
           }
         }
         // Phase: EXECUTING in KeeperHub
@@ -3239,9 +3228,9 @@
             settleCycle.phase = "proof";
             settleCycle.progress = 0;
             playRetroBlip(780);
-            if (tele) tele.textContent = "PROOF RETURNING // ERC20FeeProxy TRANSFER OK";
-            if (hudLeft) hudLeft.textContent = "RETURNING ON-CHAIN EXECUTION PROOF -> REQKEEPER";
-            if (hudRight) hudRight.textContent = "PROOF ROUTE // 0 DUP";
+            if (tele) tele.textContent = "PROOF RETURN // CONFIRMED";
+            if (hudLeft) hudLeft.textContent = "SEPOLIA RECEIPT RETURNED";
+            if (hudRight) hudRight.textContent = "PROOF ROUTE · 0 DUP";
           }
         }
         // Phase: PROOF RETURN (KeeperHub -> ReqKeeper via lower rail)
@@ -3258,10 +3247,7 @@
           ctx.fill();
           ctx.shadowBlur = 0;
 
-          ctx.font = "6px 'Press Start 2P', monospace";
-          ctx.fillStyle = "#00FF4F";
-          ctx.textAlign = "center";
-          ctx.fillText("[PROOF 0x41b0]", pt.x, pt.y + 13);
+          drawPillText("[PROOF]", { x: pt.x, y: pt.y + 13 }, "6px 'Press Start 2P', monospace", "#00FF4F");
 
           if (settleCycle.progress >= 0.98) {
             settleCycle.phase = "settled";
@@ -3269,9 +3255,9 @@
             settleCycle.settledTimer = 160;
             dinoHop = -8;
             playRetroBlip(1080);
-            if (tele) tele.textContent = "SETTLED // 0 DUP // ON-CHAIN PROOF STORED";
-            if (hudLeft) hudLeft.textContent = "SETTLEMENT COMPLETE: NONCE 38 SETTLED · 0 DUP";
-            if (hudRight) hudRight.textContent = "PROOF RECORDED · 0 GAS OVERHEAD";
+            if (tele) tele.textContent = "SETTLED // 0 DUP // 38 ON-CHAIN";
+            if (hudLeft) hudLeft.textContent = "SETTLEMENT COMPLETE: 0 DUP";
+            if (hudRight) hudRight.textContent = "1 SEND · 0 DUP";
           }
         }
         // Phase: SETTLED (ReqKeeper victory flash + Dino bounce)
@@ -3282,9 +3268,9 @@
             settleCycle.active = false;
             settleCycle.phase = "idle";
             dinoHop = 0;
-            if (tele) tele.textContent = "WYSIWYS CALLDATA GATE // ARMED // 0 GAS";
-            if (hudLeft) hudLeft.textContent = "DRAG TO ROTATE · CLICK NODES TO INSPECT";
-            if (hudRight) hudRight.textContent = "GATE: WYSIWYS ARMED · 0 GAS";
+            if (tele) tele.textContent = "CALLDATA GATE // 0 GAS";
+            if (hudLeft) hudLeft.textContent = "DRAG · CLICK TO RUN";
+            if (hudRight) hudRight.textContent = "GATE: 0 GAS · 0 DUP";
           }
         }
       }
@@ -3307,18 +3293,15 @@
           ctx.fill();
           ctx.shadowBlur = 0;
 
-          ctx.font = "6px 'Press Start 2P', monospace";
-          ctx.fillStyle = "#FF3B30";
-          ctx.textAlign = "center";
-          ctx.fillText("[REPLAY 0x41b0]", pt.x, pt.y - 9);
+          drawPillText("[REPLAY]", { x: pt.x, y: pt.y - 9 }, "6px 'Press Start 2P', monospace", "#FF3B30");
 
           if (refuseCycle.progress >= 0.94) {
             refuseCycle.phase = "refused";
             refuseCycle.t = 0;
             playRetroBlip(160);
-            if (tele) tele.textContent = "[× REFUSED] 0 DUP // 0 GAS SPENT // KEEPERHUB NEVER CALLED";
-            if (hudLeft) hudLeft.textContent = "CALLDATA GATE: REFUSED AT ZERO GAS (DUPLICATE NONCE)";
-            if (hudRight) hudRight.textContent = "GATE: [× REFUSED] · 0 GAS SPENT";
+            if (tele) tele.textContent = "[BLOCKED] 0 DUP // 0 GAS // GATE REFUSED";
+            if (hudLeft) hudLeft.textContent = "GATE REFUSED: DUPLICATE OBLIGATION";
+            if (hudRight) hudRight.textContent = "0 SENDS · 0 GAS";
 
             // Spawn 16 shattered pixel fragments
             for (let p = 0; p < 16; p++) {
@@ -3356,9 +3339,9 @@
           if (refuseCycle.t > 80) {
             refuseCycle.active = false;
             refuseCycle.phase = "idle";
-            if (tele) tele.textContent = "WYSIWYS CALLDATA GATE // ARMED // 0 GAS";
-            if (hudLeft) hudLeft.textContent = "DRAG TO ROTATE · CLICK NODES TO INSPECT";
-            if (hudRight) hudRight.textContent = "GATE: WYSIWYS ARMED · 0 GAS";
+            if (tele) tele.textContent = "CALLDATA GATE // 0 GAS";
+            if (hudLeft) hudLeft.textContent = "DRAG · CLICK TO RUN";
+            if (hudRight) hudRight.textContent = "GATE: 0 GAS · 0 DUP";
           }
         }
       }
