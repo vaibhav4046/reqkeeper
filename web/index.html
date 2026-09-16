@@ -243,6 +243,9 @@
   .stat.stat-crystallized {
     animation: statFlash 0.55s ease-out;
   }
+  .stat.stat-verified {
+    border-bottom: 2px solid rgba(53, 240, 160, 0.45);
+  }
   @keyframes statFlash {
     0% { background: rgba(0, 255, 79, 0.24); box-shadow: inset 0 0 24px rgba(0, 255, 79, 0.45); }
     100% { background: transparent; box-shadow: none; }
@@ -605,15 +608,20 @@
 
   /* Dino Pet Companion Card */
   .dino-pet-card {
-    margin: 10px 8px 4px; padding: 8px 9px 7px;
+    margin: 10px 0 0; padding: 9px 10px 8px;
     background: #030608; border: 1px solid var(--line-2);
     border-left: 2px solid var(--signal);
     position: relative; box-shadow: 0 2px 12px rgba(0,0,0,0.5);
     user-select: none; box-sizing: border-box; min-width: 0; max-width: 100%;
+    cursor: pointer;
+  }
+  .dino-pet-card:hover {
+    border-color: rgba(53, 240, 160, 0.45);
+    box-shadow: 0 0 10px rgba(53, 240, 160, 0.15);
   }
   .dino-pet-card .d-top {
     display: flex; justify-content: space-between; align-items: center;
-    font-family: var(--pixel); font-size: 7px; color: var(--faint);
+    font-family: var(--pixel); font-size: 6.5px; color: var(--faint);
     margin-bottom: 6px; letter-spacing: .04em; gap: 4px;
   }
   .dino-pet-card .d-top .d-name {
@@ -720,8 +728,19 @@
 
   /* Console Portal Bridges */
   .portal-grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 12px; margin-top: 14px;
+  }
+  @media (max-width: 960px) {
+    .portal-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 580px) {
+    .portal-grid {
+      grid-template-columns: 1fr;
+    }
   }
   .portal-card {
     background: var(--panel); border: 1px solid var(--line); padding: 16px;
@@ -741,6 +760,17 @@
     .vault-canvas-wrap { height: 230px; }
   }
   @media (max-width: 480px) {
+    .vault-box header {
+      flex-wrap: wrap;
+      gap: 4px;
+    }
+    .vault-box header > span:first-child {
+      flex: 1 1 100%;
+    }
+    .vault-box header #vault-telemetry {
+      flex: 1 1 100%;
+      text-align: left;
+    }
     .vmode-btn { font-size: 6.5px; padding: 3px 5px; }
     .vmode-btn.pulse-trigger { margin-left: 0; }
     .landing-hero { padding: 20px 14px 24px; }
@@ -1468,7 +1498,7 @@
     strip.innerHTML = `
       <canvas id="strip-fx-canvas" class="strip-fx-canvas"></canvas>
       <div id="strip-pet" class="strip-pet" role="button" tabindex="0" aria-label="ReqKeeper Metric Worker Dino" title="ReqKeeper Metric Sentinel (Click to patrol)"><img id="strip-pet-img" src="${DINO_SPRITE}" alt="Dino Pet Worker" /></div>
-      ${metricsData.map(([k, v, c], idx) => `<div class="stat" data-idx="${idx}"><div class="k">${still ? k : ""}</div><div class="v ${c}">${still ? v : ""}</div></div>`).join("")}
+      ${metricsData.map(([k, v, c], idx) => `<div class="stat" data-idx="${idx}"><div class="k">${k}</div><div class="v ${c}">${v}</div></div>`).join("")}
       <div class="strip-pet-dock" id="pet-dock" role="button" tabindex="0" title="Dino Pet Sentinel: Click to patrol numbers">
         <div class="dino-brain-wrap">
           <div class="dino-thought-bubble" id="dino-thought">INITIALIZING...</div>
@@ -1698,61 +1728,43 @@
         const targetX = Math.max(0, statEl.offsetLeft - 4);
 
         // Smooth glide to metric section
-        await glidePet(targetX, 360);
+        await glidePet(targetX, 320);
 
         // Section activates with glowing aura
         statEl.classList.add("stat-active");
         pet.className = "strip-pet pet-writing";
         emitWandCast(targetX + 32, 22, 6);
 
-        // Write label with glowing chalk and magical star particles
+        // Energize label with glowing chalk and magical star particles
         const kEl = statEl.querySelector(".k");
-        kEl.textContent = "";
         kEl.classList.add("chalk-write");
-
-        for (let c = 0; c < label.length; c++) {
-          kEl.textContent = label.slice(0, c + 1);
-          if (c % 2 === 0) {
-            const rect = kEl.getBoundingClientRect();
-            const sRect = strip.getBoundingClientRect();
-            const charX = rect.left - sRect.left + (c * 6.5);
-            addParticle(charX, rect.top - sRect.top + 8, "#35F0A0", (Math.random() - 0.5) * 0.8, -0.6, 3.2, "star");
-            playRetroBlip(520 + (c % 5) * 40);
-          }
-          await new Promise((r) => setTimeout(r, 32));
-        }
+        const kRect = kEl.getBoundingClientRect();
+        const sRect = strip.getBoundingClientRect();
+        const kMidX = kRect.left - sRect.left + (kRect.width / 2);
+        addParticle(kMidX, kRect.top - sRect.top + 8, "#35F0A0", (Math.random() - 0.5) * 0.6, -0.7, 3.4, "star");
+        playRetroBlip(520 + (i % 4) * 45);
+        await new Promise((r) => setTimeout(r, 140));
         kEl.classList.remove("chalk-write");
 
-        // Stardust wave from label to value
+        // Stardust wand sweep to value
         emitWandCast(targetX + 36, 26, 5);
-        await new Promise((r) => setTimeout(r, 80));
+        await new Promise((r) => setTimeout(r, 60));
 
-        // Write value with cyber digit summon and emerald snap
+        // Energize value with cyber shimmer and emerald burst
         const vEl = statEl.querySelector(".v");
-        const valStr = String(val);
-        vEl.textContent = "";
         vEl.classList.add("chalk-write");
-
-        for (let c = 0; c < valStr.length; c++) {
-          // Cyber glitch flicker
-          vEl.textContent = valStr.slice(0, c) + Math.floor(Math.random() * 10);
-          await new Promise((r) => setTimeout(r, 26));
-
-          // Lock in verified digit
-          vEl.textContent = valStr.slice(0, c + 1);
-          const rect = vEl.getBoundingClientRect();
-          const sRect = strip.getBoundingClientRect();
-          const digitX = rect.left - sRect.left + (c * 9);
-          emitWandCast(digitX + 4, rect.top - sRect.top + 8, 4);
-          playRetroBlip(700 + c * 50);
-          await new Promise((r) => setTimeout(r, 55));
-        }
-
-        // Card locks in and crystallizes
+        const vRect = vEl.getBoundingClientRect();
+        const vMidX = vRect.left - sRect.left + (vRect.width / 2);
+        emitWandCast(vMidX, vRect.top - sRect.top + 8, 6);
+        playRetroBlip(720 + (i % 4) * 50);
+        await new Promise((r) => setTimeout(r, 180));
         vEl.classList.remove("chalk-write");
+
+        // Card locks in, crystallizes, and marks as verified
         statEl.classList.remove("stat-active");
         statEl.classList.add("stat-crystallized");
-        await new Promise((r) => setTimeout(r, 90));
+        statEl.classList.add("stat-verified");
+        await new Promise((r) => setTimeout(r, 80));
       }
 
       // Celebrate briefly
