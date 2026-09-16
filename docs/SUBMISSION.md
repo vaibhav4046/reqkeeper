@@ -182,7 +182,7 @@ drift that makes a summary less trustworthy than the rows it summarises.)
 - **9 crash checkpoints**, a real `SIGKILL` at each, kill points driven from outside `src/`: zero
   duplicate payments. **FIXTURE**, for the same reason and with the same value: sends are counted
   out of process so the count survives the kill.
-- **46 of 46 payment references** re-derive from `last8Bytes(keccak256(lowercase(requestId + salt + paymentAddress)))`.
+- **47 of 47 payment references** re-derive from `last8Bytes(keccak256(lowercase(requestId + salt + paymentAddress)))`.
 - `npm run harness` — 30 fault-injection cases, asserted against a provider that counts physical
   sends rather than reporting a status string. **FIXTURE**: the provider is that counter, and the
   transaction hashes in `docs/refusals.json` are synthetic.
