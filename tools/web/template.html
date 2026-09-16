@@ -477,13 +477,12 @@
     background: rgba(5, 8, 10, 0.85); padding: 5px 8px; border: 1px solid var(--line);
   }
   .vault-modes {
-    display: flex; gap: 6px; margin-top: 8px; overflow-x: auto;
-    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+    display: flex; gap: 4px; margin-top: 8px; align-items: center;
   }
   .vmode-btn {
     background: transparent; border: 1px solid var(--line);
-    color: var(--dim); font-family: var(--pixel); font-size: 8px;
-    padding: 5px 8px; cursor: pointer; white-space: nowrap; transition: all .15s;
+    color: var(--dim); font-family: var(--pixel); font-size: 7.5px;
+    padding: 5px 7px; cursor: pointer; white-space: nowrap; transition: all .15s;
   }
   .vmode-btn:hover { color: var(--signal); border-color: var(--line-2); }
   .vmode-btn.active {
@@ -500,6 +499,10 @@
   }
   .vmode-btn.pulse-refuse:hover {
     background: rgba(255, 180, 84, 0.18); box-shadow: 0 0 10px rgba(255, 180, 84, 0.35);
+  }
+  @media (max-width: 580px) {
+    .vault-modes { flex-wrap: wrap; }
+    .vmode-btn.pulse-trigger { margin-left: 0; }
   }
 
   /* Dino Pet Companion Card */
@@ -742,7 +745,7 @@
               <button class="vmode-btn" data-mode="keeperhub" type="button">KEEPERHUB</button>
               <button class="vmode-btn" data-mode="vault" type="button">REQ VAULT</button>
               <button class="vmode-btn pulse-trigger" id="btn-pulse-exec" type="button">&#9889; DISPATCH</button>
-              <button class="vmode-btn pulse-refuse" id="btn-pulse-refuse" type="button">&#10005; SIMULATE REPLAY</button>
+              <button class="vmode-btn pulse-refuse" id="btn-pulse-refuse" type="button">&#10005; SIM REPLAY</button>
             </div>
           </div>
         </div>
@@ -2521,7 +2524,7 @@
       const scale = fieldOfView / Math.max(0.2, pz);
       return {
         x: W / 2 + x2 * scale,
-        y: H / 2 + y2 * scale,
+        y: H / 2 - y2 * scale,
         z: z2,
         scale: scale,
       };
@@ -2578,8 +2581,8 @@
       }
 
       // 1. Draw Conduits (Upper Request Conduit + Lower Proof Loop)
-      const conduitYUpper = 0.26;
-      const conduitYLower = -0.26;
+      const conduitYUpper = 0.22;
+      const conduitYLower = -0.22;
       const conduitXStart = -nodeSpread + 0.25;
       const conduitXEnd = nodeSpread - 0.25;
 
@@ -2600,7 +2603,7 @@
       // Upper conduit direction arrow markers
       for (let m = 0.2; m <= 0.8; m += 0.3) {
         const mx = conduitXStart + (conduitXEnd - conduitXStart) * m;
-        const mp = project(mx, conduitYUpper + 0.06, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+        const mp = project(mx, conduitYUpper + 0.05, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
         ctx.font = "6px monospace";
         ctx.fillStyle = "rgba(53, 240, 160, 0.5)";
         ctx.textAlign = "center";
@@ -2624,7 +2627,7 @@
       // Lower conduit return arrow markers
       for (let m = 0.2; m <= 0.8; m += 0.3) {
         const mx = conduitXEnd - (conduitXEnd - conduitXStart) * m;
-        const mp = project(mx, conduitYLower - 0.04, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+        const mp = project(mx, conduitYLower - 0.05, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
         ctx.font = "6px monospace";
         ctx.fillStyle = "rgba(0, 255, 79, 0.5)";
         ctx.textAlign = "center";
@@ -2681,25 +2684,25 @@
       }
 
       // Labels on ReqKeeper
-      const rkLabel = project(rkX, 0.68, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      const rkLabel = project(rkX, 0.72, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
       ctx.font = "8px 'Press Start 2P', monospace";
       ctx.fillStyle = isSettledFlash ? "#00FF4F" : "#35F0A0";
       ctx.textAlign = "center";
       ctx.fillText("REQKEEPER", rkLabel.x, rkLabel.y);
 
-      const rkSub = project(rkX, 0.54, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      const rkSub = project(rkX, 0.58, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
       ctx.font = "6px monospace";
       ctx.fillStyle = "rgba(220, 234, 230, 0.75)";
       ctx.fillText("OBLIGATION READY // NONCE 38", rkSub.x, rkSub.y);
 
       // Status Badge under ReqKeeper
-      const rkBadge = project(rkX, -0.62, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      const rkBadge = project(rkX, -0.70, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
       ctx.font = "7px 'Press Start 2P', monospace";
       ctx.fillStyle = isSettledFlash ? "#00FF4F" : "rgba(53, 240, 160, 0.85)";
       ctx.fillText(isSettledFlash ? "[✓ SETTLED]" : "[ARMED · 0 DUP]", rkBadge.x, rkBadge.y);
 
       // Proof Intake Funnel & Tiny Dino Pet
-      const intakePt = project(rkX + 0.32, conduitYLower, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      const intakePt = project(rkX + 0.30, conduitYLower, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
       ctx.strokeStyle = "rgba(0, 255, 79, 0.7)";
       ctx.lineWidth = 1.2;
       ctx.beginPath();
@@ -2708,9 +2711,9 @@
 
       // Draw Tiny Dino Pet Worker beside proof intake
       if (petImg.complete && petImg.naturalWidth > 0) {
-        const petPt = project(rkX + 0.44, conduitYLower - 0.05, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+        const petPt = project(rkX + 0.42, conduitYLower + 0.08, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
         const curDinoHop = settleCycle.phase === "settled" ? dinoHop : 0;
-        ctx.drawImage(petImg, petPt.x - 8, petPt.y - 12 + curDinoHop, 18, 18);
+        ctx.drawImage(petImg, petPt.x - 9, petPt.y - 12 + curDinoHop, 18, 18);
         if (settleCycle.phase === "settled") {
           // Sparkles around dino
           ctx.fillStyle = "#00FF4F";
@@ -2800,13 +2803,13 @@
       ctx.shadowBlur = 0;
 
       // Gate Labels
-      const gateLabel = project(0, 0.68, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      const gateLabel = project(0, 0.72, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
       ctx.font = "8px 'Press Start 2P', monospace";
       ctx.fillStyle = "rgba(220, 234, 230, 0.9)";
       ctx.textAlign = "center";
       ctx.fillText("CALLDATA GATE", gateLabel.x, gateLabel.y);
 
-      const gateSub = project(0, -0.62, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      const gateSub = project(0, -0.70, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
       ctx.font = "7px 'Press Start 2P', monospace";
       ctx.fillStyle = gateGlow;
       if (gateState === "IDLE") ctx.fillText("WYSIWYS [0 GAS]", gateSub.x, gateSub.y);
@@ -2866,18 +2869,18 @@
       }
 
       // KeeperHub Labels
-      const khLabel = project(khX, 0.68, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      const khLabel = project(khX, 0.72, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
       ctx.font = "8px 'Press Start 2P', monospace";
       ctx.fillStyle = "#00FF4F";
       ctx.textAlign = "center";
       ctx.fillText("KEEPERHUB", khLabel.x, khLabel.y);
 
-      const khSub = project(khX, 0.54, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      const khSub = project(khX, 0.58, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
       ctx.font = "6px monospace";
       ctx.fillStyle = "rgba(0, 255, 79, 0.75)";
       ctx.fillText("DETERMINISTIC EXECUTOR", khSub.x, khSub.y);
 
-      const khBadge = project(khX, -0.62, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
+      const khBadge = project(khX, -0.70, 0, cosX, sinX, cosY, sinY, W, H, camX, camDist, fov);
       ctx.font = "7px 'Press Start 2P', monospace";
       ctx.fillStyle = "rgba(0, 255, 79, 0.85)";
       ctx.fillText(isKhExecuting ? "[⚡ EXECUTING]" : "[MEV-PROTECTED]", khBadge.x, khBadge.y);
