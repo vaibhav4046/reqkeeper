@@ -339,7 +339,8 @@
     .brand { display: flex; align-items: center; gap: 10px; padding: 8px 10px; width: 100% }
     .brand .sub { display: none }
     .mark-wrap { margin: 0; width: 54px; height: 48px }
-    .rail-foot { display: none }
+    .rail-foot { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 8px 14px; width: 100%; padding: 6px 10px; border-top: 1px solid var(--line); font-size: 10px }
+    .rail-foot div + div { margin-top: 0 }
     /* Two columns at phone width leaves the value track so narrow that break-all chops
        words mid-syllable ("11155111 se / polia"). Stack label over value instead. */
     .kv { grid-template-columns: minmax(0, 1fr); gap: 2px 0 }
@@ -371,7 +372,8 @@
     <div class="rail-foot">
       <div>SEPOLIA 11155111</div>
       <div id="foot-run"></div>
-      <div><a href="https://github.com/vaibhav4046/reqkeeper">SOURCE</a></div>
+      <div><a href="https://github.com/vaibhav4046/reqkeeper" target="_blank" rel="noopener">SOURCE ↗</a></div>
+      <div><a href="https://github.com/vaibhav4046/reqkeeper/blob/main/docs/SUBMISSION.md" target="_blank" rel="noopener">SUBMISSION ↗</a></div>
     </div>
   </aside>
 
