@@ -170,7 +170,7 @@ drift that makes a summary less trustworthy than the rows it summarises.)
 - **38 real payments on Sepolia. 38 replays refused. 0 sends by those replays.**
 - **45 live refusals before any provider write**, 83 rows in total, at zero gas.
 - **50 concurrent worker processes** against one obligation, each its own OS process on one SQLite
-  file, released by a barrier: 1 broadcast, 1 transaction, 0 duplicates. Exactly-once is
+  file, released by a barrier: 1 broadcast, 1 transaction, 0 duplicates. The duplicate protection is
   ReqKeeper's, not KeeperHub's idempotency cache — 1 post reached the provider and 0 were deduped
   by key, because the losers never got that far. **FIXTURE**: the provider is a counting fixture
   and the transaction hash is synthetic. What it proves is the reservation and the compare-and-set

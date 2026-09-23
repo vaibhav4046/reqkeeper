@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ReqKeeper Console</title>
 <meta property="og:title" content="ReqKeeper Console">
-<meta property="og:description" content="Recorded evidence for exactly-once settlement of Request Network obligations through KeeperHub on Sepolia.">
+<meta property="og:description" content="Recorded evidence for at-most-one-payment settlement of Request Network obligations through KeeperHub on Sepolia.">
 <meta property="og:type" content="website">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Crect width='8' height='8' fill='%2305080A'/%3E%3Cpath fill='%2335F0A0' d='M2 1h4v1H2zM2 2h1v1H2zM5 2h1v1H5zM2 3h4v1H2zM2 4h1v1H2zM4 4h1v1H4zM2 5h1v1H2zM5 5h1v1H5z'/%3E%3C/svg%3E">
 <script id="reqkeeper-data" type="application/json">__DATA__</script>
@@ -838,7 +838,7 @@
           <div>
             <h1 class="hero-title">PAY INVOICES THROUGH <span class="glow">KEEPERHUB</span> WITHOUT DOUBLE-SPENDING</h1>
             <p class="hero-desc">
-              AI agents can't move money safely on their own — they guess, retry, and overpay. <strong>ReqKeeper</strong> takes a Request Network invoice, checks it hasn't been paid, verifies the exact bytes that will hit the chain, and sends payment through KeeperHub exactly once. No duplicates. No wasted gas. 38 real settlements on Sepolia prove it works.
+              AI agents can't move money safely on their own — they guess, retry, and overpay. <strong>ReqKeeper</strong> takes a Request Network invoice, checks it hasn't been paid, verifies the exact bytes that will hit the chain, and sends payment through KeeperHub at most once per debt. If it cannot prove whether a payment went out, it holds instead of retrying. 38 recorded settlements on Sepolia testnet, each checked on chain.
             </p>
 
             <div class="hero-cta">
@@ -1664,7 +1664,7 @@
       "Database lock stops double-spending",
       "Deterministic payment rail active",
       "47/47 invoice signatures confirmed",
-      "Every payment sent exactly once"
+      "At most one payment per debt"
     ];
 
     let brainIdx = 0;
@@ -3401,7 +3401,7 @@
         `    x 42  PAYMENT_PREFLIGHT / ALREADY_DISPATCHED\n` +
         `    x  1  SETTLED\n\n` +
         `  written to docs/evidence/race.json\n` +
-        `✔ Exactly-once settlement holds under heavy concurrent contention.`,
+        `✔ One debt, one payment under heavy concurrent contention (fixture).`,
       crash:
         `$ npm run crash\n\n` +
         `> reqkeeper@0.1.0 crash\n` +

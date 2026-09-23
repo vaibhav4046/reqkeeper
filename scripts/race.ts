@@ -111,15 +111,21 @@ function runWorker(db: string, fx: KeeperHubFixture, requestId: string, referenc
       { env: { ...process.env, NODE_NO_WARNINGS: "1" } },
     );
     let out = "";
+    let err = "";
     kid.stdout.on("data", (c) => (out += c));
-    kid.on("close", () => {
+    kid.stderr.on("data", (c) => (err += c));
+    kid.on("close", (code, signal) => {
       const line = out.trim().split("\n").filter(Boolean).pop() ?? "";
       try {
         resolve(JSON.parse(line) as WorkerLine);
       } catch {
         // A worker that produced no parseable line still has to appear in the artifact. A run
         // that silently drops workers can report "one payment" by losing the evidence.
-        resolve({ pid: -1, startOrder: order, state: "NO_OUTPUT", refusal: out.slice(0, 140) || null, providerWriteIssued: false, txHash: null });
+        // Record how it died. A worker SIGKILLed by the kernel (out of memory on a small box) leaves
+        // no stdout and no stderr; a worker that threw leaves a stack. The artifact says which.
+        const exit = `exit code=${code} signal=${signal}`;
+        const detail = (out || err).trim().slice(0, 120);
+        resolve({ pid: -1, startOrder: order, state: "NO_OUTPUT", refusal: detail ? `${exit}: ${detail}` : exit, providerWriteIssued: false, txHash: null });
       }
     });
   });

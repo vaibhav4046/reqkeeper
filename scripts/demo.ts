@@ -72,7 +72,7 @@ function heading(n: string, title: string, mode: "FIXTURE" | "LIVE"): void {
 
 // ---------------------------------------------------------------------------
 
-say("ReqKeeper — exactly-once settlement of Request Network obligations");
+say("ReqKeeper — at most one payment per Request Network debt");
 say("");
 say("  An agent retries. That is what agent harnesses do.");
 say("  When the thing being retried moves money, a retry is a second payment.");
@@ -209,7 +209,7 @@ say("  10 more calls, same approved plan:");
 for (let i = 0; i < 10; i++) await tool("settle_obligation", INVOICE);
 say(`  physical sends                   : ${provider.totalSends()}`);
 say("");
-say("  Still one. The money moved exactly once.");
+say("  Still one. The money moved once.");
 
 // --- 4. the live settlement ------------------------------------------------
 

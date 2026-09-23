@@ -67,7 +67,7 @@ launder an assumption into a fact by restating it.
 ## 1. Decision and thesis
 
 **Target (the "live project"):** Request Network, on Ethereum Sepolia.
-**Product:** exactly-once settlement of Request payment obligations through KeeperHub.
+**Product:** at-most-one-payment settlement of Request payment obligations through KeeperHub; what cannot be proven is held, not retried.
 **Upstream fix:** ~~a PR to KeeperHub fixing `#1959`/`#1929`.~~ **Retracted 2026-09-09:**
 `simulate: true` did NOT reproduce when probed live — the API returned a correct dry run, no hash,
 no execution. The `EVIDENCE_CONFLICT` check stays; the platform bug is not claimed to be live.
@@ -165,7 +165,7 @@ UI pages to film) or Circle CCTP V2 (two chains, two tx hashes, permissionless f
 
 Invoice auto-payment was **not** in the top 12 pain points found in the evidence sweep. The *seam*
 is the pain; Request is chosen because the obligation identity and the settlement evidence are both
-already there. **This is exactly-once execution proven on invoices — it is not invoicing software.**
+already there. **This is duplicate-safe execution tested on invoices — it is not invoicing software.**
 
 ---
 

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Exactly-once settlement of Request Network obligations through KeeperHub.",
+  "description": "At most one payment per debt: settlement of Request Network obligations through KeeperHub that holds what it cannot prove.",
   "engines": {
     "node": ">=24"
   },

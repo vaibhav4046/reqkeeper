@@ -858,7 +858,7 @@ export async function handleRequest(
           capabilities: { tools: {} },
           serverInfo: SERVER_INFO,
           instructions:
-            "ReqKeeper settles Request Network invoices exactly once. You can propose a payment " +
+            "ReqKeeper settles each Request Network invoice at most once. You can propose a payment " +
             "and check on it. You cannot approve one — there is no tool for that, by design. " +
             "Call propose_payment, show the returned approvalSentence to a human verbatim, and " +
             "stop until they decide.",

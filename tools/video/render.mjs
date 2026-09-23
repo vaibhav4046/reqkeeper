@@ -93,7 +93,7 @@ for (let i = 0; i < lines.length; i++) {
     "(", "-background", "none", "-fill", SIGNAL, "-font", FONT, "-pointsize", "26",
     "label:reqkeeper", ")", "-gravity", "NorthWest", "-geometry", "+72+48", "-composite",
     "(", "-background", "none", "-fill", MUTED, "-font", FONT, "-pointsize", "18",
-    "label:exactly-once settlement of Request Network obligations through KeeperHub", ")",
+    "label:at most one payment per debt, through KeeperHub", ")",
     "-gravity", "NorthWest", "-geometry", "+72+92", "-composite",
     // hairline
     "-fill", "#283C2B", "-draw", `rectangle 72,126 ${WIDTH - 72},127`,

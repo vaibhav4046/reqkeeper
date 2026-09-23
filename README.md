@@ -1,6 +1,6 @@
 # ReqKeeper
 
-**Exactly-once settlement of Request Network obligations through KeeperHub.**
+**At most one payment per debt. Settlement of Request Network obligations through KeeperHub that holds what it cannot prove.**
 
 Agents can retry code. They must never retry money. ReqKeeper lets an agent retry a Request
 invoice without paying it twice.
@@ -197,7 +197,7 @@ forwarder with no uniqueness on the reference; `GET /v2/request/{id}/pay` return
 nonce and no idempotency. A payer that retries after a timeout emits a second event, and the
 invoice reads as overpaid.
 
-Exactly-once has to live on the payer's execution side. KeeperHub gives that side idempotent
+Duplicate protection has to live on the payer's execution side. KeeperHub gives that side idempotent
 replay — within 24 hours, per key — plus `unconfirmed` as a poll-only state, and receipts. It does
 not know what a Request obligation *is*, and a fresh agent session with a fresh key is a fresh
 request to it.
