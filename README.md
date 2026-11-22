@@ -41,12 +41,15 @@ npm test               # 719 tests; no network, no credentials
 npm run typecheck
 npm run race           # 50 OS processes, one obligation, one payment (fixture provider)
 npm run mcp:e2e        # the MCP server over stdio: propose, human approve, settle once, replay
+                       #   (fixture provider, but reads the public Request Sepolia gateway)
 npm run verify:all     # re-checks published evidence against public Sepolia RPCs (needs internet)
 ```
 
 All of the above are what [`ci.yml`](.github/workflows/ci.yml) runs. Settling a real invoice
 needs a `KEEPERHUB_API_KEY` (see [Settle a real invoice](#settle-a-real-invoice)); without it,
-live steps report `BLOCKED` rather than passing.
+live steps report `BLOCKED` rather than passing. `mcp:e2e` and part of `verify:all` depend on
+public services (Request's Sepolia gateway, public Sepolia RPCs); when those are down, they
+fail or report `BLOCKED` rather than pass.
 
 CI runs on Ubuntu. On one Windows machine, one subprocess test in
 `test/live-scripts.test.ts` ("an invoice already paid 1033 blocks ago…") timed out locally
@@ -161,7 +164,7 @@ states in the artifact why it cannot come from the rows: two are the `-1` sentin
 that do not exist when no fixture ran, and three are recounted from the chain rather than from
 what a worker reported. Delete one of those reasons and `verify:all` exits 1.
 
-Last run: **25 ok · 0 failed · 0 blocked**, including — checked against the chain with no credentials — a
+Last CI run (23 Sep 2026): **25 ok · 0 failed · 0 blocked**, including — checked against the chain with no credentials — a
 successful receipt for `0xb90a0771…` at block 11,665,983, the ERC20FeeProxy event inside that
 receipt's own logs, that same payment found again by its reference through the event query
 Request's own detection uses, and **47 of 47** recorded payment references re-deriving from
