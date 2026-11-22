@@ -374,7 +374,7 @@ describe("scripts/settle-live.ts searches a window that can contain the payment"
 
     const ran = await run(
       "scripts/settle-live.ts",
-      settleLiveEnv(gateway.url, { SEPOLIA_RPC: chain.url }),
+      settleLiveEnv(gateway.url, { SEPOLIA_RPC: chain.url, REQKEEPER_RPC_ENDPOINTS: chain.url }),
       [],
       scratch,
     );
@@ -401,7 +401,7 @@ describe("scripts/settle-live.ts searches a window that can contain the payment"
 
     const ran = await run(
       "scripts/settle-live.ts",
-      settleLiveEnv(gateway.url, { SEPOLIA_RPC: chain.url }),
+      settleLiveEnv(gateway.url, { SEPOLIA_RPC: chain.url, REQKEEPER_RPC_ENDPOINTS: chain.url }),
       [],
       scratch,
     );
