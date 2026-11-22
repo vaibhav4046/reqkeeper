@@ -1,6 +1,59 @@
 # ReqKeeper
 
+[![ci](https://github.com/vaibhav4046/reqkeeper/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/vaibhav4046/reqkeeper/actions/workflows/ci.yml)
+
 **At most one payment per debt. Settlement of Request Network obligations through KeeperHub that holds what it cannot prove.**
+
+An idempotent payment gate between an AI agent and the chain: the agent proposes, a human
+approves, and ReqKeeper pays a Request Network invoice through KeeperHub at most once, even
+across retries, crashes and racing processes. Sepolia testnet only. Built as an entry to the
+DoraHacks KeeperHub hackathon (submissions closed 18 Sep 2026).
+
+[![ReqKeeper console, live at reqkeeper.vercel.app](docs/assets/console.png)](https://reqkeeper.vercel.app)
+
+*The live console at <https://reqkeeper.vercel.app>, captured with Playwright at 1440x900.*
+
+### What this demonstrates
+
+- **An MCP tool surface an agent cannot use to spend on its own.** `propose_payment`,
+  `settle_obligation` and `resolve_pending` ([`src/mcp.ts`](src/mcp.ts)) take no approval
+  argument; approval is written by a human through a separate CLI
+  ([`scripts/approve.ts`](scripts/approve.ts)) and bound to a plan hash. The hosted
+  `/api/mcp` surface is read-only and does not import the store or the payment provider.
+- **Exactly-once side effects under retries, crashes and concurrency.** The obligation, not
+  the API call, is the idempotency unit: deterministic keys ([`src/identity.ts`](src/identity.ts)),
+  SQLite unique constraints, compare-and-set, leases with fencing and a transactional outbox
+  ([`src/store.ts`](src/store.ts)). Exercised by a 50-process race and a 9-checkpoint crash
+  test that run in CI.
+- **Evidence that is re-derived, not trusted.** Settlement is decided from an independently
+  read receipt plus the fee-proxy event ([`src/chain.ts`](src/chain.ts)), and
+  `npm run verify:all` recomputes every published number from rows and from the public
+  Sepolia chain, with no credentials.
+
+### Quickstart (no API key needed)
+
+Requires Node 24 (`--experimental-strip-types` and `node:sqlite`).
+
+```bash
+git clone https://github.com/vaibhav4046/reqkeeper && cd reqkeeper
+npm ci                 # typescript, @types/node, playwright (only tsc is needed for CI)
+npm test               # 719 tests; no network, no credentials
+npm run typecheck
+npm run race           # 50 OS processes, one obligation, one payment (fixture provider)
+npm run mcp:e2e        # the MCP server over stdio: propose, human approve, settle once, replay
+npm run verify:all     # re-checks published evidence against public Sepolia RPCs (needs internet)
+```
+
+All of the above are what [`ci.yml`](.github/workflows/ci.yml) runs. Settling a real invoice
+needs a `KEEPERHUB_API_KEY` (see [Settle a real invoice](#settle-a-real-invoice)); without it,
+live steps report `BLOCKED` rather than passing.
+
+CI runs on Ubuntu. On one Windows machine, one subprocess test in
+`test/live-scripts.test.ts` ("an invoice already paid 1033 blocks ago…") timed out locally
+while its stub RPC call hung (cause not yet found), and `npm run build` fails as a result,
+because the build counts tests by running the suite. The rest of the suite passed.
+
+## How it works
 
 Agents can retry code. They must never retry money. ReqKeeper lets an agent retry a Request
 invoice without paying it twice.
@@ -263,16 +316,20 @@ probes, and what each one found that is *not* yet fixed.
 
 ## Architecture
 
-```
-Request gateway (read)                    KeeperHub (execute REST + MCP)
-   invoice facts, salt, reference            simulate -> execute -> status
-        |                                            |
-        v                                            v
- src/request.ts ---> identity | policy | calldata gate | settle ---> keeperhub.ts
-        |              reservation | CAS | outbox                        |
-        v                                                                v
- src/chain.ts  <---------  worker.ts (observe, reconcile, never send)
-   receipt | fee-proxy log | depth | chain id
+```mermaid
+flowchart LR
+  agent["AI agent (MCP client)"] -->|stdio| mcp["src/mcp.ts<br/>propose / settle / resolve"]
+  human["Human operator"] -->|CLI| approve["scripts/approve.ts"]
+  mcp --> request["src/request.ts<br/>Request gateway: invoice facts"]
+  mcp --> settle["src/settle.ts<br/>identity, policy, calldata gate"]
+  mcp --> worker
+  approve --> store
+  settle --> store[("src/store.ts<br/>SQLite: reservation, CAS, outbox")]
+  settle -->|"src/provider.ts interface"| kh["src/keeperhub.ts / keeperhub-mcp.ts<br/>KeeperHub execute"]
+  worker["src/worker.ts<br/>observe, reconcile, never send"] --> store
+  worker --> chain["src/chain.ts<br/>receipt + fee-proxy event + depth"]
+  settle --> chain
+  hosted["api/mcp.ts (Vercel, read-only)"] --> pub["src/mcp-public.ts"] --> chain
 ```
 
 `src/store.ts` is the durable spine: `UNIQUE(namespace, request_id)`, a partial
