@@ -51,11 +51,6 @@ live steps report `BLOCKED` rather than passing. `mcp:e2e` and part of `verify:a
 public services (Request's Sepolia gateway, public Sepolia RPCs); when those are down, they
 fail or report `BLOCKED` rather than pass.
 
-CI runs on Ubuntu. On one Windows machine, one subprocess test in
-`test/live-scripts.test.ts` ("an invoice already paid 1033 blocks ago…") timed out locally
-while its stub RPC call hung (cause not yet found), and `npm run build` fails as a result,
-because the build counts tests by running the suite. The rest of the suite passed.
-
 ## How it works
 
 Agents can retry code. They must never retry money. ReqKeeper lets an agent retry a Request
